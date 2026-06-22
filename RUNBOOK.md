@@ -1,0 +1,526 @@
+# ArdaLink — Operator's Runbook
+
+Step-by-step manual for running the full local stack. Read this if
+`LOCAL_SETUP.md` is too brief and you want the full picture. For the
+5-minute version, see `LOCAL_SETUP.md`. For diagrams, see
+`ARCHITECTURE.md`.
+
+---
+
+## Contents
+
+1. [Prerequisites](#1-prerequisites)
+2. [One-time setup on a new machine](#2-one-time-setup-on-a-new-machine)
+3. [Daily workflow](#3-daily-workflow)
+4. [Common operations](#4-common-operations)
+5. [Verifying a release candidate](#5-verifying-a-release-candidate)
+6. [Troubleshooting](#6-troubleshooting)
+7. [Disaster recovery](#7-disaster-recovery)
+8. [How to read the source](#8-how-to-read-the-source)
+
+---
+
+## 1. Prerequisites
+
+| Tool | Min version | Check | Install (Ubuntu/Debian) |
+|---|---|---|---|
+| Node.js | 22.x | `node -v` | `nvm install 22 && nvm use 22` |
+| pnpm | 9.x | `pnpm -v` | `npm i -g pnpm` |
+| Python | 3.12 | `python3 --version` | `apt install python3.12` |
+| uv | latest | `uv --version` | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| Docker | 24+ | `docker version` | see docker.com |
+| PostgreSQL client | 14+ | `psql --version` | `apt install postgresql-client` |
+| curl, jq | any | `curl --version && jq --version` | `apt install curl jq` |
+| Git | 2.30+ | `git --version` | `apt install git` |
+
+**Do not skip `jq`.** The verify script and several runbook commands
+parse JSON with it.
+
+---
+
+## 2. One-time setup on a new machine
+
+### 2.1 Clone the three repos
+
+```bash
+mkdir -p ~/arjolink && cd ~/arjolink
+for repo in ardalink-engine ardalink-api ardalink-web; do
+  git clone --branch migrate/import-legacy \
+    https://github.com/MUNENE1212/$repo.git
+done
+```
+
+(`main` is what's already deployed in production; `migrate/import-legacy`
+is the in-flight restructure branch. Use the right one for the task.)
+
+### 2.2 Install dependencies
+
+```bash
+# ardalink-api
+cd ardalink-api && pnpm install --frozen-lockfile && cd ..
+
+# ardalink-web
+cd ardalink-web && pnpm install --frozen-lockfile && cd ..
+
+# ardalink-engine
+cd ardalink-engine && uv sync --extra dev && cd ..
+```
+
+If you skip `--frozen-lockfile`, pnpm will try to resolve the catalog
+on the network and may take a long time. Always frozen in CI; locally
+it's a judgement call.
+
+### 2.3 Configure environment
+
+The public dev surface is `ardalink-api/docs/local-dev/`. Copy the
+example env and edit if needed:
+
+```bash
+cd ardalink-api/docs/local-dev
+make setup       # writes .env with dev-only defaults
+```
+
+The defaults are:
+
+| Var | Default | Safe to change? |
+|---|---|---|
+| `POSTGRES_PASSWORD` | `ardalink_dev_only` | Local only — never reuse in prod |
+| `POSTGRES_PORT` | `15432` | Yes; don't collide with system Postgres on 5432 |
+| `JWT_SECRET` | `replace-with-32-plus-bytes-random` (placeholder) | Dev only. Production rotates |
+| `TENANT_ATTESTATION_SECRET` | placeholder | Same |
+| `SESSION_SECRET` | placeholder | Same |
+
+> **The shipped `.env` placeholders ARE valid.** They are 35+ bytes
+> long, so the API's `JWT_SECRET.length >= 32` check passes. The
+> warning is a convention, not a runtime check.
+
+### 2.4 Bring the stack up
+
+```bash
+cd ardalink-api/docs/local-dev
+make up
+```
+
+The script:
+
+1. Stops any previous stack (idempotent).
+2. Starts Postgres in Docker on `:15432`.
+3. Starts Redis in Docker on `:6379`.
+4. Runs the migrations (idempotent — `IF NOT EXISTS` everywhere).
+5. Creates the `ardalink_app` role with `NOSUPERUSER, NOBYPASSRLS`.
+6. Seeds 3 demo tenants + 36 ground-truth reports + 15 pastoralists.
+7. Starts the engine on `:5001`.
+8. Starts the API on `:3000`.
+9. Starts the web server on `:8080` (serves dashboard + talk).
+10. Prints demo JWTs for all three tenants.
+
+This takes ~90 seconds on a cold cache.
+
+### 2.5 Verify
+
+```bash
+cd ardalink-api/docs/local-dev
+make verify
+```
+
+Expected output:
+
+```
+== Services ==          ✓ 4/4
+== Database ==          ✓ (migrations, 3 tenants, RLS on)
+== Auth + Multi-tenant ==  ✓ RLS isolation 12 == 12
+== Tests ==             ✓ api (17), web (7), engine (15)
+
+READY: 22/27 passed (5 expected warnings)
+```
+
+The 5 warnings are always "port occupied (may be our own service)" —
+the verifier just confirms the ports are bound, not that they are
+free.
+
+---
+
+## 3. Daily workflow
+
+### Start of day
+
+```bash
+cd ardalink-api/docs/local-dev
+make up
+```
+
+If the stack was already running, this is a no-op for the data
+services. If it was stopped (`make down`), this re-creates the
+containers but keeps the data volume.
+
+### End of day
+
+```bash
+cd ardalink-api/docs/local-dev
+make down
+```
+
+This stops the containers and removes them. **Data is preserved**
+in a Docker volume (`ardalink-local-pgdata`).
+
+### During the day
+
+```bash
+# Watch the logs:
+make logs
+
+# See what's running:
+make ps
+
+# Re-run the verifier:
+make verify
+```
+
+### Editing code
+
+The api and the web both have hot-reload:
+
+- `ardalink-api` uses `tsx watch src/index.ts` — saved files trigger
+  a restart. Watch the log for "Restarting...".
+- `ardalink-web` doesn't have a dev server in local-dev (the
+  bundles are pre-built). Rebuild with
+  `cd ardalink-web/dashboard && pnpm run build` then `cp -r dist/* /tmp/ardalink-local/web/dashboard/dist/`.
+
+The engine has no hot-reload. Restart it:
+
+```bash
+pkill -f "ardalink_engine.main"
+cd ardalink-engine && uv run python -m ardalink_engine.main &
+```
+
+---
+
+## 4. Common operations
+
+### 4.1 Mint a demo JWT
+
+```bash
+cd ardalink-api/docs/local-dev
+TOKEN=$(make token T=bula-pesa)    # default tenant
+echo $TOKEN
+```
+
+This mints a JWT signed with the dev `JWT_SECRET` for the tenant
+of your choice. The expiry is `9999999999` (year 2286), so the
+token is good for any session in this lifetime.
+
+To mint for a different tenant:
+
+```bash
+make token T=garbatulla
+make token T=merti
+```
+
+### 4.2 Call an authenticated API
+
+```bash
+TOKEN=$(make token T=bula-pesa)
+curl -s -H "Authorization: Bearer $TOKEN" \
+  http://localhost:3000/api/ground-truth/recent?limit=5 | jq .
+```
+
+### 4.3 Query Postgres directly (as `ardalink` superuser)
+
+```bash
+PGPASSWORD=ardalink_dev_only psql -h 127.0.0.1 -p 15432 -U ardalink -d ardalink
+```
+
+Useful queries:
+
+```sql
+-- List tenants
+SELECT tenant_id, display_name, region FROM public.tenants;
+
+-- Count reports per tenant (cross-tenant OK as ardalink superuser)
+SELECT tenant_id, count(*) FROM public.ground_truth_reports GROUP BY tenant_id;
+
+-- Show RLS policies on a table
+\d+ public.pastoralists
+SELECT * FROM pg_policies WHERE schemaname = 'public' AND tablename = 'pastoralists';
+```
+
+### 4.4 Query Postgres as `ardalink_app` (proves RLS works)
+
+```bash
+PGPASSWORD=ardalink_dev_only psql -h 127.0.0.1 -p 15432 -U ardalink_app -d ardalink
+```
+
+Without `SET app.current_tenant_id`, every query returns 0 rows
+(RLS denies). To prove tenant scoping:
+
+```sql
+SET app.current_tenant_id = 'bula-pesa';
+SELECT count(*) FROM ground_truth_reports;   -- returns 12
+SET app.current_tenant_id = 'garbatulla';
+SELECT count(*) FROM ground_truth_reports;   -- returns 12, different rows
+```
+
+### 4.5 Run a single test suite
+
+```bash
+# API unit tests
+cd ardalink-api && pnpm run test
+
+# Web unit tests (tenant config)
+cd ardalink-web && pnpm --filter @workspace/dashboard run test
+
+# Engine unit tests
+cd ardalink-engine && uv run pytest -q
+```
+
+### 4.6 Tail service logs
+
+```bash
+cd ardalink-api/docs/local-dev
+make logs
+```
+
+Or individually:
+
+```bash
+tail -f /tmp/ardalink-local/api.log
+tail -f /tmp/ardalink-local/engine.log
+tail -f /tmp/ardalink-local/web.log
+```
+
+### 4.7 Add a new tenant + seed data
+
+Edit `ardalink-api/docs/local-dev/seed-data/seed-demo.sql` and
+re-run:
+
+```bash
+cd ardalink-api/docs/local-dev
+make fresh         # tears down + rebuilds from scratch
+```
+
+Or surgically:
+
+```bash
+PGPASSWORD=ardalink_dev_only psql -h 127.0.0.1 -p 15432 -U ardalink -d ardalink
+INSERT INTO public.tenants (tenant_id, display_name, region)
+VALUES ('new-ward', 'New Ward', 'Isiolo County');
+```
+
+---
+
+## 5. Verifying a release candidate
+
+This is the script the team runs before promoting any branch to
+production. It assumes nothing about local state — it starts from
+a fresh clone and verifies end-to-end.
+
+```bash
+# 1. Set up a clean workspace
+mkdir -p /tmp/ardalink-rc && cd /tmp/ardalink-rc
+for repo in ardalink-engine ardalink-api ardalink-web; do
+  git clone --branch <RELEASE-BRANCH> \
+    --depth 1 https://github.com/MUNENE1212/$repo.git
+done
+
+# 2. Install
+cd ardalink-api && pnpm install --frozen-lockfile && cd ..
+cd ardalink-web  && pnpm install --frozen-lockfile && cd ..
+cd ardalink-engine && uv sync --extra dev && cd ..
+
+# 3. Up
+cd ardalink-api/docs/local-dev
+make up
+
+# 4. Verify
+make verify
+# expected: READY: 22/27 passed (5 expected warnings)
+
+# 5. Smoke (paste from make up output)
+TOKEN=$(make token T=bula-pesa)
+curl -s -H "Authorization: Bearer $TOKEN" \
+  http://localhost:3000/api/ground-truth/recent?limit=5 | jq length
+# expected: 5
+```
+
+If any step fails, do not promote. Fix the branch and re-run.
+
+---
+
+## 6. Troubleshooting
+
+### Symptom: "Cannot find module 'X'"
+
+```bash
+# Inside the affected repo:
+rm -rf node_modules
+pnpm install --frozen-lockfile
+```
+
+If the error persists, the lockfile is out of sync with
+`package.json`. That's a build hygiene issue, not a local issue —
+fix the lockfile in the repo.
+
+### Symptom: API restarts in a loop, log says "ELIFECYCLE Command failed"
+
+The `tsx watch` is hitting an unhandled error. See the api log:
+
+```bash
+tail -50 /tmp/ardalink-local/api.log
+```
+
+Common causes:
+- DB unreachable: `pg_isready -h 127.0.0.1 -p 15432`
+- Schema drift: `cd ardalink-api/docs/local-dev && make fresh`
+
+### Symptom: Port 3000 already in use
+
+```bash
+ss -tlnp | grep 3000
+# or
+lsof -i :3000
+```
+
+If it's a previous stack:
+
+```bash
+cd ardalink-api/docs/local-dev
+make down
+make up
+```
+
+If it's something else, change `PORT` in `ardalink-api/docs/local-dev/.env`.
+
+### Symptom: "RLS isolation broken: bula-pesa=0, garbatulla=0"
+
+The seed didn't run, or the migrations are stale. Re-run:
+
+```bash
+cd ardalink-api/docs/local-dev
+make fresh
+```
+
+### Symptom: pnpm install hangs forever
+
+This was the bug from 2026-06-21 — pnpm's install of the
+ardalink-web workspace was being killed mid-flight by the shell
+timeouts, leaving `node_modules/` half-extracted.
+
+Recovery:
+
+```bash
+cd ardalink-web
+rm -rf node_modules
+pnpm install --frozen-lockfile
+```
+
+If still hanging, the issue is on a different layer — check
+`pnpm-lock.yaml` exists, check `node_modules/.modules.yaml` exists
+after the install, and check `node_modules/.pnpm/` isn't a
+dangling-symlink graveyard.
+
+### Symptom: 401 on every request
+
+The JWT signing secret in the api's environment doesn't match
+what you're using to mint tokens. Check:
+
+```bash
+# What the API is using:
+cat /tmp/ardalink-local/api.env | grep JWT_SECRET
+
+# What your token is using:
+make token T=bula-pesa  # uses .env
+```
+
+They must match.
+
+### Symptom: "address already in use" on Postgres
+
+There's a system Postgres on 5432. The local stack runs on 15432.
+If you really hit a conflict on 15432:
+
+```bash
+docker ps -a | grep postgres
+docker stop <container_id>
+```
+
+---
+
+## 7. Disaster recovery
+
+### 7.1 The "nothing works, start over" reset
+
+This is destructive — it deletes the demo data.
+
+```bash
+cd ardalink-api/docs/local-dev
+make down
+docker volume rm ardalink-local-pgdata
+make up
+```
+
+Takes ~90 seconds. After this the stack is back to the demo state.
+
+### 7.2 The "I broke my workspace" reset
+
+If `node_modules/`, `.venv/`, or the lockfile is in a weird state
+and reinstall doesn't fix it:
+
+```bash
+# ardalink-api
+cd ardalink-api
+rm -rf node_modules
+pnpm install --frozen-lockfile
+
+# ardalink-web
+cd ../ardalink-web
+rm -rf node_modules
+pnpm install --frozen-lockfile
+
+# ardalink-engine
+cd ../ardalink-engine
+rm -rf .venv
+uv sync --extra dev
+```
+
+### 7.3 The "my entire machine is on fire" reset
+
+```bash
+# 1. Stop everything
+cd ardalink-api/docs/local-dev
+make down
+docker volume rm ardalink-local-pgdata
+
+# 2. Wipe all build artifacts
+cd ~/arjolink
+rm -rf ardalink-api/node_modules ardalink-web/node_modules ardalink-engine/.venv
+
+# 3. Start over from the One-time Setup section above
+```
+
+### 7.4 The "I committed a bug and the verify now fails" recovery
+
+1. `git log --oneline -10` to find the suspect commit.
+2. `git revert <commit>` to undo it cleanly.
+3. `cd ardalink-api/docs/local-dev && make fresh && make verify`.
+4. If `make verify` is green, push the revert.
+
+---
+
+## 8. How to read the source
+
+If you want to understand what a request does, start here:
+
+| You want to know | Start at | Trace |
+|---|---|---|
+| What does `GET /api/ground-truth/recent` do? | `ardalink-api/src/routes/groundTruth.ts` | `withTenantContext` → `tx.select().from(groundTruthReportsTable)` |
+| How does auth work? | `ardalink-api/src/middlewares/tenant.ts` | `verifyJwt` in `ardalink-api/src/lib/tenancy.ts` |
+| How is RLS enforced? | `ardalink-api/src/lib/tenancy-context.ts` | `safeTenantId` → `SET LOCAL` → RLS policy in `ardalink-api/docs/local-dev/migrations/0001_multitenant_public.up.sql` |
+| Where does the dashboard get data? | `ardalink-web/packages/api-client-react/src/index.ts` | `useGetStatus` etc. → `fetch` to `/api/*` |
+| Where does the engine compute? | `ardalink-engine/ardalink_engine/src/` | pure-Python modules; FastAPI wrapper in `ardalink_engine/main.py` |
+| How is the demo data loaded? | `ardalink-api/docs/local-dev/seed-data/seed-demo.sql` | applied by `start-local.sh` after migrations |
+| What does `make verify` actually check? | `ardalink-api/docs/local-dev/scripts/verify.sh` | line by line, with section headers |
+
+---
+
+*See `ARCHITECTURE.md` for the diagrams. See `LOCAL_SETUP.md` for the
+5-minute install.*
