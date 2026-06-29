@@ -1,0 +1,174 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 841 1189" width="841mm" height="1189mm">
+<defs><linearGradient id="heroBg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0B0B12"/><stop offset="1" stop-color="#1A0F05"/></linearGradient><linearGradient id="amberGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#F59E0B"/><stop offset="1" stop-color="#FF3C00"/></linearGradient></defs>
+<rect x="0" y="0" width="841" height="1189" rx="0" ry="0" fill="#0B0B12"/>
+<rect x="0" y="0" width="841" height="140" rx="0" ry="0" fill="url(#heroBg)"/>
+<rect x="0" y="137" width="841" height="3" rx="0" ry="0" fill="url(#amberGrad)"/>
+<g transform="translate(32,28)"><rect x="0" y="0" width="58" height="58" rx="12.76" ry="12.76" fill="#FF3C00"/><path d="M 14.5 45.24 L 29.0 10.44 L 43.5 45.24 L 37.12 45.24 L 29.0 26.1 L 20.88 45.24 Z" fill="#F5F5F4"/><circle cx="29.0" cy="8.120000000000001" r="3.19" fill="#F59E0B"/></g>
+<text x="108" y="54" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="30" font-weight="800" fill="#F5F5F4" letter-spacing="-0.5">ArdaLink</text>
+<text x="108" y="74" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="700" fill="#A8A29E" letter-spacing="2">PASTORALIST INTELLIGENCE PLATFORM</text>
+<rect x="649" y="36" width="160" height="32" rx="16" ry="16" fill="#15151F" stroke="#2A2A38" stroke-width="0.6"/>
+<text x="729" y="56" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="700" fill="#F5F5F4" letter-spacing="2">JHUB AFRICA  ·  2026</text>
+<text x="32" y="116" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="30" font-weight="800" fill="#F5F5F4">Pastoralist intelligence for Isiolo's drylands.</text>
+<text x="32" y="142" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="700" fill="#F59E0B" letter-spacing="3">SATELLITE → AI → HERDER'S PHONE  ·  VOICE · USSD · SMS</text>
+<text x="32" y="162" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#F59E0B" letter-spacing="3">THE PROBLEM</text>
+<text x="32" y="184" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="20" font-weight="800" fill="#F5F5F4">A herder loses KES 200,000 of livestock</text>
+<text x="32" y="208" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="20" font-weight="800" fill="#F5F5F4">in a bad drought cycle.</text>
+<text x="32" y="234.0" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="400" fill="#F5F5F4">Drought is the single largest cause of household poverty in northern</text>
+<text x="32" y="250.8" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="400" fill="#F5F5F4">Kenya. Satellites see the vegetation stress two to three weeks before a</text>
+<text x="32" y="267.6" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="400" fill="#F5F5F4">herder does — but the signal never reaches the phone.</text>
+<rect x="499" y="178" width="310" height="130" rx="10" ry="10" fill="#1C1C28"/>
+<text x="515" y="200" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#F59E0B" letter-spacing="3">BY THE NUMBERS</text>
+<text x="515" y="238" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="30" font-weight="800" fill="#FF3C00">KES 200K</text>
+<text x="669" y="234" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="600" fill="#F5F5F4">lost per herder</text>
+<text x="669" y="248" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="500" fill="#A8A29E">in a bad cycle</text>
+<line x1="515" y1="264" x2="793" y2="264" stroke="#2A2A38" stroke-width="0.6"/>
+<text x="515" y="294" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="800" fill="#F59E0B">2–3 wks</text>
+<text x="629" y="291" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="600" fill="#F5F5F4">satellite lead vs.</text>
+<text x="629" y="302" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="500" fill="#A8A29E">herder's eye</text>
+<text x="32" y="332" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#F59E0B" letter-spacing="3">THE SOLUTION</text>
+<text x="32" y="354" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="20" font-weight="800" fill="#F5F5F4">A voice-first intelligence layer that lives on a 2G phone.</text>
+<text x="32" y="384.0" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="400" fill="#F5F5F4">Every five days, the satellite reads every patch of the ward. When the pasture starts to fail, the platform calls the herder</text>
+<text x="32" y="400.8" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="400" fill="#F5F5F4">in Swahili, English, or Borana to ask what she sees on the ground.</text>
+<rect x="32.0" y="468" width="252.33333333333334" height="60" rx="8" ry="8" fill="#15151F"/>
+<rect x="32.0" y="468" width="5" height="60" rx="2.5" ry="2.5" fill="#FF3C00"/>
+<text x="50.0" y="494" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="18" font-weight="800" fill="#F5F5F4" letter-spacing="1.2">VOICE</text>
+<text x="50.0" y="514" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="500" fill="#A8A29E">Outbound + inbound call</text>
+<rect x="294.33333333333337" y="468" width="252.33333333333334" height="60" rx="8" ry="8" fill="#15151F"/>
+<rect x="294.33333333333337" y="468" width="5" height="60" rx="2.5" ry="2.5" fill="#38BDF8"/>
+<text x="312.33333333333337" y="494" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="18" font-weight="800" fill="#F5F5F4" letter-spacing="1.2">USSD</text>
+<text x="312.33333333333337" y="514" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="500" fill="#A8A29E">*123*8# menu, no data plan</text>
+<rect x="556.6666666666667" y="468" width="252.33333333333334" height="60" rx="8" ry="8" fill="#15151F"/>
+<rect x="556.6666666666667" y="468" width="5" height="60" rx="2.5" ry="2.5" fill="#F59E0B"/>
+<text x="574.6666666666667" y="494" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="18" font-weight="800" fill="#F5F5F4" letter-spacing="1.2">SMS</text>
+<text x="574.6666666666667" y="514" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="500" fill="#A8A29E">BULA · MALISHO · ONGEA</text>
+<text x="32" y="554" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#F59E0B" letter-spacing="3">ARCHITECTURE</text>
+<text x="32" y="576" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="18" font-weight="800" fill="#F5F5F4">Three small services. One secure database. That's the whole platform.</text>
+<rect x="32.0" y="608" width="186.75" height="200" rx="8" ry="8" fill="#15151F"/>
+<rect x="32.0" y="608" width="186.75" height="5" rx="2.5" fill="#F59E0B"/>
+<text x="46.0" y="634" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="800" fill="#F59E0B" letter-spacing="1.5">HERDER</text>
+<text x="46.0" y="650" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="500" fill="#A8A29E">2G/3G phone</text>
+<line x1="46.0" y1="660" x2="204.75" y2="660" stroke="#2A2A38" stroke-width="0.6"/>
+<text x="46.0" y="678" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">· Voice call</text>
+<text x="46.0" y="696" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">· (Swahili / English)</text>
+<text x="46.0" y="714" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">· USSD *123*8#</text>
+<text x="46.0" y="732" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">· SMS keyword</text>
+<text x="46.0" y="750" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">· (BULA · MALISHO)</text>
+<rect x="228.75" y="608" width="186.75" height="200" rx="8" ry="8" fill="#15151F"/>
+<rect x="228.75" y="608" width="186.75" height="5" rx="2.5" fill="#FF3C00"/>
+<text x="242.75" y="634" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="800" fill="#FF3C00" letter-spacing="1.5">AFRICA'S TALKING</text>
+<text x="242.75" y="650" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="500" fill="#A8A29E">Voice · SMS · USSD</text>
+<line x1="242.75" y1="660" x2="401.5" y2="660" stroke="#2A2A38" stroke-width="0.6"/>
+<text x="242.75" y="678" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">· Outbound voice API</text>
+<text x="242.75" y="696" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">· 2-way SMS gateway</text>
+<text x="242.75" y="714" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">· USSD gateway</text>
+<text x="242.75" y="732" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">· DID pool</text>
+<text x="242.75" y="750" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">· +254 20 5XX XXXX</text>
+<rect x="425.5" y="608" width="186.75" height="200" rx="8" ry="8" fill="#15151F"/>
+<rect x="425.5" y="608" width="186.75" height="5" rx="2.5" fill="#84CC16"/>
+<text x="439.5" y="634" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="800" fill="#84CC16" letter-spacing="1.5">ARDALINK CORE</text>
+<text x="439.5" y="650" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="500" fill="#A8A29E">3 services</text>
+<line x1="439.5" y1="660" x2="598.25" y2="660" stroke="#2A2A38" stroke-width="0.6"/>
+<text x="439.5" y="678" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">· The watcher</text>
+<text x="439.5" y="696" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">· satellite + weather</text>
+<text x="439.5" y="714" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">· The brain</text>
+<text x="439.5" y="732" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">· composes the brief</text>
+<text x="439.5" y="750" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">· The voice</text>
+<text x="439.5" y="768" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">· calls her in Swahili</text>
+<text x="439.5" y="786" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">· The dashboard</text>
+<text x="439.5" y="804" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">· what operators see</text>
+<rect x="622.25" y="608" width="186.75" height="200" rx="8" ry="8" fill="#15151F"/>
+<rect x="622.25" y="608" width="186.75" height="5" rx="2.5" fill="#38BDF8"/>
+<text x="636.25" y="634" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="800" fill="#38BDF8" letter-spacing="1.5">DATA + AI</text>
+<text x="636.25" y="650" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="500" fill="#A8A29E">satellite · language · store</text>
+<line x1="636.25" y1="660" x2="795.0" y2="660" stroke="#2A2A38" stroke-width="0.6"/>
+<text x="636.25" y="678" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">· Satellite reads the ward</text>
+<text x="636.25" y="696" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">· every 5 days</text>
+<text x="636.25" y="714" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">· AI spots trouble early</text>
+<text x="636.25" y="732" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">· in her language</text>
+<text x="636.25" y="750" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">· Her answers are saved</text>
+<text x="636.25" y="768" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">· to the database</text>
+<g transform="translate(224.75,830)"><line x1="0" y1="0" x2="14" y2="0" stroke="#F59E0B" stroke-width="2" stroke-linecap="round"/><path d="M 14 0 L 9 -4 M 14 0 L 9 4" stroke="#F59E0B" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g transform="translate(421.5,830)"><line x1="0" y1="0" x2="14" y2="0" stroke="#F59E0B" stroke-width="2" stroke-linecap="round"/><path d="M 14 0 L 9 -4 M 14 0 L 9 4" stroke="#F59E0B" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g transform="translate(618.25,830)"><line x1="0" y1="0" x2="14" y2="0" stroke="#F59E0B" stroke-width="2" stroke-linecap="round"/><path d="M 14 0 L 9 -4 M 14 0 L 9 4" stroke="#F59E0B" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></g>
+<text x="420.5" y="844" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="700" fill="#71717A">EVERY 5 DAYS  ·  satellite reads the ward  →  AI writes the brief  →  we call her  →  she decides</text>
+<text x="32" y="858" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#F59E0B" letter-spacing="3">THE HERDER JOURNEY</text>
+<text x="32" y="880" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="18" font-weight="800" fill="#F5F5F4">From dial-tone to ground-truth report in five steps.</text>
+<rect x="32.0" y="906" width="150.6" height="78" rx="8" ry="8" fill="#15151F"/>
+<circle cx="52.0" cy="926" r="12" fill="#F59E0B"/>
+<text x="52.0" y="930" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="800" fill="#0B0B12">1</text>
+<text x="72.0" y="931" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="800" fill="#F59E0B" letter-spacing="1.5">DIAL</text>
+<text x="44.0" y="952" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">Herder dials</text>
+<text x="44.0" y="967" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">*123*8#</text>
+<path d="M 183.6 945.0 l 4 -3 l 0 6 z" fill="#71717A"/>
+<rect x="188.6" y="906" width="150.6" height="78" rx="8" ry="8" fill="#15151F"/>
+<circle cx="208.6" cy="926" r="12" fill="#38BDF8"/>
+<text x="208.6" y="930" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="800" fill="#0B0B12">2</text>
+<text x="228.6" y="931" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="800" fill="#38BDF8" letter-spacing="1.5">PICK</text>
+<text x="200.6" y="952" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">1 = Bula Pesa</text>
+<text x="200.6" y="967" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">2 = Malisho</text>
+<text x="200.6" y="982" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">3 = Ongea</text>
+<path d="M 340.2 945.0 l 4 -3 l 0 6 z" fill="#71717A"/>
+<rect x="345.2" y="906" width="150.6" height="78" rx="8" ry="8" fill="#15151F"/>
+<circle cx="365.2" cy="926" r="12" fill="#84CC16"/>
+<text x="365.2" y="930" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="800" fill="#0B0B12">3</text>
+<text x="385.2" y="931" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="800" fill="#84CC16" letter-spacing="1.5">REPLY</text>
+<text x="357.2" y="952" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">ArdaLink replies</text>
+<text x="357.2" y="967" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">in Swahili</text>
+<text x="357.2" y="982" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">or English</text>
+<path d="M 496.79999999999995 945.0 l 4 -3 l 0 6 z" fill="#71717A"/>
+<rect x="501.79999999999995" y="906" width="150.6" height="78" rx="8" ry="8" fill="#15151F"/>
+<circle cx="521.8" cy="926" r="12" fill="#FF3C00"/>
+<text x="521.8" y="930" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="800" fill="#0B0B12">4</text>
+<text x="541.8" y="931" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="800" fill="#FF3C00" letter-spacing="1.5">CALL</text>
+<text x="513.8" y="952" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">Outbound voice</text>
+<text x="513.8" y="967" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">call: AI brief</text>
+<text x="513.8" y="982" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">in her dialect</text>
+<path d="M 653.4 945.0 l 4 -3 l 0 6 z" fill="#71717A"/>
+<rect x="658.4" y="906" width="150.6" height="78" rx="8" ry="8" fill="#15151F"/>
+<circle cx="678.4" cy="926" r="12" fill="#F59E0B"/>
+<text x="678.4" y="930" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="800" fill="#0B0B12">5</text>
+<text x="698.4" y="931" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="800" fill="#F59E0B" letter-spacing="1.5">REPORT</text>
+<text x="670.4" y="952" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">Herder answers.</text>
+<text x="670.4" y="967" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">Indicators saved</text>
+<text x="670.4" y="982" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">to ground truth</text>
+<text x="32" y="1008" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#F59E0B" letter-spacing="3">WHAT'S BUILT  ·  WHAT'S NEXT</text>
+<rect x="32.0" y="1026" width="147.4" height="64" rx="8" ry="8" fill="#15151F"/>
+<text x="105.7" y="1052" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="800" fill="#F59E0B">3</text>
+<text x="105.7" y="1068" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="600" fill="#F5F5F4">demo wards</text>
+<text x="105.7" y="1082" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="8.5" font-weight="500" fill="#A8A29E">bula-pesa · garbatulla · merti</text>
+<rect x="189.4" y="1026" width="147.4" height="64" rx="8" ry="8" fill="#15151F"/>
+<text x="263.1" y="1052" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="800" fill="#84CC16">134</text>
+<text x="263.1" y="1068" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="600" fill="#F5F5F4">tests pass</text>
+<text x="263.1" y="1082" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="8.5" font-weight="500" fill="#A8A29E">api + web + engine</text>
+<rect x="346.8" y="1026" width="147.4" height="64" rx="8" ry="8" fill="#15151F"/>
+<text x="420.5" y="1052" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="800" fill="#FF3C00">$0.12</text>
+<text x="420.5" y="1068" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="600" fill="#F5F5F4">per herder / month</text>
+<text x="420.5" y="1082" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="8.5" font-weight="500" fill="#A8A29E">at 50K-household scale</text>
+<rect x="504.20000000000005" y="1026" width="147.4" height="64" rx="8" ry="8" fill="#15151F"/>
+<text x="577.9000000000001" y="1052" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="800" fill="#38BDF8">6 wks</text>
+<text x="577.9000000000001" y="1068" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="600" fill="#F5F5F4">to first call</text>
+<text x="577.9000000000001" y="1082" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="8.5" font-weight="500" fill="#A8A29E">after green light</text>
+<rect x="661.6" y="1026" width="147.4" height="64" rx="8" ry="8" fill="#15151F"/>
+<text x="735.3000000000001" y="1052" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="800" fill="#F59E0B">4</text>
+<text x="735.3000000000001" y="1068" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="600" fill="#F5F5F4">AT webhooks</text>
+<text x="735.3000000000001" y="1082" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="8.5" font-weight="500" fill="#A8A29E">voice · USSD · SMS · events</text>
+<text x="32" y="1098" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#F59E0B" letter-spacing="3">NEXT  ·  </text>
+<circle cx="96" cy="1094" r="3" fill="#F59E0B"/>
+<text x="104" y="1098" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="500" fill="#F5F5F4">Africa's Talking production key + DID pool</text>
+<circle cx="271" cy="1094" r="3" fill="#38BDF8"/>
+<text x="279" y="1098" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="500" fill="#F5F5F4">AI voice stack (real-time speech)</text>
+<circle cx="446" cy="1094" r="3" fill="#84CC16"/>
+<text x="454" y="1098" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="500" fill="#F5F5F4">Earth Engine satellite account</text>
+<circle cx="621" cy="1094" r="3" fill="#FF3C00"/>
+<text x="629" y="1098" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="500" fill="#F5F5F4">Recording voices in 4 local dialects</text>
+<rect x="0" y="1113" width="841" height="76" rx="0" ry="0" fill="#15151F"/>
+<rect x="0" y="1113" width="841" height="2" rx="0" ry="0" fill="url(#amberGrad)"/>
+<rect x="29" y="1123.0" width="56" height="56" rx="5" ry="5" fill="#F5F5F4"/>
+<g transform="translate(32,1126.0) scale(1.5151515151515151)"><path d="M0,0H1V1H0zM1,0H2V1H1zM2,0H3V1H2zM3,0H4V1H3zM4,0H5V1H4zM5,0H6V1H5zM6,0H7V1H6zM12,0H13V1H12zM15,0H16V1H15zM16,0H17V1H16zM20,0H21V1H20zM21,0H22V1H21zM23,0H24V1H23zM26,0H27V1H26zM27,0H28V1H27zM28,0H29V1H28zM29,0H30V1H29zM30,0H31V1H30zM31,0H32V1H31zM32,0H33V1H32zM0,1H1V2H0zM6,1H7V2H6zM9,1H10V2H9zM10,1H11V2H10zM15,1H16V2H15zM16,1H17V2H16zM18,1H19V2H18zM21,1H22V2H21zM26,1H27V2H26zM32,1H33V2H32zM0,2H1V3H0zM2,2H3V3H2zM3,2H4V3H3zM4,2H5V3H4zM6,2H7V3H6zM8,2H9V3H8zM9,2H10V3H9zM10,2H11V3H10zM11,2H12V3H11zM12,2H13V3H12zM14,2H15V3H14zM21,2H22V3H21zM22,2H23V3H22zM26,2H27V3H26zM28,2H29V3H28zM29,2H30V3H29zM30,2H31V3H30zM32,2H33V3H32zM0,3H1V4H0zM2,3H3V4H2zM3,3H4V4H3zM4,3H5V4H4zM6,3H7V4H6zM8,3H9V4H8zM9,3H10V4H9zM10,3H11V4H10zM12,3H13V4H12zM15,3H16V4H15zM18,3H19V4H18zM19,3H20V4H19zM21,3H22V4H21zM24,3H25V4H24zM26,3H27V4H26zM28,3H29V4H28zM29,3H30V4H29zM30,3H31V4H30zM32,3H33V4H32zM0,4H1V5H0zM2,4H3V5H2zM3,4H4V5H3zM4,4H5V5H4zM6,4H7V5H6zM8,4H9V5H8zM9,4H10V5H9zM10,4H11V5H10zM11,4H12V5H11zM12,4H13V5H12zM14,4H15V5H14zM15,4H16V5H15zM16,4H17V5H16zM20,4H21V5H20zM21,4H22V5H21zM22,4H23V5H22zM26,4H27V5H26zM28,4H29V5H28zM29,4H30V5H29zM30,4H31V5H30zM32,4H33V5H32zM0,5H1V6H0zM6,5H7V6H6zM8,5H9V6H8zM19,5H20V6H19zM23,5H24V6H23zM24,5H25V6H24zM26,5H27V6H26zM32,5H33V6H32zM0,6H1V7H0zM1,6H2V7H1zM2,6H3V7H2zM3,6H4V7H3zM4,6H5V7H4zM5,6H6V7H5zM6,6H7V7H6zM8,6H9V7H8zM10,6H11V7H10zM12,6H13V7H12zM14,6H15V7H14zM16,6H17V7H16zM18,6H19V7H18zM20,6H21V7H20zM22,6H23V7H22zM24,6H25V7H24zM26,6H27V7H26zM27,6H28V7H27zM28,6H29V7H28zM29,6H30V7H29zM30,6H31V7H30zM31,6H32V7H31zM32,6H33V7H32zM8,7H9V8H8zM11,7H12V8H11zM14,7H15V8H14zM16,7H17V8H16zM19,7H20V8H19zM20,7H21V8H20zM21,7H22V8H21zM23,7H24V8H23zM0,8H1V9H0zM2,8H3V9H2zM3,8H4V9H3zM4,8H5V9H4zM5,8H6V9H5zM6,8H7V9H6zM9,8H10V9H9zM10,8H11V9H10zM13,8H14V9H13zM19,8H20V9H19zM23,8H24V9H23zM26,8H27V9H26zM27,8H28V9H27zM28,8H29V9H28zM29,8H30V9H29zM30,8H31V9H30zM1,9H2V10H1zM4,9H5V10H4zM5,9H6V10H5zM9,9H10V10H9zM12,9H13V10H12zM13,9H14V10H13zM15,9H16V10H15zM16,9H17V10H16zM17,9H18V10H17zM18,9H19V10H18zM20,9H21V10H20zM23,9H24V10H23zM26,9H27V10H26zM27,9H28V10H27zM29,9H30V10H29zM30,9H31V10H30zM32,9H33V10H32zM2,10H3V11H2zM4,10H5V11H4zM6,10H7V11H6zM9,10H10V11H9zM13,10H14V11H13zM14,10H15V11H14zM15,10H16V11H15zM16,10H17V11H16zM17,10H18V11H17zM22,10H23V11H22zM24,10H25V11H24zM25,10H26V11H25zM26,10H27V11H26zM28,10H29V11H28zM30,10H31V11H30zM31,10H32V11H31zM1,11H2V12H1zM2,11H3V12H2zM3,11H4V12H3zM5,11H6V12H5zM9,11H10V12H9zM11,11H12V12H11zM12,11H13V12H12zM13,11H14V12H13zM15,11H16V12H15zM17,11H18V12H17zM18,11H19V12H18zM19,11H20V12H19zM24,11H25V12H24zM26,11H27V12H26zM28,11H29V12H28zM29,11H30V12H29zM30,11H31V12H30zM32,11H33V12H32zM0,12H1V13H0zM3,12H4V13H3zM4,12H5V13H4zM5,12H6V13H5zM6,12H7V13H6zM8,12H9V13H8zM9,12H10V13H9zM10,12H11V13H10zM14,12H15V13H14zM16,12H17V13H16zM19,12H20V13H19zM20,12H21V13H20zM21,12H22V13H21zM22,12H23V13H22zM23,12H24V13H23zM24,12H25V13H24zM25,12H26V13H25zM27,12H28V13H27zM28,12H29V13H28zM29,12H30V13H29zM1,13H2V14H1zM2,13H3V14H2zM4,13H5V14H4zM5,13H6V14H5zM7,13H8V14H7zM8,13H9V14H8zM9,13H10V14H9zM10,13H11V14H10zM11,13H12V14H11zM13,13H14V14H13zM15,13H16V14H15zM18,13H19V14H18zM24,13H25V14H24zM26,13H27V14H26zM29,13H30V14H29zM30,13H31V14H30zM31,13H32V14H31zM32,13H33V14H32zM1,14H2V15H1zM3,14H4V15H3zM6,14H7V15H6zM7,14H8V15H7zM9,14H10V15H9zM10,14H11V15H10zM12,14H13V15H12zM15,14H16V15H15zM16,14H17V15H16zM17,14H18V15H17zM18,14H19V15H18zM20,14H21V15H20zM22,14H23V15H22zM25,14H26V15H25zM26,14H27V15H26zM30,14H31V15H30zM31,14H32V15H31zM2,15H3V16H2zM3,15H4V16H3zM5,15H6V16H5zM8,15H9V16H8zM10,15H11V16H10zM11,15H12V16H11zM15,15H16V16H15zM18,15H19V16H18zM21,15H22V16H21zM24,15H25V16H24zM25,15H26V16H25zM26,15H27V16H26zM27,15H28V16H27zM28,15H29V16H28zM29,15H30V16H29zM30,15H31V16H30zM0,16H1V17H0zM3,16H4V17H3zM4,16H5V17H4zM5,16H6V17H5zM6,16H7V17H6zM7,16H8V17H7zM9,16H10V17H9zM10,16H11V17H10zM11,16H12V17H11zM12,16H13V17H12zM13,16H14V17H13zM14,16H15V17H14zM15,16H16V17H15zM17,16H18V17H17zM18,16H19V17H18zM22,16H23V17H22zM23,16H24V17H23zM24,16H25V17H24zM25,16H26V17H25zM27,16H28V17H27zM28,16H29V17H28zM32,16H33V17H32zM0,17H1V18H0zM8,17H9V18H8zM11,17H12V18H11zM13,17H14V18H13zM15,17H16V18H15zM16,17H17V18H16zM18,17H19V18H18zM20,17H21V18H20zM21,17H22V18H21zM23,17H24V18H23zM26,17H27V18H26zM27,17H28V18H27zM29,17H30V18H29zM30,17H31V18H30zM31,17H32V18H31zM32,17H33V18H32zM0,18H1V19H0zM2,18H3V19H2zM4,18H5V19H4zM6,18H7V19H6zM7,18H8V19H7zM8,18H9V19H8zM9,18H10V19H9zM10,18H11V19H10zM11,18H12V19H11zM12,18H13V19H12zM14,18H15V19H14zM15,18H16V19H15zM18,18H19V19H18zM20,18H21V19H20zM21,18H22V19H21zM24,18H25V19H24zM26,18H27V19H26zM27,18H28V19H27zM28,18H29V19H28zM30,18H31V19H30zM31,18H32V19H31zM0,19H1V20H0zM4,19H5V20H4zM8,19H9V20H8zM9,19H10V20H9zM12,19H13V20H12zM19,19H20V20H19zM20,19H21V20H20zM21,19H22V20H21zM22,19H23V20H22zM25,19H26V20H25zM26,19H27V20H26zM27,19H28V20H27zM28,19H29V20H28zM29,19H30V20H29zM30,19H31V20H30zM31,19H32V20H31zM2,20H3V21H2zM6,20H7V21H6zM9,20H10V21H9zM11,20H12V21H11zM13,20H14V21H13zM15,20H16V21H15zM18,20H19V21H18zM19,20H20V21H19zM21,20H22V21H21zM24,20H25V21H24zM27,20H28V21H27zM28,20H29V21H28zM29,20H30V21H29zM0,21H1V22H0zM1,21H2V22H1zM7,21H8V22H7zM9,21H10V22H9zM10,21H11V22H10zM13,21H14V22H13zM14,21H15V22H14zM15,21H16V22H15zM16,21H17V22H16zM17,21H18V22H17zM20,21H21V22H20zM21,21H22V22H21zM22,21H23V22H22zM23,21H24V22H23zM26,21H27V22H26zM30,21H31V22H30zM32,21H33V22H32zM0,22H1V23H0zM3,22H4V23H3zM6,22H7V23H6zM12,22H13V23H12zM19,22H20V23H19zM25,22H26V23H25zM27,22H28V23H27zM29,22H30V23H29zM30,22H31V23H30zM31,22H32V23H31zM0,23H1V24H0zM3,23H4V24H3zM4,23H5V24H4zM7,23H8V24H7zM9,23H10V24H9zM16,23H17V24H16zM19,23H20V24H19zM20,23H21V24H20zM21,23H22V24H21zM22,23H23V24H22zM24,23H25V24H24zM25,23H26V24H25zM26,23H27V24H26zM28,23H29V24H28zM30,23H31V24H30zM31,23H32V24H31zM32,23H33V24H32zM0,24H1V25H0zM2,24H3V25H2zM3,24H4V25H3zM4,24H5V25H4zM6,24H7V25H6zM7,24H8V25H7zM8,24H9V25H8zM9,24H10V25H9zM10,24H11V25H10zM11,24H12V25H11zM12,24H13V25H12zM13,24H14V25H13zM16,24H17V25H16zM19,24H20V25H19zM22,24H23V25H22zM24,24H25V25H24zM25,24H26V25H25zM26,24H27V25H26zM27,24H28V25H27zM28,24H29V25H28zM32,24H33V25H32zM8,25H9V26H8zM9,25H10V26H9zM10,25H11V26H10zM11,25H12V26H11zM12,25H13V26H12zM15,25H16V26H15zM16,25H17V26H16zM17,25H18V26H17zM18,25H19V26H18zM19,25H20V26H19zM23,25H24V26H23zM24,25H25V26H24zM28,25H29V26H28zM30,25H31V26H30zM32,25H33V26H32zM0,26H1V27H0zM1,26H2V27H1zM2,26H3V27H2zM3,26H4V27H3zM4,26H5V27H4zM5,26H6V27H5zM6,26H7V27H6zM10,26H11V27H10zM11,26H12V27H11zM12,26H13V27H12zM13,26H14V27H13zM14,26H15V27H14zM15,26H16V27H15zM17,26H18V27H17zM20,26H21V27H20zM22,26H23V27H22zM23,26H24V27H23zM24,26H25V27H24zM26,26H27V27H26zM28,26H29V27H28zM30,26H31V27H30zM31,26H32V27H31zM0,27H1V28H0zM6,27H7V28H6zM8,27H9V28H8zM9,27H10V28H9zM16,27H17V28H16zM17,27H18V28H17zM18,27H19V28H18zM20,27H21V28H20zM23,27H24V28H23zM24,27H25V28H24zM28,27H29V28H28zM29,27H30V28H29zM30,27H31V28H30zM31,27H32V28H31zM32,27H33V28H32zM0,28H1V29H0zM2,28H3V29H2zM3,28H4V29H3zM4,28H5V29H4zM6,28H7V29H6zM8,28H9V29H8zM9,28H10V29H9zM13,28H14V29H13zM14,28H15V29H14zM15,28H16V29H15zM16,28H17V29H16zM19,28H20V29H19zM20,28H21V29H20zM21,28H22V29H21zM22,28H23V29H22zM24,28H25V29H24zM25,28H26V29H25zM26,28H27V29H26zM27,28H28V29H27zM28,28H29V29H28zM29,28H30V29H29zM31,28H32V29H31zM32,28H33V29H32zM0,29H1V30H0zM2,29H3V30H2zM3,29H4V30H3zM4,29H5V30H4zM6,29H7V30H6zM8,29H9V30H8zM9,29H10V30H9zM10,29H11V30H10zM11,29H12V30H11zM13,29H14V30H13zM14,29H15V30H14zM15,29H16V30H15zM18,29H19V30H18zM23,29H24V30H23zM24,29H25V30H24zM25,29H26V30H25zM28,29H29V30H28zM29,29H30V30H29zM32,29H33V30H32zM0,30H1V31H0zM2,30H3V31H2zM3,30H4V31H3zM4,30H5V31H4zM6,30H7V31H6zM8,30H9V31H8zM10,30H11V31H10zM11,30H12V31H11zM12,30H13V31H12zM13,30H14V31H13zM14,30H15V31H14zM15,30H16V31H15zM16,30H17V31H16zM18,30H19V31H18zM20,30H21V31H20zM22,30H23V31H22zM26,30H27V31H26zM27,30H28V31H27zM29,30H30V31H29zM30,30H31V31H30zM0,31H1V32H0zM6,31H7V32H6zM9,31H10V32H9zM11,31H12V32H11zM13,31H14V32H13zM15,31H16V32H15zM21,31H22V32H21zM22,31H23V32H22zM25,31H26V32H25zM26,31H27V32H26zM28,31H29V32H28zM29,31H30V32H29zM30,31H31V32H30zM0,32H1V33H0zM1,32H2V33H1zM2,32H3V33H2zM3,32H4V33H3zM4,32H5V33H4zM5,32H6V33H5zM6,32H7V33H6zM8,32H9V33H8zM12,32H13V33H12zM13,32H14V33H13zM14,32H15V33H14zM15,32H16V33H15zM22,32H23V33H22zM23,32H24V33H23zM24,32H25V33H24zM25,32H26V33H25zM27,32H28V33H27zM31,32H32V33H31z" fill="#0B0B12"/></g>
+<text x="98" y="1143" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="14" font-weight="800" fill="#F5F5F4">github.com/JHUB-AFRICA/arda-link-ai</text>
+<text x="98" y="1159.0" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="400" fill="#A8A29E">Source of truth · architecture · sandbox workflow. This poster is</text>
+<text x="98" y="1173.7" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="400" fill="#A8A29E">generated from the same repo.</text>
+<text x="809" y="1141" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-size="11" font-weight="700" fill="#F59E0B" letter-spacing="2">THE TEAM</text>
+<text x="809" y="1159" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-size="12" font-weight="600" fill="#F5F5F4">Founder · Ops · Domain · Software developer</text>
+<text x="809" y="1175" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="500" fill="#A8A29E">JHUB Africa  ·  Isiolo County</text>
+</svg>

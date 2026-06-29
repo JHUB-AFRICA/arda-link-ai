@@ -1,0 +1,504 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: ArdaLink AI — Satellite-to-pastoralist intelligence API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: intelligence
+    description: Satellite intelligence pipeline
+  - name: pastoralists
+    description: Pastoralist herder registry
+  - name: chat
+    description: AI land assistant
+  - name: groundTruth
+    description: Herder ground-truth reports & structured livestock indicators
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /status:
+    get:
+      operationId: getStatus
+      tags: [intelligence]
+      summary: Latest satellite intelligence result
+      description: Returns is_running flag and the last completed intelligence cycle result
+      responses:
+        "200":
+          description: Current status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IntelligenceStatus"
+
+  /forecast:
+    get:
+      operationId: getForecast
+      tags: [intelligence]
+      summary: 14-day vegetation stress forecast
+      description: Returns the latest 14-day forecast. Requires at least one prior trigger-check run.
+      responses:
+        "200":
+          description: Forecast data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ForecastResult"
+        "404":
+          description: No satellite data available yet
+
+  /trigger-check:
+    post:
+      operationId: triggerCheck
+      tags: [intelligence]
+      summary: Run the satellite intelligence cycle
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TriggerCheckInput"
+      responses:
+        "200":
+          description: Intelligence cycle result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TriggerCheckResult"
+        "400":
+          description: Missing phone number
+        "409":
+          description: Cycle already running
+
+  /pastoralists:
+    get:
+      operationId: listPastoralists
+      tags: [pastoralists]
+      summary: List all registered pastoralists
+      responses:
+        "200":
+          description: List of pastoralists
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Pastoralist"
+    post:
+      operationId: createPastoralist
+      tags: [pastoralists]
+      summary: Register a new pastoralist herder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PastoralistInput"
+      responses:
+        "201":
+          description: Pastoralist registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pastoralist"
+        "400":
+          description: Validation error
+
+  /pastoralists/{id}:
+    delete:
+      operationId: deletePastoralist
+      tags: [pastoralists]
+      summary: Remove a pastoralist from the registry
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+        "404":
+          description: Not found
+
+  /chat:
+    post:
+      operationId: chatWithLand
+      tags: [chat]
+      summary: Ask the AI about current land and vegetation conditions
+      description: GPT-4o answers questions using live satellite data, 30-day climate, and 14-day forecast context
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatInput"
+      responses:
+        "200":
+          description: AI response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatReply"
+        "503":
+          description: No satellite data loaded yet
+
+  /ground-truth/recent:
+    get:
+      operationId: listGroundTruthRecent
+      tags: [groundTruth]
+      summary: Recent ground-truth reports with extracted indicators
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: List of recent reports
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GroundTruthReport"
+
+  /ground-truth/summary:
+    get:
+      operationId: getGroundTruthSummary
+      tags: [groundTruth]
+      summary: Per-quadrant BCS/NDVI aggregates + active alerts
+      responses:
+        "200":
+          description: Summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroundTruthSummary"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    QuadrantStress:
+      type: object
+      properties:
+        NW:
+          type: number
+        NE:
+          type: number
+        SW:
+          type: number
+        SE:
+          type: number
+      required: [NW, NE, SW, SE]
+
+    IntelligenceStatus:
+      type: object
+      properties:
+        is_running:
+          type: boolean
+        last_run:
+          type: ["object", "null"]
+          description: Full IntelligenceResult from the last completed cycle
+      required: [is_running, last_run]
+
+    ForecastResult:
+      type: object
+      properties:
+        basedOnSatelliteRunAt:
+          type: string
+        stressedPixelPct:
+          type: number
+        worstQuadrant:
+          type: string
+        currentMAI:
+          type: ["number", "null"]
+        forecast:
+          type: object
+      required:
+        [basedOnSatelliteRunAt, stressedPixelPct, worstQuadrant, forecast]
+
+    TriggerCheckInput:
+      type: object
+      properties:
+        phone:
+          type: string
+          description: Target phone number (E.164)
+        dryRun:
+          type: boolean
+          default: false
+          description: Run all analysis steps but skip the actual call
+        forceAlert:
+          type: boolean
+          default: false
+          description: Bypass the 15% stress threshold
+
+    TriggerCheckResult:
+      type: object
+      properties:
+        triggered:
+          type: boolean
+        timestamp:
+          type: string
+        month:
+          type: integer
+        month_name:
+          type: string
+        dry_run:
+          type: boolean
+      required: [triggered, timestamp, month, month_name]
+
+    Pastoralist:
+      type: object
+      properties:
+        id:
+          type: integer
+        createdAt:
+          type: string
+        name:
+          type: string
+        phone:
+          type: string
+        location:
+          type: string
+        cattle:
+          type: integer
+        goats:
+          type: integer
+        camels:
+          type: integer
+        waterSource:
+          type: string
+        alertsEnabled:
+          type: boolean
+        alertsSent:
+          type: integer
+        lastContactAt:
+          type: ["string", "null"]
+      required:
+        [
+          id,
+          createdAt,
+          name,
+          phone,
+          location,
+          cattle,
+          goats,
+          camels,
+          waterSource,
+          alertsEnabled,
+          alertsSent,
+          lastContactAt,
+        ]
+
+    PastoralistInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        phone:
+          type: string
+          minLength: 1
+        location:
+          type: string
+        cattle:
+          type: integer
+          default: 0
+        goats:
+          type: integer
+          default: 0
+        camels:
+          type: integer
+          default: 0
+        waterSource:
+          type: string
+        alertsEnabled:
+          type: boolean
+          default: true
+      required: [name, phone]
+
+    ChatInput:
+      type: object
+      properties:
+        message:
+          type: string
+          minLength: 1
+          description: Question in English or Swahili
+        history:
+          type: array
+          description: Previous turns for context
+          items:
+            $ref: "#/components/schemas/ChatTurn"
+      required: [message]
+
+    ChatTurn:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+      required: [role, content]
+
+    ChatReply:
+      type: object
+      properties:
+        reply:
+          type: string
+        context:
+          type: object
+          properties:
+            stressedPixelPct:
+              type: ["number", "null"]
+            worstQuadrant:
+              type: ["string", "null"]
+            riskLevel:
+              type: ["string", "null"]
+            dataDate:
+              type: ["string", "null"]
+          required: [stressedPixelPct, worstQuadrant, riskLevel, dataDate]
+      required: [reply, context]
+
+    GroundTruthReport:
+      type: object
+      properties:
+        id: { type: integer }
+        createdAt: { type: string }
+        phone: { type: ["string", "null"] }
+        month: { type: string }
+        reportedQuadrant: { type: ["string", "null"] }
+        reportedLocation: { type: ["string", "null"] }
+        actionTag: { type: string }
+        bcsScore: { type: ["number", "null"] }
+        bcsConfidence: { type: ["string", "null"] }
+        bcsSpecies: { type: ["string", "null"] }
+        bcsFlagFollowup: { type: ["boolean", "null"] }
+        offtakeRate: { type: ["string", "null"] }
+        mortalityRate: { type: ["string", "null"] }
+        milkProduction: { type: ["string", "null"] }
+        waterTrekkingDistance: { type: ["string", "null"] }
+        waterPointName: { type: ["string", "null"] }
+        waterPointStatus: { type: ["string", "null"] }
+        supplementaryFeeding: { type: ["string", "null"] }
+        ndviVsBaselinePercent: { type: ["number", "null"] }
+        rainfall30dayMm: { type: ["number", "null"] }
+        indicatorsCollected: { type: ["integer", "null"] }
+        dataCompletenessPercent: { type: ["number", "null"] }
+        trustScore: { type: ["integer", "null"] }
+        trustFlags:
+          oneOf:
+            - type: "null"
+            - type: array
+              items: { type: string }
+        userFeedback: { type: string }
+      required:
+        - id
+        - createdAt
+        - phone
+        - month
+        - reportedQuadrant
+        - reportedLocation
+        - actionTag
+        - bcsScore
+        - bcsConfidence
+        - bcsSpecies
+        - bcsFlagFollowup
+        - offtakeRate
+        - mortalityRate
+        - milkProduction
+        - waterTrekkingDistance
+        - waterPointName
+        - waterPointStatus
+        - supplementaryFeeding
+        - ndviVsBaselinePercent
+        - rainfall30dayMm
+        - indicatorsCollected
+        - dataCompletenessPercent
+        - trustScore
+        - trustFlags
+        - userFeedback
+
+    QuadrantAggregate:
+      type: object
+      properties:
+        quadrant:
+          type: string
+          enum: [NW, NE, SW, SE]
+        bcsAverage: { type: ["number", "null"] }
+        bcsSampleCount: { type: integer }
+        ndviAverage: { type: ["number", "null"] }
+        reportCount: { type: integer }
+      required: [quadrant, bcsAverage, bcsSampleCount, ndviAverage, reportCount]
+
+    StressAlert:
+      type: object
+      properties:
+        id: { type: integer }
+        createdAt: { type: string }
+        severity:
+          type: string
+          enum: [red, yellow]
+        kind:
+          type: string
+          enum: [bcs_critical, mortality_critical, water_point_broken]
+        message: { type: string }
+        location: { type: ["string", "null"] }
+        quadrant: { type: ["string", "null"] }
+      required: [id, createdAt, severity, kind, message, location, quadrant]
+
+    GroundTruthSummary:
+      type: object
+      properties:
+        totalReports: { type: integer }
+        reportsLast7Days: { type: integer }
+        averageCompletenessPercent: { type: ["number", "null"] }
+        bcsFollowupCount: { type: integer }
+        byQuadrant:
+          type: array
+          items:
+            $ref: "#/components/schemas/QuadrantAggregate"
+        alerts:
+          type: array
+          items:
+            $ref: "#/components/schemas/StressAlert"
+      required:
+        - totalReports
+        - reportsLast7Days
+        - averageCompletenessPercent
+        - bcsFollowupCount
+        - byQuadrant
+        - alerts

@@ -1,0 +1,154 @@
+name: ardalink
+
+# Cloud-agnostic local stack — all services pinned to digest-less tags for now.
+# Use `make up` (or `docker compose up`) to start the full ArdaLink platform.
+#
+# Services:
+#   postgres   — shared database (public + gis_engine schemas)
+#   redis      — rate limiting, token store, scheduler coordination
+#   engine     — ardalink-engine (FastAPI, port 5001)
+#   api        — ardalink-api   (Express 5, port 3000)
+#   web        — ardalink-web   (nginx + static, port 8080)
+#   caddy      — reverse proxy with auto-TLS (ports 80/443)
+
+x-logging: &default-logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-restart: &default-restart
+  restart: unless-stopped
+
+services:
+  postgres:
+    <<: *default-restart
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ardalink
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ardalink_dev_only}
+      POSTGRES_DB: ardalink
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ardalink -d ardalink"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    <<: *default-logging
+
+  redis:
+    <<: *default-restart
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redisdata:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    <<: *default-logging
+
+  engine:
+    <<: *default-restart
+    build:
+      context: ../engine
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://ardalink:${POSTGRES_PASSWORD:-ardalink_dev_only}@postgres:5432/ardalink
+      GIS_ENGINE_SCHEMA: gis_engine
+      ARDALINK_HOST: 0.0.0.0
+      ARDALINK_PORT: "5001"
+      ARDALINK_LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      GEE_SERVICE_ACCOUNT: ${GEE_SERVICE_ACCOUNT:-}
+      GEE_PRIVATE_KEY: ${GEE_PRIVATE_KEY:-}
+      GEE_PROJECT: ${GEE_PROJECT:-}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_KEY: ${AZURE_OPENAI_KEY:-}
+      AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT:-gpt-4o}
+      TENANT_ATTESTATION_SECRET: ${TENANT_ATTESTATION_SECRET}
+      INGEST_SCHEDULER_ENABLED: ${INGEST_SCHEDULER_ENABLED:-0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:5001:5001"
+    <<: *default-logging
+
+  api:
+    <<: *default-restart
+    build:
+      context: ../api
+      dockerfile: Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      DATABASE_URL: postgresql://ardalink:${POSTGRES_PASSWORD:-ardalink_dev_only}@postgres:5432/ardalink
+      REDIS_URL: redis://redis:6379
+      COSMOS_DB_ENDPOINT: ${COSMOS_DB_ENDPOINT:-}
+      COSMOS_DB_PRIMARY_KEY: ${COSMOS_DB_PRIMARY_KEY:-}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_KEY}
+      AZURE_OPENAI_CHAT_DEPLOYMENT: ${AZURE_OPENAI_CHAT_DEPLOYMENT:-gpt-4o}
+      AZURE_OPENAI_WHISPER_DEPLOYMENT: ${AZURE_OPENAI_WHISPER_DEPLOYMENT:-whisper}
+      AZURE_OPENAI_REALTIME_DEPLOYMENT: ${AZURE_OPENAI_REALTIME_DEPLOYMENT:-gpt-4o-realtime-preview}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${GOOGLE_SERVICE_ACCOUNT_JSON:-}
+      AFRICASTALKING_USERNAME: ${AFRICASTALKING_USERNAME:-sandbox}
+      AFRICASTALKING_API_KEY: ${AFRICASTALKING_API_KEY:-}
+      AFRICASTALKING_CALLER_ID: ${AFRICASTALKING_CALLER_ID:-}
+      SESSION_SECRET: ${SESSION_SECRET}
+      JWT_SECRET: ${JWT_SECRET}
+      TENANT_ATTESTATION_SECRET: ${TENANT_ATTESTATION_SECRET}
+      ARDALINK_ENGINE_URL: http://engine:5001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      engine:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3000:3000"
+    <<: *default-logging
+
+  web:
+    <<: *default-restart
+    build:
+      context: ../web
+      dockerfile: Dockerfile
+    environment:
+      API_BASE_URL: http://api:3000
+    depends_on:
+      - api
+    ports:
+      - "127.0.0.1:8080:80"
+    <<: *default-logging
+
+  caddy:
+    <<: *default-restart
+    image: caddy:2-alpine
+    profiles: ["tls"]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - web
+    <<: *default-logging
+
+volumes:
+  pgdata:
+  redisdata:
+  caddy_data:
+  caddy_config:

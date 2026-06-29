@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  hygiene:
+    name: Hygiene (TODO / vendored / .env)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail on TODO/FIXME/XXX/HACK/STUB in committed source
+        run: |
+          set -euo pipefail
+          PATTERN='\b(TODO|FIXME|XXX|HACK|STUB)\b'
+          if grep -RInE --exclude-dir=.venv --exclude-dir=.git --exclude-dir=__pycache__ \
+               --exclude-dir=.pytest_cache --exclude-dir=.mypy_cache --exclude-dir=.ruff_cache \
+               --exclude-dir=docs "$PATTERN" ardalink_engine tests; then
+            echo "::error::TODO/FIXME/XXX/HACK/STUB markers present in committed source."
+            exit 1
+          fi
+      - name: Fail on committed venv or pycache
+        run: |
+          set -euo pipefail
+          if [ -d .venv ] || [ -d .pytest_cache ] || [ -d .mypy_cache ] || [ -d .ruff_cache ] \
+             || find . -name __pycache__ -type d -not -path './.venv/*' -not -path './.git/*' | grep -q .; then
+            echo "::error::Python caches or .venv present in working tree."
+            exit 1
+          fi
+      - name: Fail on live .env file
+        run: |
+          set -euo pipefail
+          if [ -f .env ]; then
+            echo "::error::Live .env file present. It must never be committed."
+            exit 1
+          fi
+
+  install:
+    name: Install (uv sync --frozen, dep-pin)
+    needs: hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install uv
+      - name: uv sync (frozen — fails on dep-pin drift)
+        run: uv sync --all-extras --frozen
+
+  lint:
+    name: Lint (ruff, strict)
+    needs: install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install uv
+      - run: uv sync --all-extras --frozen
+      - name: ruff check (no || true)
+        run: uv run ruff check .
+
+  test:
+    name: Test (pytest + coverage floor)
+    needs: install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install uv
+      - run: uv sync --all-extras --frozen
+      - name: pytest (coverage floor from pyproject.toml)
+        run: uv run pytest
+
+  secrets:
+    name: Secrets scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  vuln-scan:
+    name: Vuln scan (pip-audit + trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install uv pip-audit
+      - run: uv export --no-hashes --format=requirements-txt > requirements-ci.txt
+      - name: pip-audit (fail on findings)
+        run: pip-audit -r requirements-ci.txt
+      - uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          format: "sarif"
+          output: "trivy.sarif"
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with: { sarif_file: trivy.sarif }

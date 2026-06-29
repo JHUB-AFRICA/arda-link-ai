@@ -1,0 +1,68 @@
+# CODEOWNERS — ArdaLink public monorepo
+#
+# One approval from a listed owner is required to merge to master.
+# The default owner is the @ardalink/maintainers team. Per-path rules
+# add specific engineers / teams who MUST also review changes inside
+# their domain.
+#
+# Syntax reference: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+# Order matters — later rules override earlier ones for the same path.
+
+# ── Default: every path needs an ArdaLink maintainer review ──────────────
+*                                              @ardalink/maintainers
+
+# ── Service ownership ────────────────────────────────────────────────────
+/ardalink-engine/                              @ardalink/maintainers @ardalink/engine-team
+/ardalink-engine/docs/data-sources.md          @ardalink/maintainers @ardalink/engine-team @ardalink/data-team
+/ardalink-engine/ardalink_engine/src/ai/       @ardalink/maintainers @ardalink/engine-team @ardalink/security-team
+/ardalink-engine/ardalink_engine/src/pipeline/ @ardalink/maintainers @ardalink/engine-team @ardalink/data-team
+
+/ardalink-api/                                 @ardalink/maintainers @ardalink/api-team
+/ardalink-api/docs/data-sources.md             @ardalink/maintainers @ardalink/api-team @ardalink/data-team
+/ardalink-api/src/lib/llm/                     @ardalink/maintainers @ardalink/api-team @ardalink/security-team
+/ardalink-api/src/lib/cosmos.ts                @ardalink/maintainers @ardalink/api-team @ardalink/data-team
+/ardalink-api/src/lib/openData.ts               @ardalink/maintainers @ardalink/api-team @ardalink/data-team
+/ardalink-api/src/middlewares/tenant.ts         @ardalink/maintainers @ardalink/api-team @ardalink/security-team
+/ardalink-api/src/lib/tenancy.ts                @ardalink/maintainers @ardalink/api-team @ardalink/security-team
+/ardalink-api/src/lib/tenancy-context.ts        @ardalink/maintainers @ardalink/api-team @ardalink/security-team
+/ardalink-api/docs/local-dev/migrations/        @ardalink/maintainers @ardalink/api-team @ardalink/security-team
+
+/ardalink-web/                                 @ardalink/maintainers @ardalink/web-team
+/ardalink-web/packages/api-client-react/       @ardalink/maintainers @ardalink/web-team @ardalink/api-team
+/ardalink-web/dashboard/src/components/AuthGate.tsx         @ardalink/maintainers @ardalink/web-team @ardalink/security-team
+/ardalink-web/dashboard/src/components/LoginPage.tsx        @ardalink/maintainers @ardalink/web-team @ardalink/security-team
+/ardalink-web/talk/src/components/ChatPanel.tsx            @ardalink/maintainers @ardalink/web-team @ardalink/security-team
+/ardalink-web/talk/src/components/EnvPanel.tsx             @ardalink/maintainers @ardalink/web-team @ardalink/data-team
+/ardalink-web/talk/src/lib/                                @ardalink/maintainers @ardalink/web-team @ardalink/security-team
+
+# ── Marketing copy is user-facing: also needs design + content review ────
+/ardalink-marketing/                            @ardalink/maintainers @ardalink/web-team @ardalink/design-team
+/ardalink-marketing/site/                       @ardalink/maintainers @ardalink/web-team @ardalink/design-team
+/ardalink-marketing/poster/                     @ardalink/maintainers @ardalink/web-team @ardalink/design-team
+
+# ── Public long-form docs ───────────────────────────────────────────────
+/Arda-link-AI-Docs/                             @ardalink/maintainers @ardalink/docs-team
+/ARCHITECTURE-V2.md                             @ardalink/maintainers @ardalink/docs-team @ardalink/api-team @ardalink/engine-team
+
+# ── CI + automation ──────────────────────────────────────────────────────
+/.github/                                       @ardalink/maintainers @ardalink/devops-team
+/.github/workflows/ci.yml                       @ardalink/maintainers @ardalink/devops-team
+/.github/workflows/monorepo-ci.yml              @ardalink/maintainers @ardalink/devops-team
+/.github/PULL_REQUEST_TEMPLATE.md               @ardalink/maintainers @ardalink/devops-team
+/ardalink-api/.github/workflows/ci.yml          @ardalink/maintainers @ardalink/devops-team
+/ardalink-engine/.github/workflows/ci.yml       @ardalink/maintainers @ardalink/devops-team
+/ardalink-web/.github/workflows/ci.yml          @ardalink/maintainers @ardalink/devops-team
+
+# ── Legal / licence ──────────────────────────────────────────────────────
+/LICENSE                                        @ardalink/maintainers @ardalink/legal
+/ardalink-api/LICENSE                           @ardalink/maintainers @ardalink/legal
+/ardalink-engine/LICENSE                        @ardalink/maintainers @ardalink/legal
+/ardalink-web/LICENSE                           @ardalink/maintainers @ardalink/legal
+
+# ── Dependency manifests (any change here is high-risk) ─────────────────
+/ardalink-api/package.json                      @ardalink/maintainers @ardalink/devops-team
+/ardalink-engine/pyproject.toml                 @ardalink/maintainers @ardalink/devops-team
+/ardalink-engine/uv.lock                        @ardalink/maintainers @ardalink/devops-team
+/ardalink-web/package.json                      @ardalink/maintainers @ardalink/devops-team
+/ardalink-web/pnpm-lock.yaml                    @ardalink/maintainers @ardalink/devops-team
+/ardalink-web/pnpm-workspace.yaml               @ardalink/maintainers @ardalink/devops-team

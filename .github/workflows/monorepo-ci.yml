@@ -1,0 +1,442 @@
+name: Monorepo CI
+
+# Top-level orchestrator for the public ArdaLink monorepo. Runs all
+# three service CIs in parallel after a single hygiene job, plus
+# marketing-site + long-form-docs jobs.
+#
+# The per-service workflows at ardalink-{api,engine,web}/.github/workflows/ci.yml
+# are still available as independent triggers when only one service is
+# touched in a fork-PR scenario; this orchestrator is the source of
+# truth for "is the whole monorepo green?".
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: monorepo-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  paths:
+    name: Paths changed
+    runs-on: ubuntu-latest
+    outputs:
+      engine: ${{ steps.filter.outputs.engine }}
+      api: ${{ steps.filter.outputs.api }}
+      web: ${{ steps.filter.outputs.web }}
+      marketing: ${{ steps.filter.outputs.marketing }}
+      docs: ${{ steps.filter.outputs.docs }}
+      root: ${{ steps.filter.outputs.root }}
+      ci: ${{ steps.filter.outputs.ci }}
+      any: ${{ steps.filter.outputs.any }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 1 }
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            engine:
+              - 'ardalink-engine/**'
+              - '.github/workflows/monorepo-ci.yml'
+            api:
+              - 'ardalink-api/**'
+              - '.github/workflows/monorepo-ci.yml'
+            web:
+              - 'ardalink-web/**'
+              - '.github/workflows/monorepo-ci.yml'
+            marketing:
+              - 'ardalink-marketing/**'
+              - '.github/workflows/monorepo-ci.yml'
+            docs:
+              - 'Arda-link-AI-Docs/**'
+              - 'README.md'
+              - 'RUNBOOK.md'
+              - 'LOCAL_SETUP.md'
+              - 'LICENSE'
+              - 'ARCHITECTURE-V2.md'
+              - '.github/workflows/monorepo-ci.yml'
+            root:
+              - 'README.md'
+              - 'RUNBOOK.md'
+              - 'LOCAL_SETUP.md'
+              - 'LICENSE'
+              - 'ARCHITECTURE-V2.md'
+              - '.gitignore'
+              - '.github/**'
+              - 'CODEOWNERS'
+            ci:
+              - '.github/**'
+              - '**/ci.yml'
+              - '**/*.test.ts'
+              - '**/*.test.py'
+
+  hygiene:
+    name: Hygiene (root)
+    needs: paths
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail on TODO/FIXME/XXX/HACK/STUB in committed source
+        run: |
+          set -euo pipefail
+          PATTERN='\b(TODO|FIXME|XXX|HACK|STUB)\b'
+          if grep -RInE --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=.git \
+               --exclude-dir=.venv --exclude-dir=__pycache__ --exclude-dir=.pytest_cache \
+               --exclude-dir=.mypy_cache --exclude-dir=.ruff_cache \
+               --exclude-dir=docs --exclude-dir=Arda-link-AI-Docs \
+               --exclude='*.md' "$PATTERN" \
+               ardalink-api/src ardalink-api/tests \
+               ardalink-engine/ardalink_engine ardalink-engine/tests \
+               ardalink-web/dashboard/src ardalink-web/dashboard/tests \
+               ardalink-web/talk/src ardalink-web/talk/tests \
+               ardalink-web/packages/api-client-react/src ardalink-web/packages/api-client-react/tests; then
+            echo "::error::TODO/FIXME/XXX/HACK/STUB markers present in committed source."
+            exit 1
+          fi
+      - name: Fail on committed build artefacts or vendor trees (root)
+        run: |
+          set -euo pipefail
+          for d in node_modules .venv dist __pycache__ .pytest_cache .mypy_cache .ruff_cache; do
+            found=$(find . -name "$d" -type d -not -path './.git/*' 2>/dev/null | head -3)
+            if [ -n "$found" ]; then
+              echo "::error::$d present in working tree at: $found"
+              exit 1
+            fi
+          done
+      - name: Fail on live .env files (anywhere)
+        run: |
+          set -euo pipefail
+          if find . -name '.env' -not -path './.git/*' 2>/dev/null | grep -q .; then
+            echo "::error::Live .env file present. It must never be committed."
+            exit 1
+          fi
+      - name: Fail on Proprietary markers (project is MIT)
+        run: |
+          set -euo pipefail
+          HITS=$(grep -RIl --exclude-dir=.git --exclude-dir=.github \
+                --exclude-dir=node_modules --exclude-dir=.venv \
+                --exclude-dir=__pycache__ --exclude-dir=dist \
+                --exclude='INVENTORY.md' \
+                -E 'Proprietary[ -]License|all rights reserved' \
+                . 2>/dev/null | grep -v 'INVENTORY.md' || true)
+          if [ -n "$HITS" ]; then
+            echo "::error::Proprietary markers re-introduced. Project is MIT."
+            echo "$HITS"
+            exit 1
+          fi
+      - name: Fail on || true / || echo in package.json scripts
+        run: |
+          set -euo pipefail
+          HITS=$(grep -RInE '"[^"]*\|\| *(true|echo)[^"]*"' \
+                --include='package.json' \
+                --exclude-dir=node_modules \
+                ardalink-api ardalink-engine ardalink-web 2>/dev/null || true)
+          if [ -n "$HITS" ]; then
+            echo "::error::'|| true' or '|| echo' in a package.json script — scripts must fail loud."
+            echo "$HITS"
+            exit 1
+          fi
+      - name: Fail on || echo in CI step commands
+        run: |
+          set -euo pipefail
+          HITS=$(grep -RInE 'run: .*\|\| *echo' \
+                --exclude-dir=node_modules \
+                .github ardalink-api/.github ardalink-engine/.github ardalink-web/.github 2>/dev/null || true)
+          if [ -n "$HITS" ]; then
+            echo "::error::'|| echo' in a CI step — steps must fail loud."
+            echo "$HITS"
+            exit 1
+          fi
+      - name: Fail on stale MUNENE1212 cross-references
+        run: |
+          set -euo pipefail
+          # Allow them inside docs/ (historical CTI snapshot) and Arda-link-AI-Docs.
+          HITS=$(grep -RIl --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.venv \
+                --exclude-dir=__pycache__ --exclude-dir=dist --exclude-dir=docs \
+                --exclude-dir=Arda-link-AI-Docs \
+                'MUNENE1212' \
+                README.md RUNBOOK.md LOCAL_SETUP.md LICENSE ARCHITECTURE-V2.md \
+                ardalink-api/README.md ardalink-engine/README.md ardalink-web/README.md \
+                ardalink-marketing/README.md 2>/dev/null || true)
+          if [ -n "$HITS" ]; then
+            echo "::error::Stale MUNENE1212 cross-references in public docs. Update to JHUB-AFRICA/arda-link-ai."
+            echo "$HITS"
+            exit 1
+          fi
+      - name: Fail on user-facing jargon (marketing site + poster SVG)
+        run: |
+          set -euo pipefail
+          # NDVI / RLS / JWT / Azure gpt-4o / Express are not allowed in
+          # user-facing copy. Source files (.py) are NOT scanned here —
+          # only the rendered .svg / .html output.
+          if grep -RInE '\b(NDVI|RLS|JWT|gpt-4o)\b' \
+               ardalink-marketing/site/*.html \
+               ardalink-marketing/poster/poster-*.svg 2>/dev/null; then
+            echo "::error::Jargon (NDVI/RLS/JWT/gpt-4o) present in user-facing marketing copy."
+            exit 1
+          fi
+          # "Express" must be a whole word (not part of "Expressway" etc).
+          if grep -RInE '\bExpress\b' \
+               ardalink-marketing/site/*.html \
+               ardalink-marketing/poster/poster-*.svg 2>/dev/null; then
+            echo "::error::Jargon ('Express') present in user-facing marketing copy."
+            exit 1
+          fi
+      - name: Fail on INVENTORY.md / session-ses_*.md tracked by git
+        run: |
+          set -euo pipefail
+          TRACKED=$(git ls-files INVENTORY.md session-ses_*.md 2>/dev/null || true)
+          if [ -n "$TRACKED" ]; then
+            echo "::error::The following are tracked by git but must never be committed:"
+            echo "$TRACKED"
+            exit 1
+          fi
+
+  root-readme:
+    name: Root README sanity
+    needs: [paths, hygiene]
+    if: needs.paths.outputs.root == 'true' || needs.paths.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Root README links to JHUB-AFRICA/arda-link-ai
+        run: |
+          set -euo pipefail
+          grep -q 'github.com/JHUB-AFRICA/arda-link-ai' README.md || {
+            echo "::error::README.md must link to https://github.com/JHUB-AFRICA/arda-link-ai"
+            exit 1
+          }
+      - name: Root README is MIT (not Proprietary)
+        run: |
+          set -euo pipefail
+          if grep -qi 'proprietary' README.md; then
+            echo "::error::README.md still mentions Proprietary. Project is MIT."
+            exit 1
+          fi
+      - name: RUNBOOK.md references ARCHITECTURE-V2.md (not ARCHITECTURE.md)
+        run: |
+          set -euo pipefail
+          if grep -nE 'ARCHITECTURE\.md\b' RUNBOOK.md | grep -v 'ARCHITECTURE-V2'; then
+            echo "::error::RUNBOOK.md still references superseded ARCHITECTURE.md."
+            exit 1
+          fi
+
+  engine:
+    name: Engine CI (uv + ruff + pytest)
+    needs: [paths, hygiene]
+    if: needs.paths.outputs.engine == 'true' || needs.paths.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install uv
+      - run: uv sync --all-extras --frozen
+      - name: ruff check
+        run: uv run ruff check .
+      - name: pytest with coverage floor
+        run: uv run pytest
+      - name: secrets scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: vuln scan (pip-audit)
+        run: |
+          pip install pip-audit
+          uv export --no-hashes --format=requirements-txt > requirements-ci.txt
+          pip-audit -r requirements-ci.txt
+
+  api:
+    name: API CI (pnpm + vitest + esbuild)
+    needs: [paths, hygiene]
+    if: needs.paths.outputs.api == 'true' || needs.paths.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+      - run: cd ardalink-api && pnpm install --frozen-lockfile
+      - name: typecheck (strict)
+        run: cd ardalink-api && pnpm run typecheck
+      - name: test (strict)
+        run: cd ardalink-api && pnpm run test
+      - name: build + dist artefact check
+        run: |
+          set -euo pipefail
+          cd ardalink-api && pnpm run build
+          test -f dist/index.mjs || { echo "::error::dist/index.mjs missing"; exit 1; }
+          test -s dist/index.mjs || { echo "::error::dist/index.mjs empty"; exit 1; }
+      - name: secrets scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  web:
+    name: Web CI (dashboard + talk + api-client-react)
+    needs: [paths, hygiene]
+    if: needs.paths.outputs.web == 'true' || needs.paths.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+      - run: cd ardalink-web && pnpm install --frozen-lockfile
+      - name: typecheck (all packages, strict)
+        run: cd ardalink-web && pnpm run typecheck
+      - name: test (all packages, strict)
+        run: cd ardalink-web && pnpm run test
+      - name: build + dist artefact check
+        run: |
+          set -euo pipefail
+          cd ardalink-web && pnpm run build
+          test -f dashboard/dist/index.html || { echo "::error::dashboard/dist/index.html missing"; exit 1; }
+          test -f talk/dist/index.html || { echo "::error::talk/dist/index.html missing"; exit 1; }
+      - name: secrets scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  marketing:
+    name: Marketing site (jargon + brand)
+    needs: [paths, hygiene]
+    if: needs.paths.outputs.marketing == 'true' || needs.paths.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install qrcode
+      - name: Regenerate posters from source
+        run: |
+          set -euo pipefail
+          cd ardalink-marketing/poster
+          python3 build_posters.py
+      - name: Regenerate PDFs from SVG
+        run: |
+          set -euo pipefail
+          cd ardalink-marketing/poster
+          rsvg-convert -f pdf -o poster-A0.pdf poster-A0.svg
+          rsvg-convert -f pdf -o poster-letter.pdf poster-letter.svg
+      - name: Brand palette enforcement
+        run: |
+          set -euo pipefail
+          # Only the brand colours are allowed in the CSS file. Hard-coded
+          # hex values elsewhere are flagged.
+          ALLOWED='(#0B0B12|#15151F|#1C1C28|#2A2A38|#F5F5F4|#A8A29E|#71717A|#F59E0B|#FF3C00|#84CC16|#38BDF8|#DC2626)'
+          HITS=$(grep -RInE '#[0-9a-fA-F]{6}' ardalink-marketing/site/assets/css/style.css \
+                 | grep -vE "$ALLOWED" || true)
+          if [ -n "$HITS" ]; then
+            echo "::error::Off-brand hex values in style.css:"
+            echo "$HITS"
+            exit 1
+          fi
+      - name: Final jargon grep (post-regen)
+        run: |
+          set -euo pipefail
+          for jargon in NDVI RLS JWT 'gpt-4o' Express; do
+            if grep -RInE "\\b${jargon}\\b" ardalink-marketing/site/*.html \
+                                      ardalink-marketing/poster/poster-*.svg 2>/dev/null; then
+              echo "::error::Jargon '${jargon}' present in user-facing marketing copy."
+              exit 1
+            fi
+          done
+      - name: Static-serve smoke test
+        run: |
+          set -euo pipefail
+          cd ardalink-marketing/site
+          python3 -m http.server 8765 &
+          SERVER_PID=$!
+          sleep 2
+          # All 7 HTML pages must respond 200
+          for page in index.html problem.html solution.html how-it-works.html demo.html business.html team.html; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:8765/$page")
+            if [ "$code" != "200" ]; then
+              echo "::error::$page returned HTTP $code"
+              kill $SERVER_PID 2>/dev/null || true
+              exit 1
+            fi
+          done
+          kill $SERVER_PID 2>/dev/null || true
+
+  docs:
+    name: Long-form docs (Arda-link-AI-Docs)
+    needs: [paths, hygiene]
+    if: needs.paths.outputs.docs == 'true' || needs.paths.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Every doc file must be ≤ 200 KB and ≤ 1500 lines
+        run: |
+          set -euo pipefail
+          for f in Arda-link-AI-Docs/*.md; do
+            sz=$(stat -c%s "$f")
+            lc=$(wc -l < "$f")
+            if [ "$sz" -gt 204800 ]; then
+              echo "::error::$f is $sz bytes (> 200 KB). Split it."
+              exit 1
+            fi
+            if [ "$lc" -gt 1500 ]; then
+              echo "::error::$f is $lc lines (> 1500). Split it."
+              exit 1
+            fi
+          done
+      - name: Cross-references resolve
+        run: |
+          set -euo pipefail
+          # Every relative .md link inside Arda-link-AI-Docs must point
+          # to a file that exists.
+          cd Arda-link-AI-Docs
+          broken=0
+          while IFS= read -r ref; do
+            target="${ref#./}"
+            if [ ! -f "$target" ]; then
+              echo "::error::Broken reference in docs: $ref"
+              broken=1
+            fi
+          done < <(grep -hoE '\]\([^)]+\.md[^)]*\)' *.md | sed -E 's/^\]\(([^)]+)\)$/\1/' | grep -E '^[./]' || true)
+          exit $broken
+
+  summary:
+    name: All-green summary
+    needs:
+      - paths
+      - hygiene
+      - root-readme
+      - engine
+      - api
+      - web
+      - marketing
+      - docs
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all jobs succeeded
+        run: |
+          set -euo pipefail
+          # GitHub Actions exposes job results as ${{ needs.<job>.result }}.
+          # We hardcode the expected set here so a missing job is also flagged.
+          declare -A results
+          for j in hygiene root-readme engine api web marketing docs; do
+            r="${{ needs.$j.result }}"
+            if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then
+              echo "::error::$j job status: $r"
+              exit 1
+            fi
+          done
+          echo "✓ All required jobs passed (or were skipped because no paths matched)"

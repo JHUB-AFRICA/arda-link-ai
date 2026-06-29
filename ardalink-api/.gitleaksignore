@@ -1,0 +1,4 @@
+# gitleaks ignore — test fixtures use obviously-fake secrets
+# Format: <fingerprint or file:line>
+# Suppress generic-api-key for tests/setup.ts (fake test JWT secret)
+tests/setup.ts:generic-api-key:26

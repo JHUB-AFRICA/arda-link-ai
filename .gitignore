@@ -1,0 +1,55 @@
+# ─── Node / pnpm ────────────────────────────────────────────────────────────
+node_modules/
+.pnpm-store/
+
+# ─── Build artefacts ─────────────────────────────────────────────────────────
+dist/
+build/
+out-tsc/
+*.tsbuildinfo
+.vite/
+
+# ─── Python / uv / pytest / ruff / mypy ─────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+.venv/
+venv/
+.python-version
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# ─── Local scratch (per-team) ────────────────────────────────────────────────
+outputs/
+screenshots/
+exports/
+*.log
+
+# ─── IDE / editor ────────────────────────────────────────────────────────────
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+
+# ─── OS noise ────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ─── Secrets (NEVER commit) ──────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ─── Inventory / session scratch (deleted from repo before push) ─────────────
+INVENTORY.md
+session-ses_*.md

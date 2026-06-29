@@ -1,0 +1,144 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  hygiene:
+    name: Hygiene (TODO / dist / vendored)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail on TODO/FIXME/XXX/HACK/STUB in committed source
+        run: |
+          set -euo pipefail
+          # Allow these markers only in docs/, tests/fixtures, and the public archive markers.
+          PATTERN='\b(TODO|FIXME|XXX|HACK|STUB)\b'
+          if grep -RInE --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=.git \
+               --exclude-dir=docs "$PATTERN" src tests; then
+            echo "::error::TODO/FIXME/XXX/HACK/STUB markers present in committed source. Resolve or annotate with a date."
+            exit 1
+          fi
+      - name: Fail on committed build artefacts or vendor trees
+        run: |
+          set -euo pipefail
+          if [ -d node_modules ] || [ -d dist ] || [ -d lib/api-spec/node_modules ] \
+             || [ -d lib/api-zod/node_modules ] || [ -d lib/db/node_modules ]; then
+            echo "::error::Build artefacts or vendor trees present. Add them to .gitignore and remove."
+            exit 1
+          fi
+      - name: Fail on live .env files
+        run: |
+          set -euo pipefail
+          if [ -f .env ]; then
+            echo "::error::Live .env file present. It must never be committed."
+            exit 1
+          fi
+
+  install:
+    name: Install (frozen lockfile)
+    needs: hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+      - name: Install with frozen lockfile (catches dep-pin drift)
+        run: pnpm install --frozen-lockfile
+
+  typecheck:
+    name: Typecheck (strict, no || true)
+    needs: install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - name: tsc --noEmit (fails on any error)
+        run: pnpm run typecheck
+
+  test:
+    name: Test (vitest, strict)
+    needs: install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - name: vitest run (fails on any failing test)
+        run: pnpm run test
+
+  build:
+    name: Build (esbuild, dist/ artefact check)
+    needs: [typecheck, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - name: dist/index.mjs must exist after build
+        run: |
+          set -euo pipefail
+          test -f dist/index.mjs || { echo "::error::dist/index.mjs missing after build"; exit 1; }
+          test -s dist/index.mjs || { echo "::error::dist/index.mjs is empty"; exit 1; }
+
+  secrets:
+    name: Secrets scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  vuln-scan:
+    name: Vuln scan (pnpm audit + trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - name: pnpm audit (fail on high/critical)
+        run: pnpm audit --prod --audit-level=high
+      - uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: "fs"
+          scan-ref: "."
+          format: "sarif"
+          output: "trivy.sarif"
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with: { sarif_file: trivy.sarif }

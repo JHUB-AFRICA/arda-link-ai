@@ -2,7 +2,7 @@
 
 The shortest path from a clean machine to a working local stack.
 For the full manual, see `RUNBOOK.md`. For diagrams, see
-`ARCHITECTURE.md`.
+`ARCHITECTURE-V2.md`.
 
 ---
 
@@ -10,7 +10,7 @@ For the full manual, see `RUNBOOK.md`. For diagrams, see
 
 | Tool | Min | Check |
 |---|---|---|
-| Node.js | 22.x | `node -v` |
+| Node.js | 24.x | `node -v` |
 | pnpm | 9.x | `pnpm -v` |
 | Python | 3.12 | `python3 --version` |
 | uv | latest | `uv --version` |
@@ -20,15 +20,15 @@ For the full manual, see `RUNBOOK.md`. For diagrams, see
 
 ---
 
-## 1. Clone the three repos
+## 1. Clone the repo
 
 ```bash
-mkdir -p ~/arjolink && cd ~/arjolink
-for repo in ardalink-engine ardalink-api ardalink-web; do
-  git clone --branch migrate/import-legacy \
-    https://github.com/MUNENE1212/$repo.git
-done
+git clone https://github.com/JHUB-AFRICA/arda-link-ai.git
+cd arda-link-ai
 ```
+
+The three services (`ardalink-engine/`, `ardalink-api/`, `ardalink-web/`)
+ship as siblings in this single public monorepo.
 
 The public local-dev surface is `ardalink-api/docs/local-dev/`. That
 one Makefile drives the whole stack.
@@ -167,7 +167,7 @@ demo data; you'll need to re-seed).
 
 - **Need the full operator manual?** `RUNBOOK.md` — daily workflow,
   troubleshooting, disaster recovery, how to read the source.
-- **Need the architecture?** `ARCHITECTURE.md` — system overview,
+- **Need the architecture?** `ARCHITECTURE-V2.md` — system overview,
   multi-tenant request flow, HMAC attestation, data model.
 - **Need to understand a specific code path?** `RUNBOOK.md` has a
   "How to read the source" table at the bottom.

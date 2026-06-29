@@ -1,0 +1,16 @@
+# Reverse proxy with automatic TLS via Let's Encrypt.
+# Activated by `docker compose --profile tls up`.
+# Replace `ardalink.local` with your real hostname before going to production.
+
+ardalink.local, *.ardalink.local {
+    reverse_proxy api:3000
+    reverse_proxy /talk/* web:80
+    encode gzip
+    log
+}
+
+# Plain-HTTP fallback for local dev (no domain):
+:80 {
+    reverse_proxy api:3000
+    reverse_proxy /talk/* web:80
+}

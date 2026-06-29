@@ -1,0 +1,29 @@
+node_modules/
+dist/
+tmp/
+out-tsc/
+*.tsbuildinfo
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Test artifacts
+coverage/
+*.log
+
+# Local scratch
+outputs/
+screenshots/
+exports/

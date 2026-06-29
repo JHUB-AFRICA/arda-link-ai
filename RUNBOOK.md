@@ -3,7 +3,7 @@
 Step-by-step manual for running the full local stack. Read this if
 `LOCAL_SETUP.md` is too brief and you want the full picture. For the
 5-minute version, see `LOCAL_SETUP.md`. For diagrams, see
-`ARCHITECTURE.md`.
+`ARCHITECTURE-V2.md`.
 
 ---
 
@@ -40,18 +40,16 @@ parse JSON with it.
 
 ## 2. One-time setup on a new machine
 
-### 2.1 Clone the three repos
+### 2.1 Clone the repo
 
 ```bash
-mkdir -p ~/arjolink && cd ~/arjolink
-for repo in ardalink-engine ardalink-api ardalink-web; do
-  git clone --branch migrate/import-legacy \
-    https://github.com/MUNENE1212/$repo.git
-done
+git clone https://github.com/JHUB-AFRICA/arda-link-ai.git
+cd arda-link-ai
 ```
 
-(`main` is what's already deployed in production; `migrate/import-legacy`
-is the in-flight restructure branch. Use the right one for the task.)
+The three services (`ardalink-engine/`, `ardalink-api/`, `ardalink-web/`)
+ship as siblings in this single public monorepo. There are no separate
+private repos to clone.
 
 ### 2.2 Install dependencies
 
@@ -317,10 +315,9 @@ a fresh clone and verifies end-to-end.
 ```bash
 # 1. Set up a clean workspace
 mkdir -p /tmp/ardalink-rc && cd /tmp/ardalink-rc
-for repo in ardalink-engine ardalink-api ardalink-web; do
-  git clone --branch <RELEASE-BRANCH> \
-    --depth 1 https://github.com/MUNENE1212/$repo.git
-done
+git clone --branch <RELEASE-BRANCH> \
+  --depth 1 https://github.com/JHUB-AFRICA/arda-link-ai.git
+cd arda-link-ai
 
 # 2. Install
 cd ardalink-api && pnpm install --frozen-lockfile && cd ..
@@ -522,5 +519,5 @@ If you want to understand what a request does, start here:
 
 ---
 
-*See `ARCHITECTURE.md` for the diagrams. See `LOCAL_SETUP.md` for the
+*See `ARCHITECTURE-V2.md` for the diagrams. See `LOCAL_SETUP.md` for the
 5-minute install.*

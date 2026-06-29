@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Demo · ArdaLink</title>
+  <meta name="description" content="Walk the herder's journey: dial a number, tap a menu, get a brief, receive a call." />
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <nav class="nav" aria-label="Primary">
+      <a class="brand" href="index.html">
+        <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 L12 4 L20 20 L16 20 L12 12 L8 20 Z"/></svg></span>
+        <span><span class="name">ArdaLink</span><span class="sub">PASTORALIST INTELLIGENCE</span></span>
+      </a>
+      <button class="menu-toggle" aria-expanded="false" aria-label="Toggle menu">☰</button>
+      <div class="nav-links">
+        <a href="problem.html">Problem</a>
+        <a href="solution.html">Solution</a>
+        <a href="how-it-works.html">How it works</a>
+        <a href="demo.html" style="color: var(--primary);">Demo</a>
+        <a href="business.html">Business</a>
+        <a href="team.html">Team</a>
+        <a class="cta" href="https://github.com/JHUB-AFRICA/arda-link-ai" rel="noopener">GitHub ↗</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero" style="padding-top: 80px; padding-bottom: 40px;">
+      <div class="container">
+        <span class="kicker fade-up">See it work</span>
+        <h1 class="fade-up">The herder's journey,<br/>start to finish.</h1>
+        <p class="lede fade-up delay-1">
+          What she actually sees and hears. The exact menus, the
+          exact replies. Sandbox-verified end-to-end &mdash; what you
+          see here is what the live phone will see.
+        </p>
+      </div>
+    </section>
+
+    <!-- THE FIVE STEPS -->
+    <section>
+      <div class="container">
+        <div class="flow fade-up">
+          <div class="step s1">
+            <div class="num">1</div>
+            <div class="label">DIAL</div>
+            <h3>She dials <code>*123*8#</code></h3>
+            <p>USSD session opens. No data plan, no app, no signup.</p>
+          </div>
+          <div class="step s2">
+            <div class="num">2</div>
+            <div class="label">PICK</div>
+            <h3>1 · 2 · 3</h3>
+            <p>Brief · Water · Call me back. Two taps to her answer.</p>
+          </div>
+          <div class="step s3">
+            <div class="num">3</div>
+            <div class="label">REPLY</div>
+            <h3>Swahili or English</h3>
+            <p>Concise. ≤160 chars on SMS. Fits a 2G phone screen.</p>
+          </div>
+          <div class="step s4">
+            <div class="num">4</div>
+            <div class="label">CALL</div>
+            <h3>ArdaLink calls her</h3>
+            <p>A real conversation in her dialect. She answers. We listen.</p>
+          </div>
+          <div class="step s5">
+            <div class="num">5</div>
+            <div class="label">REMEMBER</div>
+            <h3>What she said</h3>
+            <p>Her answers feed the next alert. The system gets smarter.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ONE FULL SESSION -->
+    <section>
+      <div class="container">
+        <span class="kicker fade-up">One USSD session</span>
+        <h2 class="fade-up">Six taps from dial-tone to goodbye.</h2>
+        <pre class="code fade-up" style="margin-top: 20px;"><span class="dim">→</span> POST /api/ussd-callback  text=<span class="ok">""</span>
+<span class="dim">←</span> <span class="ok">200</span>  <span class="cyan">CON</span> ArdaLink — Bula Pesa
+                       1. Bula Pesa (drought brief)
+                       2. Malisho (water points)
+                       3. Ongea na AI (voice call)
+                       4. Toka
+
+<span class="dim">→</span> POST /api/ussd-callback  text=<span class="ok">"1"</span>
+<span class="dim">←</span> <span class="ok">200</span>  <span class="cyan">CON</span> Bula Pesa brief:
+                       1. Kwa Kiswahili (Swahili)
+                       2. In English
+                       0. Rudi / Back
+
+<span class="dim">→</span> POST /api/ussd-callback  text=<span class="ok">"1*1"</span>
+<span class="dim">←</span> <span class="ok">200</span>  <span class="cyan">END</span> Bula Pesa leo: 12% ya eneo limeathirika.
+                       Hatari: high. Piga simu ArdaLink kwa ripoti kamili.
+
+<span class="dim">→</span> POST /api/ussd-callback  text=<span class="ok">"2"</span>
+<span class="dim">←</span> <span class="ok">200</span>  <span class="cyan">END</span> Malisho / Water points:
+                       1. Bulla Pesa Borehole (SW, ~2km)
+                       2. Ngare Mara Spring (NE, ~9km)
+                       3. Kambi Garba Dam (SE, ~14km)
+
+<span class="dim">→</span> POST /api/ussd-callback  text=<span class="ok">"4"</span>
+<span class="dim">←</span> <span class="ok">200</span>  <span class="cyan">END</span> Asante. Kwaheri.</pre>
+        <p class="dim fade-up" style="margin-top: 12px; font-size: .9rem;">
+          Run it yourself: <code>make sandbox-ussd</code> from the repo. No live phone needed.
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <div class="container">
+        <span class="kicker fade-up">One voice call</span>
+        <h2 class="fade-up">When the satellite sees trouble, we call her.</h2>
+        <div class="two-up">
+          <div class="fade-up">
+            <p>
+              We compose a brief in Swahili ("the pasture in your
+              ward is drying up, two weeks ahead of last year"). We
+              call her number. She picks up. She tells us what she
+              sees — how the cows look, how far the water is. We
+              listen. Her answers go straight into the next
+              intelligence cycle.
+            </p>
+            <p class="muted">
+              The first version runs in real time, in her dialect,
+              on her 2G phone. The whole loop takes less than two
+              seconds.
+            </p>
+          </div>
+          <div class="fade-up delay-1">
+            <div class="photo" style="aspect-ratio: 4 / 5; border-radius: var(--radius-lg);">
+              <img src="assets/img/channel-voice.svg" alt="Placeholder: phone receiving an ArdaLink voice call" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="container">
+        <div class="pull-banner fade-up">
+          Want to run it yourself?<br/>
+          <strong>One command, no real phone needed.</strong>
+          <div style="margin-top: 18px;">
+            <a class="btn primary" href="https://github.com/JHUB-AFRICA/arda-link-ai" rel="noopener">Open the repo →</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container row">
+      <div>© <span id="year">2026</span> ArdaLink · JHUB Africa · Isiolo County</div>
+      <div class="meta">
+        <a href="problem.html">Problem</a>
+        <a href="solution.html">Solution</a>
+        <a href="how-it-works.html">How it works</a>
+        <a href="demo.html">Demo</a>
+        <a href="business.html">Business</a>
+        <a href="team.html">Team</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="assets/js/main.js" defer></script>
+</body>
+</html>

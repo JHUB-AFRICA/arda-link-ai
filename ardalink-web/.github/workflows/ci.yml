@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  hygiene:
+    name: Hygiene (TODO / dist / node_modules)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail on TODO/FIXME/XXX/HACK/STUB in committed source
+        run: |
+          set -euo pipefail
+          PATTERN='\b(TODO|FIXME|XXX|HACK|STUB)\b'
+          if grep -RInE --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=.git \
+               --exclude-dir=docs "$PATTERN" dashboard talk packages; then
+            echo "::error::TODO/FIXME/XXX/HACK/STUB markers present in committed source."
+            exit 1
+          fi
+      - name: Fail on committed build artefacts or vendor trees
+        run: |
+          set -euo pipefail
+          for d in node_modules dashboard/node_modules dashboard/dist \
+                   talk/node_modules talk/dist packages/api-client-react/node_modules; do
+            if [ -d "$d" ]; then
+              echo "::error::$d is present. It must be in .gitignore, not committed."
+              exit 1
+            fi
+          done
+      - name: Fail on live .env files
+        run: |
+          set -euo pipefail
+          for f in dashboard/.env dashboard/.env.local talk/.env talk/.env.local .env .env.local; do
+            if [ -f "$f" ]; then
+              echo "::error::$f present. Live env files must never be committed."
+              exit 1
+            fi
+          done
+
+  install:
+    name: Install (frozen lockfile)
+    needs: hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+      - name: pnpm install --frozen-lockfile (dep-pin)
+        run: pnpm install --frozen-lockfile
+
+  typecheck:
+    name: Typecheck (all packages, strict)
+    needs: install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - name: pnpm -r typecheck (no || true)
+        run: pnpm run typecheck
+
+  test:
+    name: Test (vitest per package, strict)
+    needs: install
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - name: pnpm -r test (no || true)
+        run: pnpm run test
+
+  build:
+    name: Build (dashboard + talk, dist/ artefact check)
+    needs: [typecheck, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+      - run: pnpm install --frozen-lockfile
+      - name: pnpm -r build (dashboard + talk)
+        run: pnpm run build
+      - name: dist/ artefacts must exist after build
+        run: |
+          set -euo pipefail
+          test -d dashboard/dist || { echo "::error::dashboard/dist missing after build"; exit 1; }
+          test -d talk/dist || { echo "::error::talk/dist missing after build"; exit 1; }
+          test -f dashboard/dist/index.html || { echo "::error::dashboard/dist/index.html missing"; exit 1; }
+          test -f talk/dist/index.html || { echo "::error::talk/dist/index.html missing"; exit 1; }
+
+  secrets:
+    name: Secrets scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
