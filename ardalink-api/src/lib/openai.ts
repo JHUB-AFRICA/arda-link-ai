@@ -8,6 +8,15 @@ export interface PixelContext {
   p5AnomalyPct: number; // worst 5% of pixels
   worstQuadrant: string;
   historicalImageCount: number;
+  /** Satellite GEE VCI data — if available from engine */
+  satellite?: {
+    vci: number; // Vegetation Condition Index (0-100)
+    droughtClass: string; // "no_drought" | "mild" | "moderate" | "severe" | "extreme"
+    ndviVsBaseline: number; // % change from historical baseline
+    imageFreshness: string; // "X days ago" or date
+    urbanMasked: boolean; // whether urban areas were masked
+    prosopisFactor: number; // invasive shrub correction factor
+  };
   /** Real-time climate snapshot — if available, woven into the script */
   climate?: {
     tempC: number;
@@ -152,6 +161,33 @@ function buildTemplateScript(
         : "Hali ipo kote sawa. ")
     : `NDVI imeshuka ${Math.abs(ndviPct).toFixed(0)}% chini ya wastani wa miaka 11. `;
 
+  // VCI data line — from GEE engine (when available)
+  let vciLine = "";
+  if (px?.satellite) {
+    const sat = px.satellite;
+    const vci = sat.vci.toFixed(1);
+    const ndviDelta = sat.ndviVsBaseline.toFixed(0);
+    const vciSwahili =
+      sat.droughtClass === "extreme"
+        ? "bukoa kali sana"
+        : sat.droughtClass === "severe"
+          ? "bukoa kali"
+          : sat.droughtClass === "moderate"
+            ? "bukoa ya kati"
+            : sat.droughtClass === "mild"
+              ? "bukoa ndogo"
+              : "hali ya wastani";
+
+    vciLine =
+      `Kwa mujibu wa data ya Google Earth Engine, ` +
+      `VCI (Vegetation Condition Index) ni ${vci}/100. ` +
+      `Hali ya ukame wa majani ni ${vciSwahili}. ` +
+      (sat.ndviVsBaseline < 0
+        ? `NDVI imeshuka ${ndviDelta}% chini ya kipindi kile hicho. `
+        : `NDVI ni juu ya kipindi kile hicho kwa ${ndviDelta}%. `) +
+      (sat.imageFreshness ? `Picha hii ya satellite ni ya ${sat.imageFreshness}. ` : "");
+  }
+
   // Climate data line — woven in when available
   let climateLine = "";
   if (cl) {
@@ -194,6 +230,7 @@ function buildTemplateScript(
     `Habari yako. Mimi ni ArdaLink, msimamizi wa malisho Isiolo. ` +
     `${swahiliPhrase} katika Bula Pesa Ward mwezi huu wa ${monthName}. ` +
     pixelLine +
+    vciLine +
     climateLine +
     `Tunajua hali hii inaweza kuathiri mifugo yako na familia yako. ` +
     `Tunataka kujua hali halisi kutoka kwako — wewe ndiye mtaalamu wa ardhi hii. `;
@@ -233,6 +270,15 @@ export async function generateScript(
 
   const cl = px?.climate;
   const fc = px?.forecast;
+  const sat = px?.satellite;
+
+  const satelliteLines = sat
+    ? `\nGoogle Earth Engine VCI data:
+- VCI (Vegetation Condition Index): ${sat.vci.toFixed(1)}/100 (${sat.droughtClass} drought)
+- NDVI vs baseline: ${sat.ndviVsBaseline.toFixed(1)}% ${sat.ndviVsBaseline < 0 ? "below" : "above"} historical max
+- Image freshness: ${sat.imageFreshness}
+- Urban areas masked: ${sat.urbanMasked ? "yes" : "no"} | Prosopis factor: ${sat.prosopisFactor.toFixed(2)}`
+    : "";
 
   const climateLines = cl
     ? `\nCurrent climate (last 30 days, Open-Meteo ERA5):
@@ -270,12 +316,12 @@ Be honest about severity but never alarming. One sentence of hope or direction a
             role: "user",
             content: `Generate a voice call script for a Boran pastoralist in Bula Pesa Ward — ${monthName}.
 
-Ward-mean vs Cosmos DB 11-year baseline:
+Ward-mean vs the engine's aggregate baseline:
 - NDVI: ${delta.NDVI.live.toFixed(3)} (${ndviPct > 0 ? "+" : ""}${ndviPct.toFixed(1)}%)
 - NDRE: ${delta.NDRE.live.toFixed(3)} (${delta.NDRE.delta_pct > 0 ? "+" : ""}${delta.NDRE.delta_pct.toFixed(1)}%)
-- Red Edge: ${delta.RED_EDGE.live.toFixed(3)} (${rePct > 0 ? "+" : ""}${rePct.toFixed(1)}%)${pixelLines}${climateLines}${forecastLines}
+- Red Edge: ${delta.RED_EDGE.live.toFixed(3)} (${rePct > 0 ? "+" : ""}${rePct.toFixed(1)}%)${pixelLines}${satelliteLines}${climateLines}${forecastLines}
 
-Return JSON: {"script": "<45-second Swahili/English opening — weave in satellite, climate, and forecast naturally>", "question": "<one specific question calibrated to severity and the worst quadrant>"}`,
+Return JSON: {"script": "<45-second Swahili/English opening — weave in satellite VCI, climate, and forecast naturally>", "question": "<one specific question calibrated to severity and the worst quadrant>"}`,
           },
         ],
         maxTokens: 700,

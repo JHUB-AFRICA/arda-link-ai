@@ -1,6 +1,9 @@
 import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger.js";
 
+// Optional: Use the new intelligenceCore if ENABLE_INTELLIGENCE_CORE is set
+const useIntelligenceCore = process.env.ENABLE_INTELLIGENCE_CORE === "true";
+
 /**
  * Africa's Talking inbound SMS callback.
  *
@@ -48,6 +51,11 @@ router.post("/sms-callback", async (req, res): Promise<void> => {
   const from = typeof body.from === "string" ? body.from : AT_SANDBOX_NUMBER;
   const rawText = typeof body.text === "string" ? body.text : "";
   const keyword = normalise(rawText);
+
+  // Use the new intelligenceCore if enabled (for unified AI across channels)
+  if (useIntelligenceCore) {
+    return handleSmsWithCore(req, res, from, rawText);
+  }
 
   req.log.info(
     {
@@ -151,6 +159,51 @@ async function maybeCallback(phone: string, reason: string): Promise<void> {
     logger.info({ phone, reason }, "[SMS] Outbound callback triggered");
   } catch (err: unknown) {
     logger.error({ err, phone, reason }, "[SMS] callback failed");
+  }
+}
+
+/**
+ * SMS handler using the new intelligenceCore.
+ * This provides unified AI responses across all channels.
+ */
+async function handleSmsWithCore(
+  req: Request,
+  res: Response,
+  phone: string,
+  text: string,
+): Promise<void> {
+  const {
+    parseSmsInput,
+    generateAiResponse,
+    loadIntelligenceContext,
+  } = await import("../lib/channels/intelligenceCore");
+  const { SmsAdapter } = await import("../lib/channels/adapters");
+
+  try {
+    // Parse input using core
+    const parsed = parseSmsInput(phone, text);
+
+    // Load intelligence context
+    const intelContext = loadIntelligenceContext();
+
+    // Generate AI response
+    const aiResponse = await generateAiResponse(parsed, intelContext);
+
+    // Format for SMS
+    const formatted = SmsAdapter.format(aiResponse);
+
+    // Set plain text response for Africa's Talking
+    res.set("Content-Type", "text/plain");
+    res.send(formatted);
+
+    req.log.info(
+      { phone, intent: parsed.intent, ended: aiResponse.ended },
+      "[SMS] Response via intelligenceCore",
+    );
+  } catch (err: unknown) {
+    req.log.error({ err, phone }, "[SMS] intelligenceCore error");
+    res.set("Content-Type", "text/plain");
+    res.status(500).send("ArdaLink: hitilafu. / Error. Try again.");
   }
 }
 

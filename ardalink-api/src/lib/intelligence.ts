@@ -13,6 +13,7 @@ import { initiateCall, storeCallSession } from "./voice.js";
 import { fetchClimateSnapshot, type ClimateSnapshot } from "./climate.js";
 import { computeForecast, type VegetationForecast } from "./predict.js";
 import { saveSatelliteSnapshot } from "./snapshotCache.js";
+import { fetchSatelliteVCI, type VCISnapshot } from "./engine.js";
 import { logger } from "./logger.js";
 
 export interface IntelligenceResult {
@@ -28,7 +29,12 @@ export interface IntelligenceResult {
   call_initiated?: boolean;
   dry_run?: boolean;
   skip_reason?: string;
+  /** VCI data from GEE engine — optional, degrades gracefully */
+  vci?: VCISnapshot;
 }
+
+// Re-export VCISnapshot from engine for public API consumers
+export type { VCISnapshot } from "./engine.js";
 
 export interface CycleOptions {
   /** Skip making the actual phone call — run everything else and return results. */
@@ -103,12 +109,20 @@ export async function runIntelligenceCycle(
       { month, month_name },
       "[Satellite Check] Starting pixel-level analysis + climate fetch",
     );
-    const [live, climate] = await Promise.all([
+    const [live, climate, vci] = await Promise.all([
       fetchLiveVegetation(),
       fetchClimateSnapshot().catch((err) => {
         logger.warn(
           { err },
           "[Climate] Fetch failed — continuing without climate data",
+        );
+        return undefined;
+      }),
+      // Fetch VCI from the engine's GEE endpoint — optional, degrades gracefully
+      fetchSatelliteVCI("bula-pesa").catch((err) => {
+        logger.warn(
+          { err },
+          "[GEE VCI] Fetch failed — continuing without VCI data",
         );
         return undefined;
       }),
@@ -136,8 +150,11 @@ export async function runIntelligenceCycle(
       { month, month_name },
       "[Baseline Match] Fetching ward baseline + 14-day forecast",
     );
+    // Resolve tenant slug → ward display name once, share across both calls.
+    const { TENANT_HOME_WARD } = await import("./geoHelpers.js");
+    const homeWardName = TENANT_HOME_WARD["bula-pesa"] ?? "Bulla Pesa";
     const [baseline, forecast] = await Promise.all([
-      getMonthlyBaseline(month),
+      getMonthlyBaseline(month, homeWardName),
       computeForecast({
         stressedPixelPct: live.anomaly.wardStressedPixelPct,
         worstQuadrant: live.anomaly.worstQuadrant,
@@ -175,6 +192,7 @@ export async function runIntelligenceCycle(
       triggered: delta.triggered || forceAlert,
       climate: climate ?? undefined,
       forecast: forecast ?? undefined,
+      vci: vci ?? undefined,
       dry_run: dryRun || undefined,
     };
 
@@ -197,12 +215,54 @@ export async function runIntelligenceCycle(
     logger.info(
       "[AI Script Generation] Building ArdaLink script with pixel context",
     );
+
+    // Derive drought class from VCI: VCI < 10 = extreme, 10-20 = severe, 20-35 = moderate, 35-50 = mild, > 50 = no_drought
+    function vciToDroughtClass(vci: number): string {
+      if (vci < 10) return "extreme";
+      if (vci < 20) return "severe";
+      if (vci < 35) return "moderate";
+      if (vci < 50) return "mild";
+      return "no_drought";
+    }
+
+    // Compute NDVI vs baseline percentage from VCI snapshot
+    function ndviVsBaselinePct(vci: VCISnapshot): number {
+      const { ndvi_now, ndvi_min, ndvi_max } = vci;
+      if (ndvi_now == null || ndvi_max == null || ndvi_max === 0) return 0;
+      // VCI formula: (NDVI_now - NDVI_min) / (NDVI_max - NDVI_min) * 100
+      // We invert to show how far current is from max (baseline)
+      return ((ndvi_now - ndvi_max) / Math.abs(ndvi_max)) * 100;
+    }
+
+    // Format image freshness as "X days ago" or date
+    function formatImageFreshness(vci: VCISnapshot): string {
+      const captured = new Date(vci.captured_at);
+      const now = new Date();
+      const daysAgo = Math.floor((now.getTime() - captured.getTime()) / (1000 * 60 * 60 * 24));
+      if (daysAgo === 0) return "today";
+      if (daysAgo === 1) return "yesterday";
+      if (daysAgo < 7) return `${daysAgo} days ago`;
+      return captured.toISOString().split("T")[0] ?? vci.captured_at;
+    }
+
     const px: PixelContext = {
       wardStressedPixelPct: live.anomaly.wardStressedPixelPct,
       medianAnomalyPct: live.anomaly.NDVI.p50,
       p5AnomalyPct: live.anomaly.NDVI.p5,
       worstQuadrant: live.anomaly.worstQuadrant,
-      historicalImageCount: 0, // Cosmos DB pixel_grids used — no EE historical count
+      historicalImageCount: 0, // engine's baseline_pixel grid used — no EE historical count
+      ...(vci
+        ? {
+            satellite: {
+              vci: vci.vci,
+              droughtClass: vciToDroughtClass(vci.vci),
+              ndviVsBaseline: ndviVsBaselinePct(vci),
+              imageFreshness: formatImageFreshness(vci),
+              urbanMasked: vci.urban_masked,
+              prosopisFactor: vci.prosopis_factor,
+            },
+          }
+        : undefined),
       ...(climate
         ? {
             climate: {

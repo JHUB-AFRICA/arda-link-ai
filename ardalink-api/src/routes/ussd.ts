@@ -1,6 +1,9 @@
 import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger.js";
 
+// Optional: Use the new intelligenceCore if ENABLE_INTELLIGENCE_CORE is set
+const useIntelligenceCore = process.env.ENABLE_INTELLIGENCE_CORE === "true";
+
 /**
  * Africa's Talking USSD callback handler.
  *
@@ -134,6 +137,11 @@ router.post("/ussd-callback", async (req, res): Promise<void> => {
   const phone = pickPhone(body);
   const rawText = typeof body.text === "string" ? body.text : "";
   const { level, last } = parseLastInput(rawText);
+
+  // Use the new intelligenceCore if enabled (for unified AI across channels)
+  if (useIntelligenceCore) {
+    return handleUssdWithCore(req, res, phone, rawText);
+  }
 
   req.log.info(
     {
@@ -313,6 +321,50 @@ async function scheduleCall(phone: string, when: "now" | "tomorrow"): Promise<vo
     logger.info({ phone, when }, "[USSD] Call scheduled");
   } catch (err: unknown) {
     logger.error({ err, phone }, "[USSD] Failed to schedule call");
+  }
+}
+
+/**
+ * USSD handler using the new intelligenceCore.
+ * This provides unified AI responses across all channels.
+ */
+async function handleUssdWithCore(
+  req: Request,
+  res: Response,
+  phone: string,
+  text: string,
+): Promise<void> {
+  const {
+    parseUssdInput,
+    generateAiResponse,
+    loadIntelligenceContext,
+  } = await import("../lib/channels/intelligenceCore");
+  const { UssdAdapter } = await import("../lib/channels/adapters");
+
+  try {
+    // Parse input using core
+    const parsed = parseUssdInput(phone, text);
+
+    // Load intelligence context
+    const intelContext = loadIntelligenceContext();
+
+    // Generate AI response
+    const aiResponse = await generateAiResponse(parsed, intelContext);
+
+    // Format for USSD
+    const formatted = UssdAdapter.format(aiResponse);
+
+    res.set("Content-Type", "text/plain");
+    res.send(formatted);
+
+    req.log.info(
+      { phone, intent: parsed.intent, ended: aiResponse.ended },
+      "[USSD] Response via intelligenceCore",
+    );
+  } catch (err: unknown) {
+    req.log.error({ err, phone }, "[USSD] intelligenceCore error");
+    res.set("Content-Type", "text/plain");
+    res.status(500).send("END Hitilafu ya mfumo. / System error. Try again later.");
   }
 }
 

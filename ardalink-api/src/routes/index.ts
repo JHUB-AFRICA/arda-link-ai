@@ -14,9 +14,12 @@ import groundTruthRouter from "./groundTruth.js";
 import publicTalkRouter from "./publicTalk.js";
 import openDataRouter from "./openData.js";
 import llmRouter from "./llm.js";
+import satelliteRouter from "./satellite.js";
+import demoRouter from "./demo/index.js";
 
 const router: IRouter = Router();
 
+// Production routes
 router.use(healthRouter);
 router.use(authRouter);
 router.use(intelligenceRouter);
@@ -32,5 +35,9 @@ router.use(groundTruthRouter);
 router.use(publicTalkRouter);
 router.use(openDataRouter);
 router.use(llmRouter);
+router.use(satelliteRouter);
+
+// Demo routes (for local testing without Africa's Talking)
+router.use("/demo", demoRouter);
 
 export default router;
