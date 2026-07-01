@@ -64,9 +64,15 @@ provider and the feature surface it gates.
 | Provider | Env vars | What fails when missing | Code path |
 |---|---|---|---|
 | Azure OpenAI (chat + Realtime voice) | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` | `/api/chat`, `/api/intelligence/brief` (falls back to `MockClient`), `/api/voice-stream` (browser-voice) | `src/lib/llm/providers/azure.ts`, `src/routes/chat.ts` |
-| Azure Cosmos DB (baseline grids) | `COSMOS_DB_*` | Routes that read 11-year per-pixel baselines (used by intelligence cycle for "below baseline" framing) | `src/lib/cosmos.ts` |
 | Africa's Talking (SMS, USSD, voice telephony) | `AT_API_KEY`, `AT_USERNAME` | `/api/call-tokens`, `/api/sms`, `/api/ussd`, `/api/voice-callback` | `src/lib/voiceStream.ts`, `src/routes/{sms,ussd,voice}.ts` |
 | Google Earth Engine (live vegetation) | delegated to the engine | `/api/status` returns `degraded: true` with the engine's error in `last_run.error` | (engine owns the call — see `../ardalink-engine/README.md`) |
+
+> **Baseline source of truth** is the engine's Postgres table
+> `gis_engine.baseline_aggregate` (and optionally `baseline_pixel`).
+> Populated by `ardalink-engine/scripts/populate_baseline.py`. When the
+> table is empty for a (ward, month), the API does **not** return 503 —
+> it returns the live composite with `baselineSource: "none"` so the
+> dashboard can render "no baseline yet" honestly.
 
 ### 503 response shape
 
@@ -82,9 +88,9 @@ provider and the feature surface it gates.
 
 - **`error`** is a stable, machine-readable code (`upstream_unavailable`).
 - **`provider`** names the missing dependency (`azure_openai`,
-  `cosmos_db`, `africas_talking`, `google_earth_engine`).
+  `africas_talking`, `google_earth_engine`).
 - **`feature`** names the API surface that is gated
-  (`intelligence_brief`, `baseline_grid`, `voice_bridge`, `sms_outbound`,
+  (`intelligence_brief`, `voice_bridge`, `sms_outbound`,
   `ussd_inbound`).
 - **`message`** is human-readable, English-only, and contains the
   operator's next step (which env var to set, where to look).
@@ -100,6 +106,9 @@ provider and the feature surface it gates.
 - The intelligence brief falls back to the `MockClient` LLM provider,
   which returns a deterministic placeholder so the dashboard's
   pipeline stays testable end-to-end.
+- Live vegetation + GEE composite work without a baseline; the
+  anomaly report includes `baselineSource: "none"` so the dashboard
+  can render the "no baseline" state honestly.
 
 ### Why 503 and not silent graceful-degrade?
 

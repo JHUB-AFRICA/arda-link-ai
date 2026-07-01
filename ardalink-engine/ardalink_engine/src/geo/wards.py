@@ -15,6 +15,12 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Ward:
     name: str
+    """Display name (e.g. 'Bulla Pesa'). Spelled with spaces."""
+
+    wardcode: str
+    """IEBC wardcode (e.g. '242'). Used as the canonical ward_id in the
+    baseline_aggregate and baseline_pixel tables."""
+
     latitude: float
     longitude: float
     elevation_m: float
@@ -23,17 +29,25 @@ class Ward:
 
 
 # Ordered list of the 10 wards of Isiolo County.
+# Keys are display names (canonical, with spaces — matches the dashboard's
+# geoHelpers.ISILO_WARDS list and the IEBC GeoJSON `ward` field). Each Ward
+# carries its IEBC wardcode in `.wardcode`.
 WARDS: dict[str, Ward] = {
-    "Bulla Pesa": Ward("Bulla Pesa", 0.3540, 37.5880, 1100.0, 58.0, 62.0),
-    "Wabera": Ward("Wabera", 0.3490, 37.5820, 1120.0, 56.0, 64.0),
-    "Burat": Ward("Burat", 0.4000, 37.5500, 1150.0, 61.0, 58.0),
-    "Ngaremara": Ward("Ngaremara", 0.5000, 37.6000, 950.0, 49.0, 52.0),
-    "Oldonyiro": Ward("Oldonyiro", 0.7500, 36.9500, 1300.0, 64.0, 47.0),
-    "Chari": Ward("Chari", 0.5500, 38.2000, 700.0, 38.0, 40.0),
-    "Cherab": Ward("Cherab", 0.8500, 38.6000, 500.0, 31.0, 33.0),
-    "Garba Tulla": Ward("Garba Tulla", 0.5300, 38.5000, 600.0, 35.0, 38.0),
-    "Kinna": Ward("Kinna", 0.1000, 38.3500, 700.0, 44.0, 50.0),
-    "Sericho": Ward("Sericho", 0.7500, 38.9000, 450.0, 28.0, 30.0),
+    "Bulla Pesa":  Ward("Bulla Pesa",  "242", 0.3540, 37.5880, 1100.0, 58.0, 62.0),
+    "Wabera":      Ward("Wabera",      "241", 0.3490, 37.5820, 1120.0, 56.0, 64.0),
+    "Burat":       Ward("Burat",       "246", 0.4000, 37.5500, 1150.0, 61.0, 58.0),
+    "Ngare Mara":  Ward("Ngare Mara",  "245", 0.5000, 37.6000,  950.0, 49.0, 52.0),
+    "Oldonyiro":   Ward("Oldonyiro",   "247", 0.7500, 36.9500, 1300.0, 64.0, 47.0),
+    "Chari":       Ward("Chari",       "243", 0.5500, 38.2000,  700.0, 38.0, 40.0),
+    "Cherab":      Ward("Cherab",      "244", 0.8500, 38.6000,  500.0, 31.0, 33.0),
+    "Garbatulla":  Ward("Garbatulla",  "248", 0.5300, 38.5000,  600.0, 35.0, 38.0),
+    "Kinna":       Ward("Kinna",       "249", 0.1000, 38.3500,  700.0, 44.0, 50.0),
+    "Sericho":     Ward("Sericho",     "250", 0.7500, 38.9000,  450.0, 28.0, 30.0),
+}
+
+# Reverse lookup: ward name → IEBC wardcode (canonical ward_id).
+NAME_TO_WARDCODE: dict[str, str] = {
+    w.name: w.wardcode for w in WARDS.values()
 }
 
 WARD_NAMES: list[str] = list(WARDS.keys())

@@ -213,8 +213,11 @@ describe("GET /api/open-data/geo/isiolo-wards", () => {
       expect(Array.isArray(res.body.features)).toBe(true);
       expect(res.body.features.length).toBeGreaterThanOrEqual(8);
       for (const f of res.body.features) {
-        expect(f.properties.NAME_1).toBe("Isiolo");
-        expect(typeof f.properties.NAME_3).toBe("string");
+        // The canonical IEBC GeoJSON uses `county` (not GADM's `NAME_1`) and
+        // `ward` (not GADM's `NAME_3`). The dashboard accepts both names —
+        // see ardalink-web/dashboard/src/components/Choropleth.tsx.
+        expect(f.properties.county ?? f.properties.NAME_1).toBe("Isiolo");
+        expect(typeof (f.properties.ward ?? f.properties.NAME_3)).toBe("string");
       }
     }
   });
@@ -230,10 +233,10 @@ describe("GET /api/open-data/geo/ward-presets", () => {
     const homeWards = res.body.wards
       .filter((w: { isDemoHome: boolean }) => w.isDemoHome)
       .map((w: { name: string }) => w.name);
-    expect(homeWards).toContain("BullaPesa");
+    expect(homeWards).toContain("Bulla Pesa");
     expect(homeWards).toContain("Garbatulla");
     expect(homeWards).toContain("Sericho");
-    expect(res.body.tenant_home_ward["bula-pesa"]).toBe("BullaPesa");
+    expect(res.body.tenant_home_ward["bula-pesa"]).toBe("Bulla Pesa");
     expect(res.body.tenant_home_ward["merti"]).toBe("Sericho");
   });
 });
@@ -257,7 +260,7 @@ describe("GET /api/open-data/geo/ward-aggregates", () => {
       if (res.status === 200) {
         expect(res.body.metric).toBe(metric);
         expect(typeof res.body.byWard).toBe("object");
-        expect(res.body.byWard).toHaveProperty("BullaPesa");
+        expect(res.body.byWard).toHaveProperty("Bulla Pesa");
       }
     },
   );
@@ -276,7 +279,7 @@ describe("GET /api/open-data/geo/pastoralist-pins", () => {
         expect(typeof pin.lat).toBe("number");
         expect(typeof pin.lon).toBe("number");
         expect(typeof pin.ward).toBe("string");
-        expect(pin.ward).toBe("BullaPesa");
+        expect(pin.ward).toBe("Bulla Pesa");
       }
     }
   });
@@ -294,7 +297,7 @@ describe("GET /api/open-data/geo/report-pins", () => {
       for (const pin of res.body.pins) {
         expect(typeof pin.lat).toBe("number");
         expect(typeof pin.lon).toBe("number");
-        expect(pin.ward).toBe("BullaPesa");
+        expect(pin.ward).toBe("Bulla Pesa");
       }
     }
   });

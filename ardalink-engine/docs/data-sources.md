@@ -35,10 +35,17 @@ All three are confirmed live during the local-dev bring-up:
 
 | Provider | What it gives | Why it sits behind a flag | Code path |
 |---|---|---|---|
-| **Google Earth Engine** (Sentinel-2 SR Harmonized) | 10 m NDVI / NDRE / RED_EDGE composite over the ward, sampled to the exact pixel grid of the 11-year Cosmos baseline | Requires a service-account JSON (`GOOGLE_SERVICE_ACCOUNT_JSON`). On a cold local-dev boot the warm-up fails harmlessly and `fetchLiveVegetation()` returns **HTTP 503** with a clear "Earth Engine not configured" message. Fallback: live climate + open-data routes continue to work. | `ardalink_engine/src/pipeline/gee.py` |
-| **Azure Cosmos DB** (pre-computed 11-year pixel grids) | Per-pixel, per-month NDVI / NDRE / RED_EDGE baseline so the live composite can be compared to history | Requires `COSMOS_*` env vars. Without them, `fetchLiveVegetation()` cannot load the baseline and the engine returns **HTTP 503** on routes that require baseline comparison (`/api/assessment/spatial`). | Caller is the API service (`ardalink-api/src/lib/cosmos.ts`); the engine only consumes the resolved grid that the API passes in. |
+| **Google Earth Engine** (Sentinel-2 SR Harmonized) | 10 m NDVI / NDRE / RED_EDGE composite over the ward, sampled to the exact pixel grid of the baseline | Requires a service-account JSON (`GOOGLE_SERVICE_ACCOUNT_JSON`). On a cold local-dev boot the warm-up fails harmlessly and `fetchLiveVegetation()` returns **HTTP 503** with a clear "Earth Engine not configured" message. Fallback: live climate + open-data routes continue to work. | `ardalink_engine/src/pipeline/gee.py` |
 
-> **Degraded mode is loud.** When either provider is missing, the affected
+> **Baseline tables are NOT 503-eligible.** The engine's
+> `gis_engine.baseline_aggregate` and `gis_engine.baseline_pixel` are
+> empty by default. The endpoints (`/api/v1/baseline/aggregate`,
+> `/api/v1/baseline/pixel`) return HTTP 200 with `{"available": false}`
+> when empty — the dashboard renders "no baseline yet" honestly
+> instead of the intelligence cycle failing. Populate via
+> [`scripts/populate_baseline.py`](../scripts/populate_baseline.py).
+
+> **Degraded mode is loud.** When GEE is missing, the affected
 > route returns **HTTP 503** with a clear, human-readable message naming
 > the unavailable provider and the feature surface it gates. See
 > [`README.md`](../README.md) → "Degraded Mode" for the full contract.

@@ -48,7 +48,6 @@ describe('Multi-tenant row isolation', () => {
     // Tenant A sees only its own row
     await setTenant(env.db, 'bula-pesa');
     const aRows = await env.db.execute(
-      // @ts-expect-error - sql tag accepts strings at runtime
       'SELECT count(*)::int AS n FROM public.ground_truth_reports',
     );
     expect((aRows as unknown as { rows: { n: number }[] }).rows[0].n).toBe(1);

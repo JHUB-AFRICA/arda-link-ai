@@ -62,7 +62,7 @@ provider and the feature surface it gates.
 | Provider | Env vars | What fails when missing | Code path |
 |---|---|---|---|
 | Google Earth Engine | `GOOGLE_SERVICE_ACCOUNT_JSON` | Routes that compute live NDVI / NDRE / RED_EDGE composites (e.g. `/api/v1/conditions`, `/api/v1/grid/build`) | `ardalink_engine/src/pipeline/gee.py` → raises `GEEUnavailableError` |
-| Azure Cosmos DB (baseline grids) | `COSMOS_*` | Routes that compare the live composite to the 11-year baseline (`/api/v1/spatial`) | `ardalink_engine/src/db/client.py` → raised by `loadCosmosGrid()` |
+| Azure Cosmos DB (baseline grids) | _Removed — baseline is now in `gis_engine.baseline_aggregate` (Postgres). See `docs/data-sources.md`._ | — | — |
 | Azure OpenAI (chat-side enrichment) | `AZURE_OPENAI_*` | `/api/v1/journey`'s natural-language rationale layer | `ardalink_engine/src/ai/azure_client.py` → raises `AzureNotConfiguredError` |
 
 ### 503 response shape

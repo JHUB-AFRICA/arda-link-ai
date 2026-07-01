@@ -142,6 +142,15 @@ export interface StatusResponse {
   last_run_at: string | null;
   last_run_status: string | null;
   last_run_summary?: Record<string, unknown>;
+  /** Legacy alias used by the dashboard. */
+  last_run?: {
+    timestamp?: string;
+    month?: string;
+    live?: Record<string, unknown>;
+    climate?: Record<string, unknown>;
+    forecast?: Record<string, unknown>;
+    anomaly?: Record<string, unknown>;
+  };
 }
 
 export interface ForecastResponse {
@@ -164,6 +173,8 @@ export interface Pastoralist {
   alertsEnabled: boolean;
   alertsSent: number;
   createdAt: string;
+  lastContactAt?: string | null;
+  waterSource?: string;
 }
 
 export interface CreatePastoralistInput {
@@ -181,13 +192,21 @@ export interface ChatMessage {
 }
 
 export interface ChatRequest {
-  messages: ChatMessage[];
+  messages?: ChatMessage[];
+  /** Direct pass-through shape used by the dashboard. */
+  data?: { message: string; history?: ChatMessage[] };
   locale?: string;
 }
 
 export interface ChatResponse {
   reply: string;
+  /** Legacy alias for the old shape. */
+  content?: string;
+  /** Optional context the dashboard renders in the chat panel. */
+  context?: Record<string, unknown>;
   citations?: { source: string; snippet: string }[];
+  ok?: boolean;
+  message?: string;
 }
 
 export interface TriggerCheckInput {

@@ -6,7 +6,7 @@ ArdaLink gives pastoralist communities in Isiolo County a low-bandwidth, multi-c
 early-warning and decision-support system for drought stress. Herders reach it through
 USSD (`*123*8#`), SMS, browser voice, or an operator dashboard. Three independent services
 ingest open satellite + climate data, run biophysical models, and surface actionable
-summaries scoped to a single ward (Bula Pesa, Garbatulla, Merti) — with strict
+summaries scoped to a single ward (Bulla Pesa, Garbatulla, Merti) — with strict
 tenant isolation enforced at the database boundary.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
@@ -88,8 +88,21 @@ For the local dev stack (one Makefile, no secrets, 27-check bring-up), see
 | [`ARCHITECTURE-V2.md`](./ARCHITECTURE-V2.md) | Canonical system architecture and data flow | Engineers, CTOs |
 | [`RUNBOOK.md`](./RUNBOOK.md) | Step-by-step operator manual | Operators, on-call |
 | [`LOCAL_SETUP.md`](./LOCAL_SETUP.md) | 5-minute install on a fresh machine | New contributors |
-| [`Arda-link-AI-Docs/`](./Arda-link-AI-Docs/) | Long-form narrative (8 guides: api, architecture, data, deployment, onboarding, satellite, security, voice) | Engineers, partners |
-| `ardalink-{engine,api}/docs/` | Per-service 8-doc CTO navigation | Service-level readers |
+| [`Arda-link-AI-Docs/`](./Arda-link-AI-Docs/) | Long-form narrative (8 deep-dive guides) | Engineers, partners |
+| `ardalink-{engine,api,web}/docs/` | Per-service 8-doc CTO navigation (service-specific) | Service-level readers |
+
+### Deep-dive guides in `Arda-link-AI-Docs/`
+
+| Guide | Covers |
+|---|---|
+| [`architecture.md`](./Arda-link-AI-Docs/architecture.md) | System overview, C4-style context, technology stack |
+| [`api.md`](./Arda-link-AI-Docs/api.md) | All public REST endpoints, request/response shapes |
+| [`data.md`](./Arda-link-AI-Docs/data.md) | Postgres schema, ERD, multi-tenant RLS policies |
+| [`deployment.md`](./Arda-link-AI-Docs/deployment.md) | Local Docker Compose + production hosting options |
+| [`onboarding.md`](./Arda-link-AI-Docs/onboarding.md) | New-developer 30–60 min bring-up |
+| [`satellite.md`](./Arda-link-AI-Docs/satellite.md) | Google Earth Engine pipeline, Sentinel-2 indices, GEE account setup |
+| [`security.md`](./Arda-link-AI-Docs/security.md) | Auth, rate limiting, WebSocket security, threat model |
+| [`voice.md`](./Arda-link-AI-Docs/voice.md) | Africa's Talking integration, USSD, voice-call lifecycle |
 
 ---
 

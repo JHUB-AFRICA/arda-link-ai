@@ -161,7 +161,7 @@ export function Choropleth({
     let i = 0;
     const flyNext = () => {
       const f = wards[i % wards.length];
-      const name = String(f.properties["NAME_3"] ?? "");
+      const name = String(f.properties["NAME_3"] ?? f.properties["ward"] ?? "");
       if (name) dispatchFlyToWard(name, 1800);
       i += 1;
       if (i < wards.length * 2) {
@@ -637,7 +637,7 @@ function WardsLayer({
       style={(f) => safeStyle(() => styleForWard(f, aggregates, meta))}
       onEachFeature={(feature, layer) => {
         try {
-          const name = String(feature.properties["NAME_3"] ?? "");
+          const name = String(feature.properties["NAME_3"] ?? feature.properties["ward"] ?? "");
           const preset = presets?.wards.find((w) => w.name === name);
           const value = aggregates?.byWard[name] ?? null;
           const isHome = preset?.isDemoHome ?? false;
@@ -1468,7 +1468,7 @@ function styleForWard(
     fillOpacity: 0.5,
   };
   if (!feature) return base;
-  const name = String(feature.properties?.["NAME_3"] ?? "");
+  const name = String(feature.properties?.["NAME_3"] ?? feature.properties?.["ward"] ?? "");
   const value = aggregates?.byWard[name] ?? null;
   if (value == null) {
     return {
@@ -1536,7 +1536,7 @@ let activeWards: IsioloWardsFeatureCollection | null = null;
 function dispatchFlyToWard(name: string, durationMs = 1500) {
   if (!activeMap || !activeWards) return;
   const feat = activeWards.features.find(
-    (f) => String(f.properties["NAME_3"] ?? "") === name,
+    (f) => String(f.properties["NAME_3"] ?? f.properties["ward"] ?? "") === name,
   );
   if (!feat) return;
   const coords = feat.geometry.coordinates;

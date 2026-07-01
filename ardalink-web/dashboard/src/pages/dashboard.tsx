@@ -428,14 +428,14 @@ function GroundTruthSection() {
   const summary = summaryQ.data;
   const reports = recentQ.data ?? [];
 
-  const bcsChartData = (summary?.byQuadrant ?? []).map((q) => ({
+  const bcsChartData: { name: string; bcs: number | null; samples: number }[] = (summary?.byQuadrant ?? []).map((q) => ({
     name: QUADRANT_LABEL[q.quadrant] ?? q.quadrant,
     bcs: q.bcsAverage,
     samples: q.bcsSampleCount,
   }));
 
   // Keep nulls as nulls — Recharts will render gaps instead of misleading zero bars.
-  const correlationData = (summary?.byQuadrant ?? []).map((q) => ({
+  const correlationData: { name: string; bcs: number | null; correlation: number | null; samples: number }[] = (summary?.byQuadrant ?? []).map((q) => ({
     name: QUADRANT_LABEL[q.quadrant] ?? q.quadrant,
     bcs: q.bcsAverage,
     ndvi: q.ndviAverage,
@@ -776,7 +776,7 @@ function GroundTruthSection() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {reports.map((r) => (
+                {reports.map((r: import("@workspace/api-client-react").GroundTruthReport) => (
                   <TableRow
                     key={r.id}
                     className="border-gray-800"
@@ -980,7 +980,7 @@ export default function Dashboard({ session }: { session?: import("@/components/
     } catch {
       /* cross-origin write may fail — harmless */
     }
-    setMintingCall(true);
+    setMintCall(true);
     // Minimum splash time so the "📡 Dialling…" animation is always
     // perceptible — even on the fast path where the token is already in
     // hand and the URL could be set in a few milliseconds. Without this
@@ -1037,7 +1037,7 @@ export default function Dashboard({ session }: { session?: import("@/components/
         variant: "destructive",
       });
     } finally {
-      setMintingCall(false);
+      setMintCall(false);
     }
   };
 
@@ -1047,7 +1047,7 @@ export default function Dashboard({ session }: { session?: import("@/components/
     refetch: refetchStatus,
   } = useGetStatus({
     query: {
-      refetchInterval: (query) => (query.state.data?.is_running ? 5000 : 30000),
+      refetchInterval: (query: { state: { data?: { is_running?: boolean } } }) => (query.state.data?.is_running ? 5000 : 30000),
       queryKey: getGetStatusQueryKey(),
     },
   });
@@ -1069,7 +1069,7 @@ export default function Dashboard({ session }: { session?: import("@/components/
           queryClient.invalidateQueries({ queryKey: getGetStatusQueryKey() });
           queryClient.invalidateQueries({ queryKey: getGetForecastQueryKey() });
         },
-        onError: async (err) => {
+        onError: async (err: Error) => {
           // Surface the real reason instead of a generic "failed" toast.
           // ApiError carries the server's { error: "..." } body in .data.
           const apiErr = err as {
@@ -1242,7 +1242,7 @@ export default function Dashboard({ session }: { session?: import("@/components/
     chatMutation.mutate(
       { data: { message: userMsg, history: historyForApi } },
       {
-        onSuccess: (reply) => {
+        onSuccess: (reply: { ok?: boolean; message?: string }) => {
           setChatHistory((prev) => [
             ...prev,
             {
@@ -1263,7 +1263,7 @@ export default function Dashboard({ session }: { session?: import("@/components/
   const d = statusData?.last_run as any;
   const f = forecastData as any;
 
-  const navigate = (next: "map" | "pastoralists" | "groundtruth" | "chat") => {
+  const navigate = (next: "map" | "pastoralists" | "groundtruth" | "chat" | "choropleth") => {
     setTab(next);
     setNavOpen(false);
   };
@@ -1321,7 +1321,7 @@ export default function Dashboard({ session }: { session?: import("@/components/
         </button>
         <button
           data-testid="nav-choropleth"
-          onClick={() => navigate("choropleth")}
+          onClick={() => navigate("choropleth" as "map" | "pastoralists" | "groundtruth" | "chat" | "choropleth")}
           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${tab === "choropleth" ? "bg-amber-600/20 text-amber-400 border border-amber-600/30" : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"}`}
         >
           <Globe className="w-4 h-4" /> Choropleth
@@ -1625,7 +1625,7 @@ export default function Dashboard({ session }: { session?: import("@/components/
                       }
                       worstQuadrant={d.live.anomaly.worstQuadrant}
                       timestamp={d.timestamp}
-                      pastoralists={(pastoralistsData ?? []).map((p) => ({
+                      pastoralists={(pastoralistsData ?? []).map((p: import("@workspace/api-client-react").Pastoralist) => ({
                         id: p.id,
                         name: p.name,
                         phone: p.phone,
@@ -1815,7 +1815,7 @@ export default function Dashboard({ session }: { session?: import("@/components/
                           </TableCell>
                         </TableRow>
                       ) : (
-                        pastoralistsData.map((p) => (
+                        pastoralistsData.map((p: import("@workspace/api-client-react").Pastoralist) => (
                           <TableRow
                             key={p.id}
                             className="border-gray-800 hover:bg-gray-800/50"

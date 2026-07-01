@@ -39,8 +39,14 @@ All four are confirmed live during the bring-up:
 | Provider | What it gives | Why it sits behind a flag | Code path |
 |---|---|---|---|
 | **Azure OpenAI** (gpt-4o chat + Realtime) | Conversation-grounded chat replies; real-time bilingual voice bridging via WebRTC | Requires `AZURE_OPENAI_API_KEY`. The chat and voice routes still call the Azure endpoint directly; the `/api/intelligence/brief` route uses the provider-agnostic LLM layer (`src/lib/llm/`) which falls back to `MockClient` when no key is set. | `src/lib/llm/providers/{azure,registry}.ts`, `src/routes/chat.ts`, `src/routes/voice.ts` |
-| **Azure Cosmos DB** (pre-computed 11-year pixel grids) | Per-pixel, per-month NDVI / NDRE / RED_EDGE baseline so the live composite (from GEE) can be compared to history | Requires `COSMOS_DB_*`. Without it, `fetchLiveVegetation()` throws because `loadCosmosGrid()` finds no chunks. Routes that require baseline comparison return **HTTP 503** with a clear "Cosmos baseline not configured" message. | `src/lib/cosmos.ts` |
 | **Africa's Talking** (SMS / USSD / voice telephony) | Outbound SMS, inbound USSD `*123*8#`, voice call bridging | Requires `AT_API_KEY`, `AT_USERNAME`. The voice-stream routes still attempt to connect; without credentials the call-control endpoint returns **HTTP 503** with a clear "Africa's Talking not configured" message. | `src/lib/voiceStream.ts`, `src/routes/{sms,ussd,voice}.ts` |
+
+> **Baseline source of truth** is the engine's Postgres table
+> `gis_engine.baseline_aggregate` (and optionally `baseline_pixel`).
+> Populated by `ardalink-engine/scripts/populate_baseline.py`. When the
+> table is empty for a (ward, month), the API does **not** return 503 —
+> it returns the live composite with `baselineSource: "none"` so the
+> dashboard can render "no baseline yet" honestly.
 
 > **Degraded mode is loud.** When any of the above providers is missing,
 > the affected route returns **HTTP 503** with a clear, human-readable
@@ -68,7 +74,7 @@ All four are confirmed live during the bring-up:
 | `ardalink-api/src/lib/openData.ts` | Single module wrapping Open-Meteo Forecast/Archive/Air-Quality + Planetary Computer STAC. Exports `OPEN_DATA_SOURCES` (manifest), `probeOpenDataSources()` (live health check), `discoverAllForWard()` (multi-collection STAC search), `fetchYearOverYearClimate()` (year-over-year climate comparison), `fetchAirQualitySnapshot()`. |
 | `ardalink-api/src/routes/openData.ts` | HTTP surface: `GET /api/open-data/sources`, `/open-data/sources/manifest`, `/open-data/year-over-year`, `/open-data/air-quality`, `/open-data/satellite/discover`. Tenant-scoped where it makes sense; the manifest endpoint is also useful to ops folks and stays unauthenticated for the demo. |
 | `ardalink-api/src/lib/climate.ts` | Original Open-Meteo Forecast wrapper for the live climate snapshot. The `CLIMATE_LAT_DEFAULT` / `CLIMATE_LON_DEFAULT` constants are re-exported so `openData.ts` can use the same ward centre. |
-| `ardalink-api/src/lib/cosmos.ts` | Azure Cosmos DB client. Used by `fetchLiveVegetation()` for the 11-year baseline grid. Returns **HTTP 503** when credentials are missing. |
+| `ardalink-api/src/lib/cosmos.ts` | _Removed — replaced by `src/lib/engine.ts`._ |
 | `ardalink-api/src/lib/llm/{registry,providers/*}.ts` | Provider-agnostic LLM layer. Routes between Azure, Mock, and any future provider. The Mock client is the default fallback. |
 | `ardalink-api/src/lib/voiceStream.ts` | Africa's Talking voice-stream bridge. Returns **HTTP 503** when credentials are missing. |
 | `ardalink-web/dashboard/src/components/OpenDataCard.tsx` | Operator-facing widget. Live probe every 5 minutes, plus a "climate vs last year" card and a "PM2.5 / PM10 right now" line. |
@@ -102,3 +108,11 @@ never goes dark because a vendor API is down.
 ---
 
 *Maintained by the ArdaLink engineering team. Last verified: 2026-06-29.*
+---
+
+## See also
+
+- [`llm-integration.md`](./llm-integration.md) — provider-agnostic LLM
+  registry (z.ai / MiniMax), routing, budget, audit log, and the
+  separate Azure OpenAI Realtime voice bridge. Live state of
+  `GET /api/llm/status`.

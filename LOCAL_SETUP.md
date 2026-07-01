@@ -1,6 +1,7 @@
 # ArdaLink — Local Setup (5-minute install)
 
 The shortest path from a clean machine to a working local stack.
+For the high-level project overview, see [`README.md`](./README.md).
 For the full manual, see `RUNBOOK.md`. For diagrams, see
 `ARCHITECTURE-V2.md`.
 
@@ -165,12 +166,14 @@ demo data; you'll need to re-seed).
 
 ## Where to go next
 
-- **Need the full operator manual?** `RUNBOOK.md` — daily workflow,
-  troubleshooting, disaster recovery, how to read the source.
-- **Need the architecture?** `ARCHITECTURE-V2.md` — system overview,
-  multi-tenant request flow, HMAC attestation, data model.
-- **Need to understand a specific code path?** `RUNBOOK.md` has a
-  "How to read the source" table at the bottom.
+## Related docs
+
+- [`README.md`](./README.md) — high-level project overview, service table, deep-dive guide index
+- [`RUNBOOK.md`](./RUNBOOK.md) — full operator manual (daily workflow, troubleshooting, disaster recovery, how to read the source)
+- [`ARCHITECTURE-V2.md`](./ARCHITECTURE-V2.md) — canonical system architecture and data-flow diagrams
+- [`Arda-link-AI-Docs/onboarding.md`](./Arda-link-AI-Docs/onboarding.md) — full new-developer bring-up (30–60 min)
+- [`Arda-link-AI-Docs/deployment.md`](./Arda-link-AI-Docs/deployment.md) — local Docker Compose + production hosting options
+- [`Arda-link-AI-Docs/satellite.md`](./Arda-link-AI-Docs/satellite.md) — Google Earth Engine account setup (needed for live vegetation)
 
 ---
 

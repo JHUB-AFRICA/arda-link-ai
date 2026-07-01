@@ -132,6 +132,77 @@ def _ddl(schema: str) -> list[str]:
         # so this drives a "refresh the envelope when the month rolls over"
         # trigger. NULL until the first seasonal static ingest.
         f'ALTER TABLE "{schema}".grid_meta ADD COLUMN IF NOT EXISTS ndvi_envelope_month INTEGER',
+        # --- Baseline (replaces Azure Cosmos DB as the source of truth) ------
+        # Per-ward, per-month aggregate baseline: small (~240 rows = 10 wards × 12
+        # months × 6 metrics). The primary source for "below baseline" framing.
+        # Populated by `scripts/populate_baseline.py` (GEE historical) or manually
+        # via SQL INSERT. Empty table = "no baseline yet" (NOT a 503).
+        f'''
+        CREATE TABLE IF NOT EXISTS "{schema}".baseline_aggregate (
+            id              SERIAL PRIMARY KEY,
+            tenant_id       TEXT NOT NULL,
+            ward_id         TEXT NOT NULL,
+            ward_name       TEXT NOT NULL,
+            month           SMALLINT NOT NULL CHECK (month BETWEEN 1 AND 12),
+            -- NDVI / NDRE / Red-edge percentile envelope, per-ward per-month.
+            -- NULL means "not yet observed for this month/ward".
+            ndvi_p50        DOUBLE PRECISION,
+            ndvi_p5         DOUBLE PRECISION,
+            ndre_p50        DOUBLE PRECISION,
+            ndre_p5         DOUBLE PRECISION,
+            red_edge_p50    DOUBLE PRECISION,
+            red_edge_p5     DOUBLE PRECISION,
+            -- Provenance: where these numbers came from.
+            source          TEXT NOT NULL,
+            -- The time window the percentile was computed over (e.g.
+            -- 'sentinel2-2014-2024' for a 10-year median).
+            window_label    TEXT,
+            pixel_count     INTEGER,
+            computed_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            UNIQUE (tenant_id, ward_id, month)
+        )
+        ''',
+        f'''
+        CREATE INDEX IF NOT EXISTS idx_baseline_aggregate_lookup
+            ON "{schema}".baseline_aggregate (tenant_id, ward_id, month)
+        ''',
+        # Per-pixel, per-month, per-band optional detail grid. Larger
+        # (~600k rows per ward per band per month) but only populated when a
+        # high-resolution baseline is available. API falls back to the
+        # aggregate when the pixel grid is missing.
+        f'''
+        CREATE TABLE IF NOT EXISTS "{schema}".baseline_pixel (
+            id              SERIAL PRIMARY KEY,
+            tenant_id       TEXT NOT NULL,
+            ward_id         TEXT NOT NULL,
+            month           SMALLINT NOT NULL CHECK (month BETWEEN 1 AND 12),
+            band            TEXT NOT NULL CHECK (band IN ('ndvi','ndre','red_edge')),
+            -- Sparse storage: grid coords + value. Row/col indices match the
+            -- dynamic grid in grid_cells (same row_idx/col_idx convention).
+            row_idx         INTEGER NOT NULL,
+            col_idx         INTEGER NOT NULL,
+            value           DOUBLE PRECISION NOT NULL,
+            source          TEXT NOT NULL,
+            computed_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+        ''',
+        f'''
+        CREATE INDEX IF NOT EXISTS idx_baseline_pixel_lookup
+            ON "{schema}".baseline_pixel (tenant_id, ward_id, month, band, row_idx, col_idx)
+        ''',
+        # Freshness ledger: one row per (tenant, ward, month, band) capturing
+        # when the aggregate was last (re)computed. Useful for "this ward's
+        # baseline is 3 years stale" diagnostics.
+        f'''
+        CREATE TABLE IF NOT EXISTS "{schema}".baseline_layer_meta (
+            tenant_id    TEXT NOT NULL,
+            ward_id      TEXT NOT NULL,
+            month        SMALLINT NOT NULL,
+            band         TEXT NOT NULL,
+            updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (tenant_id, ward_id, month, band)
+        )
+        ''',
     ]
 
 

@@ -46,6 +46,7 @@ const sampleDelta: VegetationDelta = {
   wardMeanTriggerReason: "Ward-mean NDVI -28.9% vs baseline",
   triggered: true,
   trigger_reason: "Critical vegetation stress — both signals fired",
+  baselineSource: "aggregate",
 };
 
 const samplePx = {

@@ -3,7 +3,8 @@
 Step-by-step manual for running the full local stack. Read this if
 `LOCAL_SETUP.md` is too brief and you want the full picture. For the
 5-minute version, see `LOCAL_SETUP.md`. For diagrams, see
-`ARCHITECTURE-V2.md`.
+`ARCHITECTURE-V2.md`. For the high-level project overview, see
+[`README.md`](./README.md).
 
 ---
 
@@ -518,6 +519,16 @@ If you want to understand what a request does, start here:
 | What does `make verify` actually check? | `ardalink-api/docs/local-dev/scripts/verify.sh` | line by line, with section headers |
 
 ---
+
+---
+
+## Related docs
+
+- [`README.md`](./README.md) — high-level project overview, service table, deep-dive guide index
+- [`ARCHITECTURE-V2.md`](./ARCHITECTURE-V2.md) — canonical system architecture and data-flow diagrams
+- [`LOCAL_SETUP.md`](./LOCAL_SETUP.md) — 5-minute install on a fresh machine
+- [`Arda-link-AI-Docs/deployment.md`](./Arda-link-AI-Docs/deployment.md) — production hosting options
+- [`Arda-link-AI-Docs/security.md`](./Arda-link-AI-Docs/security.md) — auth, rate limiting, RLS threat model
 
 *See `ARCHITECTURE-V2.md` for the diagrams. See `LOCAL_SETUP.md` for the
 5-minute install.*

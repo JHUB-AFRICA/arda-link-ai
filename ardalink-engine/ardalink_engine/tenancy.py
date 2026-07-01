@@ -24,8 +24,9 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+from collections.abc import Iterator
 from contextlib import contextmanager
-from typing import Iterator
+
 
 # The shared secret used to attest the X-Tenant-ID header. MUST match the
 # secret in ardalink-api (`TENANT_ATTESTATION_SECRET` env var). When unset,

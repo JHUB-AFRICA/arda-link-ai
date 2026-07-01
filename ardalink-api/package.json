@@ -22,7 +22,6 @@
     "test:cov": "vitest run --coverage"
   },
   "dependencies": {
-    "@azure/cosmos": "^4.2.0",
     "@google/earthengine": "^1.7.28",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",

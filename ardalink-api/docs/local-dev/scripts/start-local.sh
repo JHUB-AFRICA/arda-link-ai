@@ -162,6 +162,18 @@ ok "demo data seeded"
 step "ardalink-engine"
 [ -d "$REPO_ROOT/ardalink-engine" ] || { err "ardalink-engine repo not found at $REPO_ROOT"; exit 1; }
 
+# Pull GEE creds from ardalink-engine/.env (dev only, never committed).
+_ENG_ENV="$REPO_ROOT/ardalink-engine/.env"
+_ENG_GEE_SA="$(grep -E '^GEE_SERVICE_ACCOUNT=' "$_ENG_ENV" 2>/dev/null | tail -1 | cut -d= -f2-)"
+_ENG_GEE_KEY="$(grep -E '^GEE_PRIVATE_KEY=' "$_ENG_ENV" 2>/dev/null | tail -1 | cut -d= -f2-)"
+_ENG_GEE_PROJECT="$(grep -E '^GEE_PROJECT=' "$_ENG_ENV" 2>/dev/null | tail -1 | cut -d= -f2-)"
+[ -z "$_ENG_GEE_SA" ] && _ENG_GEE_SA=""
+[ -z "$_ENG_GEE_KEY" ] && _ENG_GEE_KEY=""
+[ -z "$_ENG_GEE_PROJECT" ] && _ENG_GEE_PROJECT=""
+# Wrap the JSON value in single quotes so bash can source it without
+# choking on commas, colons, and braces in the JSON body.
+_ENG_GEE_KEY_ESC="${_ENG_GEE_KEY//\'/\'\\\'\'}"
+
 cat > "$RUN_DIR/engine.env" <<EOF
 DATABASE_URL=postgresql://ardalink:${POSTGRES_PASSWORD}@127.0.0.1:15432/ardalink
 GIS_ENGINE_SCHEMA=gis_engine
@@ -169,9 +181,9 @@ ARDALINK_HOST=127.0.0.1
 ARDALINK_PORT=5001
 ARDALINK_LOG_LEVEL=INFO
 TENANT_ATTESTATION_SECRET=${TENANT_ATTESTATION_SECRET}
-GEE_SERVICE_ACCOUNT=
-GEE_PRIVATE_KEY=
-GEE_PROJECT=
+GEE_SERVICE_ACCOUNT=${_ENG_GEE_SA}
+GEE_PRIVATE_KEY='${_ENG_GEE_KEY_ESC}'
+GEE_PROJECT=${_ENG_GEE_PROJECT}
 AZURE_OPENAI_ENDPOINT=
 AZURE_OPENAI_KEY=
 AZURE_OPENAI_DEPLOYMENT=gpt-4o
@@ -197,6 +209,30 @@ step "ardalink-api"
 [ -d "$REPO_ROOT/ardalink-api" ] || { err "ardalink-api repo not found at $REPO_ROOT"; exit 1; }
 
 # API uses the non-superuser role so RLS is enforced
+# Pull GEE creds from local-dev/.env (if set) so dev can hit real GEE.
+# Wrap the JSON value in single quotes so bash can source it without
+# choking on commas, colons, and braces in the JSON body.
+_GEE_JSON="$(grep -E '^GOOGLE_SERVICE_ACCOUNT_JSON=' "$PUBLIC_DIR/.env" | tail -1 | cut -d= -f2-)"
+_GEE_PROJECT="$(grep -E '^GEE_PROJECT=' "$PUBLIC_DIR/.env" | tail -1 | cut -d= -f2-)"
+[ -z "$_GEE_JSON" ] && _GEE_JSON=""
+[ -z "$_GEE_PROJECT" ] && _GEE_PROJECT=""
+# Escape any single-quotes inside the JSON (none expected, but safe).
+_GEE_JSON_ESC="${_GEE_JSON//\'/\'\\\'\'}"
+
+# LLM keys for Z.ai and Minimax
+_ZAI_KEY="$(grep -E '^ZAI_API_KEY=' "$PUBLIC_DIR/.env" | tail -1 | cut -d= -f2-)"
+_ZAI_MODEL="$(grep -E '^ZAI_DEFAULT_MODEL=' "$PUBLIC_DIR/.env" | tail -1 | cut -d= -f2-)"
+_MINIMAX_KEY="$(grep -E '^MINIMAX_API_KEY=' "$PUBLIC_DIR/.env" | tail -1 | cut -d= -f2-)"
+_MINIMAX_MODEL="$(grep -E '^MINIMAX_DEFAULT_MODEL=' "$PUBLIC_DIR/.env" | tail -1 | cut -d= -f2-)"
+_LLM_PRIMARY="$(grep -E '^LLM_PRIMARY_PROVIDER=' "$PUBLIC_DIR/.env" | tail -1 | cut -d= -f2-)"
+_LLM_FALLBACK="$(grep -E '^LLM_FALLBACK_PROVIDER=' "$PUBLIC_DIR/.env" | tail -1 | cut -d= -f2-)"
+[ -z "$_ZAI_KEY" ] && _ZAI_KEY=""
+[ -z "$_ZAI_MODEL" ] && _ZAI_MODEL="glm-4.5-flash"
+[ -z "$_MINIMAX_KEY" ] && _MINIMAX_KEY=""
+[ -z "$_MINIMAX_MODEL" ] && _MINIMAX_MODEL="MiniMax-M3"
+[ -z "$_LLM_PRIMARY" ] && _LLM_PRIMARY="z"
+[ -z "$_LLM_FALLBACK" ] && _LLM_FALLBACK="minimax"
+
 cat > "$RUN_DIR/api.env" <<EOF
 NODE_ENV=development
 PORT=3000
@@ -209,7 +245,8 @@ AZURE_OPENAI_API_KEY=
 AZURE_OPENAI_CHAT_DEPLOYMENT=gpt-4o
 AZURE_OPENAI_WHISPER_DEPLOYMENT=whisper
 AZURE_OPENAI_REALTIME_DEPLOYMENT=gpt-4o-realtime-preview
-GOOGLE_SERVICE_ACCOUNT_JSON=
+GOOGLE_SERVICE_ACCOUNT_JSON='${_GEE_JSON_ESC}'
+GEE_PROJECT=${_GEE_PROJECT}
 AFRICASTALKING_USERNAME=sandbox
 AFRICASTALKING_API_KEY=
 AFRICASTALKING_CALLER_ID=+254700000000
@@ -217,8 +254,17 @@ RECIPIENT_PHONE=+254700000000
 SESSION_SECRET=${SESSION_SECRET}
 JWT_SECRET=${JWT_SECRET}
 TENANT_ATTESTATION_SECRET=${TENANT_ATTESTATION_SECRET}
+ZAI_API_KEY=${_ZAI_KEY}
+ZAI_DEFAULT_MODEL=${_ZAI_MODEL}
+MINIMAX_API_KEY=${_MINIMAX_KEY}
+MINIMAX_DEFAULT_MODEL=${_MINIMAX_MODEL}
+LLM_PRIMARY_PROVIDER=${_LLM_PRIMARY}
+LLM_FALLBACK_PROVIDER=${_LLM_FALLBACK}
+LLM_TIMEOUT_MS=15000
+LLM_CACHE_TTL_SECONDS=300
+LLM_DAILY_TOKEN_BUDGET=100000
 EOF
-( cd "$REPO_ROOT/ardalink-api" && set -a; . "$RUN_DIR/api.env"; set +a
+( cd "$REPO_ROOT/ardalink-api" && set -a && . "$RUN_DIR/api.env" && set +a &&
   nohup pnpm run dev > "$RUN_DIR/api.log" 2>&1 & echo $! > "$RUN_DIR/api.pid" )
 ok "started"
 
@@ -239,8 +285,8 @@ import http.server, socketserver, urllib.request
 from pathlib import Path
 
 WEB = Path("/tmp/ardalink-local/web")
-DASH = WEB / "dashboard" / "dist"
-TALK = WEB / "talk" / "dist"
+DASH = WEB / "dashboard"
+TALK = WEB / "talk"
 PORT = 8080
 API_UPSTREAM = "http://127.0.0.1:3000"
 

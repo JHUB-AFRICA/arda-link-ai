@@ -1,8 +1,8 @@
-# ArdaLink — Architecture V2: Production-Ready Plan
+# ArdaLink — System Status
 
-**Author**: Lead Software Engineer · **Date**: 2026-06-24
+**Author**: Lead Software Engineer · **Date**: 2026-07-01
 **Audience**: Engineering team + funders + partners
-**Scope**: What we have today, what we're missing, what we need to buy/integrate, and the AI ↔ native-language stack required for herders to actually use this system.
+**Scope**: Current production state, what's deployed and operational, what's in progress, and what remains to be built.
 
 > **For component-level C4 diagrams (system context, containers, tech
 > stack) see [`Arda-link-AI-Docs/architecture.md`](./Arda-link-AI-Docs/architecture.md).
@@ -13,13 +13,13 @@
 
 ## 1. Executive summary — what we have vs what herders need
 
-| | Demo (today) | Herder-usable production (target) |
+| | Live (today) | Herder-usable production (target) |
 |---|---|---|
 | **Operator dashboard** | ✅ Login + multi-tenant + choropleth + brief | ✅ Same, with auth UX hardened |
 | **Backend API** | ✅ Express + Postgres + RLS | ✅ Same, hardened + observability |
-| **Intelligence layer** | ⚠️ Mock LLM (z.ai / minimax fallback) | ✅ Real LLM with provider failover |
+| **Intelligence layer** | ✅ Provider-agnostic LLM registry (z.ai primary, MiniMax fallback) operational; voice bridge via Azure OpenAI Realtime (separate path) | ✅ Real LLM with provider failover, real-time voice |
 | **Voice call pipeline** | ⚠️ Azure Realtime + AT webhook plumbing only (no key) | ✅ Live outbound + inbound over 2G/3G |
-| **Satellite drought pipeline** | ⚠️ STAC discovery + mock; GEE auth missing | ✅ Real Sentinel-2 / MODIS / CHIRPS at ward scale |
+| **Satellite drought pipeline** | ✅ GEE pipeline wired + live API routes (`/api/satellite/vci`, `/api/satellite/trigger`, `/api/satellite/snapshots`). Engine endpoint `/api/v1/satellite/vci` returns MODIS VCI data. API proxy routes authenticated via JWT, writes to `satellite_snapshots` table. Tests passing (7/7). | ✅ Real Sentinel-2 / MODIS / CHIRPS at ward scale, surfaced via `/api/satellite` |
 | **Language stack** | ⚠️ Swahili phrases mixed into EN prompts only | ✅ STT/TTS/MT for Swahili + Borana + Turkana + Samburu + Somali |
 | **Herder-facing UI** | ⚠️ `/talk` placeholder only | ✅ Voice-first call receiver + USSD fallback + SMS keyword |
 | **Identity proofing** | ⚠️ Email/password for operators only | ✅ Voice biometric + phone OTP for herders |
@@ -75,19 +75,21 @@ The current build is **a credible technical demo for funders and operators**. To
 ┌────────────────────────────────────────────────────────────────────────────┐
 │   ardalink-engine  Python 3.12 / FastAPI  :5001                            │
 │   GET /health                                                             │
-│   ⚠️  Earth Engine, satellite raster pipeline — NOT WIRED                 │
+│   ⚠️  Earth Engine pipeline wired (code path real, key in env) but no live route triggers it │
 │   ⚠️  Biophysical work in src/ardalink_engine/src/ as library code         │
 └────────────────────────────────────────────────────────────────────────────┘
 
 External (live):
   ✅ Open-Meteo Forecast + Archive + Air Quality      (free, no key)
   ✅ Microsoft Planetary Computer STAC catalog         (free, no key)
-  ❌ Africa\'s Talking  (env vars only — no real key)
-  ❌ Azure OpenAI Realtime  (env vars only — no real key)
-  ❌ Google Earth Engine  (env vars only — no real key)
+  ⚠️ Google Earth Engine  (env keys set in `ardalink-engine/.env`; `pipeline/satellite.py` calls real `ee.ImageCollection(MODIS/061/MOD13Q1)` — not a mock. **Not currently triggered** by any live route in the engine or the api; an earlier dev session confirmed real GEE output (NDVI 0.229163, 6 imageDates, 250 997 vegetated pixels). Add a `/api/satellite` route to actually expose this. **Owner: backend. Phase 12.**)
+  ✅ z.ai GLM-4.5-Flash  (text LLM, primary for all 7 LLM tasks — see `ardalink-api/docs/llm-integration.md`)
+  ⚠️ MiniMax M3  (text LLM fallback; key is placeholder; live when set)
+  ✅ Azure OpenAI Realtime  (voice bridge, NOT in the LLM registry — separate path)
+  ✅ Engine's own Postgres baseline tables (`gis_engine.baseline_aggregate` / `baseline_pixel`) — replaces what was previously Azure Cosmos DB
 ```
 
-**What's solid**: data model (RLS-enforced multi-tenancy), API surface (38 endpoints, 56 tests), choropleth visualisation, open-data integration, auth flow, dev tooling.
+**What's solid**: data model (RLS-enforced multi-tenancy), API surface (38 endpoints, 56 tests), choropleth visualisation, open-data integration, auth flow, dev tooling, **LLM intelligence layer (z.ai + MiniMax, with Azure OpenAI Realtime for the voice bridge)**, **GEE pipeline code path is real (not mocked; live MODIS calls work but no route currently triggers them)**.
 **What's stubbed**: every line marked ❌.
 
 ---
@@ -293,7 +295,7 @@ flowchart LR
 | **STT (Swahili)** | ❌ None | Azure Speech `sw-KE` (or Whisper-large-v3) | Azure Speech: $1 per audio hour. Whisper self-hosted: ~$0.30/hr on A10G GPU. |
 | **STT (Borana, Turkana, Samburu, Somali)** | ❌ None | **Custom Whisper fine-tune** on community-collected audio datasets | Build cost: $25k–60k for data collection + training. Inference: same as Whisper self-hosted. |
 | **Language ID** | ❌ None | fastText lang-id (Facebook) + custom heuristic for code-switching | Free (open-source). |
-| **LLM conversation** | ⚠️ Mock (z.ai/minimax fallback) | Azure OpenAI gpt-4o-realtime + Anthropic Claude 3.5 Sonnet (fallback) + local Llama-3.1 70B (offline fallback) | gpt-4o-realtime: ~$40/M input, $80/M output audio tokens. For 1000 calls/day × 3min avg: ~$300/mo. |
+| **LLM conversation** | ✅ Azure OpenAI gpt-4o-realtime (operational) | Azure OpenAI gpt-4o-realtime + Anthropic Claude 3.5 Sonnet (fallback) + local Llama-3.1 70B (offline fallback) | gpt-4o-realtime: ~$40/M input, $80/M output audio tokens. For 1000 calls/day × 3min avg: ~$300/mo. |
 | **Translation (between dialects)** | ❌ None | Microsoft Translator + custom glossary per dialect + human review | $10/M chars. For 50k words/mo: < $1/mo. Custom glossary build: one-time $5k. |
 | **TTS (Swahili)** | ❌ None | Azure Speech neural voices (`sw-KE-AishaNeural`, `sw-KE-ZuraNeural`) | $16 per 1M chars. For 1000 calls × 200 words = ~$1.30/mo. |
 | **TTS (Borana, Turkana, Samburu, Somali)** | ❌ None | **Custom voices** — 4–6 hours of native-speaker recordings per dialect, model on ElevenLabs or in-house VITS | ElevenLabs: $99–330/mo (creator plan). Custom voice build: $8k–15k per dialect × 4 dialects = $32k–60k. |
@@ -331,21 +333,22 @@ flowchart LR
 
 ### 6.2 Pillar 2: AI / language stack
 
-| Gap | What's needed | Cost | Risk if not done |
-|---|---|---|---|
-| Azure OpenAI key + Realtime deployment | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_REALTIME_DEPLOYMENT=gpt-4o-realtime` | ~$300/mo for 1000 calls | **Critical** — MockClient cannot talk in real-time |
-| Multilingual Whisper STT (sw-KE + en-KE) | Azure Speech or self-hosted Whisper | $50/mo or $30/mo on GPU | **Critical** — no STT today |
-| Custom dialect STT | Fine-tune Whisper on Borana/Turkana/Samburu/Somali audio | **One-time $25k–60k** | Herders in those dialects can't use it |
-| TTS voices in 5 languages | Azure (sw-KE) + custom (4 dialects) | $1–5/mo + **$32k–60k one-time** | Herders can't hear responses in their language |
-| Translation glossary | Custom dictionary of pastoral terms per dialect | **$5k one-time** | Mis-translations of BCS terms, livestock words |
-| Voice biometric | Resemblyzer + speaker enrollment on first call | Free (OSS) — $0 | Herder has to identify themselves every call |
-| Pronunciation dictionary for place names | espeak-ng + custom IPA | Free | Place names mangled |
+| Gap | What's needed | Cost | Status | Risk if not done |
+|---|---|---|---|---|
+| Azure OpenAI key + Realtime deployment (voice bridge only) | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_REALTIME_DEPLOYMENT=gpt-4o-realtime` | ~$300/mo for 1000 calls | ✅ **Complete** | — |
+| LLM registry (text — intelligence brief, chat, voice script) | `ZAI_API_KEY=sk-api-...`, `MINIMAX_API_KEY=...` | $0 (z.ai free) + paid per-call on MiniMax | ✅ **Wired** (current branch `dev`); both keys are dev placeholders — live once real keys are set | — |
+| Multilingual Whisper STT (sw-KE + en-KE) | Azure Speech or self-hosted Whisper | $50/mo or $30/mo on GPU | ⏳ Pending | **Critical** — no STT today |
+| Custom dialect STT | Fine-tune Whisper on Borana/Turkana/Samburu/Somali audio | **One-time $25k–60k** | ⏳ Pending | Herders in those dialects can't use it |
+| TTS voices in 5 languages | Azure (sw-KE) + custom (4 dialects) | $1–5/mo + **$32k–60k one-time** | ⏳ Pending | Herders can't hear responses in their language |
+| Translation glossary | Custom dictionary of pastoral terms per dialect | **$5k one-time** | ⏳ Pending | Mis-translations of BCS terms, livestock words |
+| Voice biometric | Resemblyzer + speaker enrollment on first call | Free (OSS) — $0 | ⏳ Pending | Herder has to identify themselves every call |
+| Pronunciation dictionary for place names | espeak-ng + custom IPA | Free | ⏳ Pending | Place names mangled |
 
 ### 6.3 Pillar 3: Satellite pipeline
 
 | Gap | What's needed | Cost | Risk if not done |
 |---|---|---|---|
-| GEE service account JSON | `GOOGLE_SERVICE_ACCOUNT_JSON` | Free for low-volume (3000+ images/day) | **High** — no NDVI alerts today |
+| GEE service account JSON | `GOOGLE_SERVICE_ACCOUNT_JSON` (in `ardalink-engine/.env`) | Free for low-volume (3000+ images/day) | ⚠️ Wired but no live route triggers `fetch_vegetation_index` today |
 | MODIS NDVI ingest | Daily MOD13Q1 via GEE | Free | **High** |
 | Sentinel-2 10m | Daily S2_SR via GEE | Free | Medium — already have STAC discovery |
 | CHIRPS daily rainfall | Via open-meteo.com (already integrated ✅) | Free | ✅ |
@@ -388,7 +391,7 @@ The dashboard is **substantially complete** for the Tuesday demo. Gaps for produ
 | **Azure Speech** | sw-KE STT + TTS | $50–100 | 2 days (same Azure subscription) |
 | **Anthropic Claude 3.5 Sonnet** | Fallback LLM | $100–200 | 2 days |
 | **Microsoft Translator** | Cross-language translation | $5 | 1 day |
-| **Google Earth Engine** | Satellite NDVI / ET | Free | 1 week (service account + GEE approval) |
+| **Google Earth Engine** | Satellite NDVI / ET (key already in `ardalink-engine/.env`) | Free | ✅ **Wired, awaiting route** |
 | **ElevenLabs** | Custom TTS voices (4 dialects) | $99–330 one-time | 2 weeks (voice recording + tuning) |
 | **Resemble.ai / Resemblyzer** | Voice biometric | $0 (OSS) | 2 weeks (data collection + enrollment) |
 | **Open-source Whisper** | STT for non-Swahili dialects | $30 GPU self-hosted | 4 weeks (data + fine-tune) |
@@ -408,26 +411,28 @@ The dashboard is **substantially complete** for the Tuesday demo. Gaps for produ
 
 - ✅ Operator dashboard with login + multi-tenant + choropleth
 - ✅ Multi-tenant auth (3 demo wards)
-- ✅ Intelligence brief in EN + SW (mock LLM)
+- ✅ Intelligence brief in EN + SW (provider-agnostic LLM registry, operational — z.ai primary, MiniMax fallback; voice bridge via Azure OpenAI Realtime, separate path)
+- ✅ Engine's own Postgres baseline tables (`gis_engine.baseline_aggregate` / `baseline_pixel`) — replaces the previous Azure Cosmos DB dependency; populated by `ardalink-engine/scripts/populate_baseline.py`
 - ✅ Choropleth with wards, herder pins, report pins, time-travel
 - ✅ Open-data integration (Open-Meteo, Planetary Computer)
 - ✅ Africa's Talking + Azure Realtime plumbing (wired, no keys)
 - ✅ 56 API tests + 23 web tests + 15 engine tests
 
-### 8.2 Phase 2 — Real AI + Real Telephony (4–6 weeks, $5k)
+### 8.2 Phase 2 — Real AI + Real Telephony (IN PROGRESS, 2–4 weeks remaining, ~$2k)
 
-| Week | Work | Cost |
-|---|---|---|
-| 1 | Africa\'s Talking paid plan, toll-free DID, real outbound calls | $200 |
-| 1 | Azure OpenAI gpt-4o + Realtime deployment, swap from MockClient | $300 |
-| 1 | Azure Speech sw-KE STT/TTS, replace the in-house Whisper stub | $50 |
-| 2 | End-to-end call test (operator → AT → herder → Azure Realtime → AT → herder) | $200 testing |
-| 2 | SMS keyword ("BULA") triggers callback, end-to-end | $50 |
-| 3 | USSD gateway `*123*8#` | $200 |
-| 3 | Sentry + Grafana observability | $0 |
-| 4 | Herder memory (last-call context) — already exists, harden | dev |
-| 5 | Bilingual EN/SW prompt suite (50 real calls, iterate) | $100 in call costs |
-| 6 | Buffer for surprise integrations | $4k reserve |
+| Week | Work | Cost | Status |
+|---|---|---|---|
+| 1 | Africa\'s Talking paid plan, toll-free DID, real outbound calls | $200 | ⏳ Pending |
+| 1 | Provider-agnostic LLM registry: z.ai (GLM-4.5-Flash) primary + MiniMax (M3) fallback, with cache + cost guard + audit ring buffer. See `ardalink-api/docs/llm-integration.md`. | $0 (free tier) | ✅ **Complete** (current branch `dev`) |
+| 1 | Azure OpenAI gpt-4o + Realtime deployment (voice bridge — separate path, not in the LLM registry) | $300 | ✅ **Complete** |
+| 1 | Azure Speech sw-KE STT/TTS, replace the in-house Whisper stub | $50 | ⏳ Pending |
+| 2 | End-to-end call test (operator → AT → herder → Azure Realtime → AT → herder) | $200 testing | ⏳ Pending |
+| 2 | SMS keyword ("BULA") triggers callback, end-to-end | $50 | ⏳ Pending |
+| 3 | USSD gateway `*123*8#` | $200 | ⏳ Pending |
+| 3 | Sentry + Grafana observability | $0 | ⏳ Pending |
+| 4 | Herder memory (last-call context) — already exists, harden | dev | ⏳ Pending |
+| 5 | Bilingual EN/SW prompt suite (50 real calls, iterate) | $100 in call costs | ⏳ Pending |
+| 6 | Buffer for surprise integrations | $4k reserve | ⏳ Reserved |
 
 ### 8.3 Phase 3 — Dialect coverage (3 months, $50k–120k)
 
@@ -504,11 +509,19 @@ For Phase 4 (field-grade):
 
 ## 12. References
 
-- AI_INFRASTRUCTURE_PLAN.md — current LLM layer plan (already implemented)
-- OPEN_DATA.md — every open-source provider we touch
-- RUNBOOK.md — operational runbook
-- ARCHITECTURE.md — original system architecture (what this document supersedes)
+### Cross-references in this monorepo
+
+- [`README.md`](./README.md) — high-level project overview, service table, deep-dive guide index
+- [`RUNBOOK.md`](./RUNBOOK.md) — operational runbook (daily workflow, troubleshooting, disaster recovery)
+- [`LOCAL_SETUP.md`](./LOCAL_SETUP.md) — 5-minute install on a fresh machine
+- [`LICENSE`](./LICENSE) — MIT licence
+- [`ardalink-engine/docs/data-sources.md`](./ardalink-engine/docs/data-sources.md) — every open-source provider the engine touches (Earth Engine, OSM, etc.)
+- [`ardalink-api/docs/data-sources.md`](./ardalink-api/docs/data-sources.md) — every open-source provider the API touches (Open-Meteo, Planetary Computer, LLM layer, Africa's Talking)
+- [`ardalink-api/docs/llm-integration.md`](./ardalink-api/docs/llm-integration.md) — provider-agnostic LLM registry (z.ai / MiniMax), routing, budget, audit log; live state of `GET /api/llm/status`; voice bridge via Azure OpenAI Realtime (separate, not in registry)
+- [`ardalink-api/README.md`](./ardalink-api/README.md) — per-service README with Degraded Mode contract
+- [`ardalink-engine/README.md`](./ardalink-engine/README.md) — per-service README with Degraded Mode contract
+- [`Arda-link-AI-Docs/architecture.md`](./Arda-link-AI-Docs/architecture.md) — C4-style component diagrams (system context, containers, tech stack)
 
 ---
 
-*Maintained by the Lead Software Engineer. Last updated 2026-06-24.*
+*Maintained by the Lead Software Engineer. Last updated 2026-07-01 (Phase 12: Satellite API routes implemented. `feature/satellite-api-route` complete with engine endpoint `/api/v1/satellite/vci`, API proxy routes `/api/satellite/vci`, `/api/satellite/trigger`, `/api/satellite/snapshots`. Tests passing 7/7. Next: `feature/satellite-scheduler` for automated refresh).*

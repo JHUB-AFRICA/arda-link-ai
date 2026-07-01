@@ -20,17 +20,7 @@ from contextlib import asynccontextmanager  # noqa: E402
 
 from fastapi import FastAPI  # noqa: E402
 
-from ardalink_engine.src.api import grid_query  # noqa: E402
-from ardalink_engine.src.api.assessment import ZonePairNotFound, run_assessment  # noqa: E402
-from ardalink_engine.src.api.grid_query import GridNotBuilt  # noqa: E402
-from ardalink_engine.src.api.models import (  # noqa: E402
-    BuildGridRequest,
-    JourneyRequest,
-    PointConditionsRequest,
-    ScheduleRunRequest,
-    SpatialAssessmentRequest,
-    SpatialAssessmentResponse,
-)
+from ardalink_engine.src.api import baseline, satellite  # noqa: E402
 from ardalink_engine.src.config import settings  # noqa: E402
 from ardalink_engine.src.db.client import db_client  # noqa: E402
 from ardalink_engine.src.db.schema import create_tables  # noqa: E402
@@ -62,6 +52,8 @@ app = FastAPI(
     description="Biophysical engine — satellite ingestion, grid scoring, journey planning.",
     lifespan=lifespan,
 )
+app.include_router(baseline.router)
+app.include_router(satellite.router)
 
 
 @app.get("/health", tags=["meta"])

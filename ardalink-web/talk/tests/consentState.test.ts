@@ -44,6 +44,10 @@ beforeEach(() => {
     writable: true,
     configurable: true,
   });
+  // The consent module reads globalThis.localStorage directly so the
+  // stub can be reached from any module scope. The `window` shim is
+  // kept for symmetry with browser code.
+  (globalThis as { localStorage?: unknown }).localStorage = stub;
 });
 
 describe("consent state", () => {
@@ -82,7 +86,7 @@ describe("consent state", () => {
     clearConsent();
     expect(hasConsent()).toBe(false);
     expect(readConsent()).toBeNull();
-    expect(stub.getItem(CONSENT_STORAGE_KEY)).toBeUndefined();
+    expect(stub.getItem(CONSENT_STORAGE_KEY)).toBeNull();
   });
 
   it("clearConsent() is idempotent (safe to call when no consent is recorded)", () => {

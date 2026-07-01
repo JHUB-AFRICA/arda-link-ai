@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ardalink_engine.tenancy import attest_tenant, set_tenant, verify_tenant_attestation
+from ardalink_engine.tenancy import set_tenant, verify_tenant_attestation
 
 
 def test_set_tenant_rejects_empty() -> None:
