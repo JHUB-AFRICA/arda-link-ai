@@ -3,7 +3,7 @@
  *
  * The seed data stores pastoralist `location` and report
  * `reportedLocation` as free-text place names ("Bulla Pesa", "Kula
- * Pesa", "Garba Tulla", "Merti", "Sericho", …) rather than lat/lon
+ * Pesa", "Garbatulla", "Merti", "Sericho", …) rather than lat/lon
  * coordinates. This module maps those place names to:
  *
  *   1. Real lat/lon (hand-curated against GADM ward centroids +
@@ -43,15 +43,15 @@ const PLACE_TABLE: Array<{
   placeName: string;
   ward: string;
 }> = [
-  // ── Bulla Pesa Ward (BullaPesa) — Bula Pesa tenant ─────
-  { keys: ["bulla pesa", "bula pesa town"], lat: 0.352, lon: 37.5605, placeName: "Bulla Pesa Town", ward: "BullaPesa" },
-  { keys: ["kula pesa"], lat: 0.345, lon: 37.555, placeName: "Kula Pesa", ward: "BullaPesa" },
-  { keys: ["gotu"], lat: 0.370, lon: 37.575, placeName: "Gotu Pan", ward: "BullaPesa" },
-  { keys: ["kambi garba"], lat: 0.305, lon: 37.628, placeName: "Kambi Garba", ward: "BullaPesa" },
-  { keys: ["ngare mara", "ngaremara"], lat: 0.410, lon: 37.615, placeName: "Ngare Mara", ward: "BullaPesa" },
+  // ── Bulla Pesa Ward — Bula Pesa tenant ──────────────────
+  { keys: ["bulla pesa", "bula pesa town"], lat: 0.352, lon: 37.5605, placeName: "Bulla Pesa Town", ward: "Bulla Pesa" },
+  { keys: ["kula pesa"], lat: 0.345, lon: 37.555, placeName: "Kula Pesa", ward: "Bulla Pesa" },
+  { keys: ["gotu"], lat: 0.370, lon: 37.575, placeName: "Gotu Pan", ward: "Bulla Pesa" },
+  { keys: ["kambi garba"], lat: 0.305, lon: 37.628, placeName: "Kambi Garba", ward: "Bulla Pesa" },
+  { keys: ["ngare mara", "ngaremara"], lat: 0.410, lon: 37.615, placeName: "Ngare Mara", ward: "Ngare Mara" },
   { keys: ["wabera"], lat: 0.400, lon: 37.530, placeName: "Wabera", ward: "Wabera" },
   // ── Garbatulla Ward — Garbatulla tenant ──────────────────
-  { keys: ["garba tulla", "garbatulla town"], lat: 0.450, lon: 38.420, placeName: "Garba Tulla (Garbatulla)", ward: "Garbatulla" },
+  { keys: ["garba tulla", "garbatulla town"], lat: 0.450, lon: 38.420, placeName: "Garba Tulla (Garbatulla)", ward: "Garbatulla" }, // "Garba Tulla" is the town display; ward is "Garbatulla"
   { keys: ["kinna"], lat: 0.555, lon: 38.495, placeName: "Kinna River", ward: "Kinna" },
   // ── Sericho Ward — Merti tenant ──────────────────────────
   { keys: ["merti"], lat: 0.650, lon: 38.450, placeName: "Merti Town", ward: "Sericho" },
@@ -65,7 +65,7 @@ const ISIOLO_CENTRE: [number, number] = [0.355, 37.583];
 // choropleth for tenants whose data sits in a different GADM ward
 // (e.g. the merti tenant lives in Sericho ward, not "Merti ward").
 export const TENANT_HOME_WARD: Record<string, string> = {
-  "bula-pesa": "BullaPesa",
+  "bula-pesa": "Bulla Pesa",
   garbatulla: "Garbatulla",
   merti: "Sericho",
 };
@@ -95,7 +95,7 @@ export function resolvePlaceName(
     lat: ISIOLO_CENTRE[0],
     lon: ISIOLO_CENTRE[1],
     placeName: "Unmapped — Isiolo centre",
-    ward: "BullaPesa", // default ward for the demo
+    ward: "Bulla Pesa", // default ward for the demo
     mapped: false,
   };
 }
@@ -111,14 +111,14 @@ export const ISILO_WARDS: Array<{
   /** Whether this ward is one of the 3 demo tenants' "home" ward. */
   isDemoHome: boolean;
 }> = [
-  { name: "BullaPesa", displayName: "Bulla Pesa", isDemoHome: true },
+  { name: "Bulla Pesa", displayName: "Bulla Pesa", isDemoHome: true },
   { name: "Burat", displayName: "Burat", isDemoHome: false },
   { name: "Chari", displayName: "Chari", isDemoHome: false },
   { name: "Cherab", displayName: "Cherab", isDemoHome: false },
   { name: "Garbatulla", displayName: "Garbatulla", isDemoHome: true },
   { name: "Kinna", displayName: "Kinna", isDemoHome: false },
-  { name: "NgareMara", displayName: "Ngare Mara", isDemoHome: false },
-  { name: "Oldo/Nyiro", displayName: "Oldo/Nyiro", isDemoHome: false },
+  { name: "Ngare Mara", displayName: "Ngare Mara", isDemoHome: false },
+  { name: "Oldonyiro", displayName: "Oldonyiro", isDemoHome: false },
   { name: "Sericho", displayName: "Sericho", isDemoHome: true },
   { name: "Wabera", displayName: "Wabera", isDemoHome: false },
 ];

@@ -18,6 +18,11 @@ export async function saveSatelliteSnapshot(
     await db.insert(satelliteSnapshotsTable).values({
       newestImageDate,
       result: result as unknown as Record<string, unknown>,
+      // Phase 12 — fire-and-forget path runs after the request context
+      // is torn down, so the GUC `app.current_tenant_id` is unset. Pass
+      // the tenant explicitly to satisfy the RLS `tenant_isolation`
+      // policy on the `satellite_snapshots` table.
+      tenantId: (result as { tenant_id?: string }).tenant_id ?? "isiolo",
     });
     logger.info({ newestImageDate }, "[Cache] Satellite snapshot persisted");
   } catch (err) {
@@ -48,6 +53,8 @@ export async function saveClimateSnapshot(
     await db.insert(climateSnapshotsTable).values({
       climate: climate as unknown as Record<string, unknown>,
       forecast: (forecast ?? null) as unknown as Record<string, unknown> | null,
+      // Phase 12 — same RLS rationale as satellite_snapshots.
+      tenantId: (climate as { tenant_id?: string }).tenant_id ?? "isiolo",
     });
     logger.info("[Cache] Climate snapshot persisted");
   } catch (err) {

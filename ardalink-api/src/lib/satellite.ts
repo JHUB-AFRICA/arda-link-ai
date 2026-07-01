@@ -1,6 +1,7 @@
 // @ts-ignore — @google/earthengine ships CJS without full typings
 import EE from "@google/earthengine";
-import { ardalinkDb } from "./cosmos.js";
+// (cosmos.ts was deleted in Phase 11; the baseline now comes from the engine
+// via engine.ts → ardalink-engine/ardalink_engine/src/api/baseline.py.)
 import { logger } from "./logger.js";
 
 // ── Ward grid — exactly mirrors the Cosmos DB pixel_grids dimensions ──────────
@@ -39,8 +40,8 @@ export interface VegetationAnomaly {
   wardStressedPixels: number;
   worstQuadrant: "NW" | "NE" | "SW" | "SE" | "uniform";
   quadrantMeanAnomalyPct: Record<string, number>;
-  /** Cosmos DB pixel_grids were used as the historical baseline */
-  baselineSource: "cosmos_pixel_grids";
+  /** Source of the historical baseline: per-pixel grid, ward aggregate, or none. */
+  baselineSource: "pixel+aggregate" | "aggregate" | "none";
   historicalYearRange: string;
   localZone?: LocalZoneAnomaly;
 }
@@ -99,31 +100,63 @@ function evaluate<T>(eeObj: any): Promise<T> {
   );
 }
 
-// ── Step A: Cosmos DB — load pre-computed historical pixel grid ───────────────
-// Each chunk covers 100 rows × 499 cols. We reassemble in chunk order.
+// ── Step A: Engine — load historical baseline (aggregate + optional pixel grid) ─
+// The engine owns `gis_engine.baseline_aggregate` (per-ward, per-month p50/p5)
+// and `gis_engine.baseline_pixel` (optional sparse per-pixel grid). When the
+// per-pixel grid is missing we fall back to the ward-level aggregate as a
+// constant baseline per pixel — coarser but still honest ("the ward median
+// was X; this pixel is Y, so anomaly is Y/X − 1").
 
-async function loadCosmosGrid(
+async function loadBaselineGrids(
   month: number,
-  band: string,
-): Promise<number[][]> {
-  const { resources: chunks } = await ardalinkDb
-    .container("pixel_grids")
-    .items.query({
-      query:
-        "SELECT c.chunk, c.row_start, c.data FROM c " +
-        "WHERE c.month = @m AND c.band = @b ORDER BY c.chunk ASC",
-      parameters: [
-        { name: "@m", value: month },
-        { name: "@b", value: band },
-      ],
-    })
-    .fetchAll();
+  wardId: string,
+): Promise<{
+  aggregate: { ndvi_p50: number | null; ndre_p50: number | null; red_edge_p50: number | null } | null;
+  pixel: { ndvi: number[][]; ndre: number[][]; red_edge: number[][] } | null;
+}> {
+  // Lazy imports to keep EE-only files from pulling in the engine client at boot.
+  const { fetchBaselineAggregate, fetchBaselinePixel } = await import("./engine.js");
 
-  if (!chunks.length)
-    throw new Error(`pixel_grids missing for month=${month} band=${band}`);
+  const [aggregate, ndviCells, ndreCells, reCells] = await Promise.all([
+    fetchBaselineAggregate(wardId, month),
+    fetchBaselinePixel(wardId, month, "ndvi"),
+    fetchBaselinePixel(wardId, month, "ndre"),
+    fetchBaselinePixel(wardId, month, "red_edge"),
+  ]);
 
-  const sorted = [...chunks].sort((a: any, b: any) => a.chunk - b.chunk);
-  return sorted.flatMap((c: any) => c.data as number[][]);
+  if (!aggregate) {
+    return { aggregate: null, pixel: null };
+  }
+
+  // Reassemble the sparse pixel cells into 2D arrays keyed by band.
+  // Cell coordinates are row_idx / col_idx in the standard pixel grid.
+  const makeGrid = (
+    cells: Awaited<ReturnType<typeof fetchBaselinePixel>>,
+  ): number[][] | null => {
+    if (!cells || cells.length === 0) return null;
+    const maxRow = Math.max(...cells.map((c) => c.row_idx));
+    const maxCol = Math.max(...cells.map((c) => c.col_idx));
+    const grid: number[][] = Array.from({ length: maxRow + 1 }, () =>
+      new Array<number>(maxCol + 1).fill(Number.NaN),
+    );
+    for (const { row_idx, col_idx, value } of cells) {
+      grid[row_idx]![col_idx] = value;
+    }
+    return grid;
+  };
+
+  return {
+    aggregate: {
+      ndvi_p50: aggregate.ndvi_p50,
+      ndre_p50: aggregate.ndre_p50,
+      red_edge_p50: aggregate.red_edge_p50,
+    },
+    pixel: {
+      ndvi: makeGrid(ndviCells) ?? [],
+      ndre: makeGrid(ndreCells) ?? [],
+      red_edge: makeGrid(reCells) ?? [],
+    },
+  };
 }
 
 // ── Step B: Earth Engine — fetch live composite, extract as pixel array ───────
@@ -243,6 +276,9 @@ async function sampleCurrentGrid(
 
 // ── Step C: In-server anomaly computation ────────────────────────────────────
 // All maths happens in Node.js — no further EE calls needed.
+// When the per-pixel baseline is unavailable, the constant ward-level
+// aggregate p50 is used as the historical value for every pixel. This is
+// coarser (loses within-ward spatial variance) but still honest.
 
 interface AnomalyPoint {
   r: number;
@@ -252,26 +288,29 @@ interface AnomalyPoint {
 
 function computeAnomalyPoints(
   current: number[][],
-  historical: number[][],
+  historical: number[][] | null,
+  fallbackScalar: number | null,
 ): AnomalyPoint[] {
-  const rows = Math.min(current.length, historical.length, GRID_ROWS);
-  const cols = Math.min(
-    current[0]?.length ?? 0,
-    historical[0]?.length ?? 0,
-    GRID_COLS,
-  );
+  const rows = Math.min(current.length, GRID_ROWS);
+  const cols = Math.min(current[0]?.length ?? 0, GRID_COLS);
   const points: AnomalyPoint[] = [];
 
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const cur = current[r]![c]!;
-      const base = historical[r]![c]!;
-      if (
-        cur <= LIVE_NODATA_THRESH ||
-        base === COSMOS_NODATA ||
-        base < VEG_THRESHOLD
-      )
+      if (cur <= LIVE_NODATA_THRESH) continue;
+
+      // Per-pixel baseline if available, else aggregate scalar.
+      let base: number;
+      if (historical && historical[r] && historical[r][c] != null && !Number.isNaN(historical[r][c])) {
+        base = historical[r][c]!;
+        if (base === COSMOS_NODATA || base < VEG_THRESHOLD) continue;
+      } else if (fallbackScalar != null && fallbackScalar > 0) {
+        base = fallbackScalar;
+      } else {
         continue;
+      }
+
       const pct = ((cur - base) / Math.abs(base)) * 100;
       points.push({ r, c, pct });
     }
@@ -344,6 +383,7 @@ function computeStressMetrics(points: AnomalyPoint[]): {
 function computeLocalZone(
   currentNDVI: number[][],
   historicalNDVI: number[][],
+  fallbackScalar: number | null,
 ): LocalZoneAnomaly | undefined {
   const lat = parseFloat(process.env.LOCAL_ZONE_LAT ?? "");
   const lon = parseFloat(process.env.LOCAL_ZONE_LON ?? "");
@@ -373,10 +413,14 @@ function computeLocalZone(
   const localPoints: number[] = [];
   let stressed = 0;
 
-  const rows = Math.min(currentNDVI.length, historicalNDVI.length, GRID_ROWS);
+  // historicalNDVI may be null when only the aggregate baseline is
+  // available; in that case the loop body short-circuits via the
+  // `fallbackScalar` branch and `historicalNDVI[r]` is never read.
+  const safeHistorical: number[][] = historicalNDVI ?? [];
+  const rows = Math.min(currentNDVI.length, safeHistorical.length, GRID_ROWS);
   const cols = Math.min(
     currentNDVI[0]?.length ?? 0,
-    historicalNDVI[0]?.length ?? 0,
+    safeHistorical[0]?.length ?? 0,
     GRID_COLS,
   );
 
@@ -396,13 +440,15 @@ function computeLocalZone(
       if (Math.sqrt(dLon * dLon + dLat * dLat) > radiusKm * 1000) continue;
 
       const cur = currentNDVI[r]![c]!;
-      const base = historicalNDVI[r]![c]!;
-      if (
-        cur <= LIVE_NODATA_THRESH ||
-        base === COSMOS_NODATA ||
-        base < VEG_THRESHOLD
-      )
+      let base: number;
+      if (safeHistorical && safeHistorical[r] && safeHistorical[r][c] != null && !Number.isNaN(safeHistorical[r][c])) {
+        base = safeHistorical[r][c]!;
+        if (base === COSMOS_NODATA || base < VEG_THRESHOLD) continue;
+      } else if (fallbackScalar != null && fallbackScalar > 0) {
+        base = fallbackScalar;
+      } else {
         continue;
+      }
 
       const pct = ((cur - base) / Math.abs(base)) * 100;
       localPoints.push(pct);
@@ -451,13 +497,29 @@ export async function fetchLiveVegetation(): Promise<LiveVegetation> {
     "[Satellite] Starting live fetch + Cosmos DB pixel comparison",
   );
 
-  // ── A: Load Cosmos DB historical baselines (3 bands, all in parallel) ──────
-  logger.info("[Satellite] Loading Cosmos DB pixel_grids historical baselines");
-  const [histNDVI, histNDRE, histRE] = await Promise.all([
-    loadCosmosGrid(month, "NDVI_mean"),
-    loadCosmosGrid(month, "NDRE_mean"),
-    loadCosmosGrid(month, "RED_EDGE_mean"),
-  ]);
+  // ── A: Load engine historical baselines (per-pixel + aggregate fallback) ────
+  logger.info("[Satellite] Loading engine baseline (per-pixel grid + ward aggregate)");
+  // Tenant slug → ward display name via the api's TENANT_HOME_WARD map.
+  // (The dashboard tenant is fixed to "bula-pesa" for now; this keeps
+  // a single source of truth so a future per-user tenant change just
+  // updates geoHelpers.)
+  const { TENANT_HOME_WARD } = await import("./geoHelpers.js");
+  const homeWardName = TENANT_HOME_WARD["bula-pesa"] ?? "Bulla Pesa";
+  const { aggregate: aggBaseline, pixel: pixelBaseline } =
+    await loadBaselineGrids(month, homeWardName);
+
+  const histNDVI = pixelBaseline?.ndvi ?? null;
+  const histNDRE = pixelBaseline?.ndre ?? null;
+  const histRE = pixelBaseline?.red_edge ?? null;
+  const ndviBaselineP50 = aggBaseline?.ndvi_p50 ?? null;
+  const ndreBaselineP50 = aggBaseline?.ndre_p50 ?? null;
+  const reBaselineP50 = aggBaseline?.red_edge_p50 ?? null;
+  const baselineSource: "pixel+aggregate" | "aggregate" | "none" =
+    histNDVI && histNDVI.length > 0
+      ? "pixel+aggregate"
+      : aggBaseline
+        ? "aggregate"
+        : "none";
 
   // ── B: EE live composite → pixel array (sampleRectangle) ─────────────────
   logger.info(
@@ -479,11 +541,14 @@ export async function fetchLiveVegetation(): Promise<LiveVegetation> {
   );
 
   // ── C: Per-pixel anomaly computation (pure Node.js) ──────────────────────
-  logger.info("[Satellite] Computing per-pixel anomalies in-server");
+  logger.info(
+    { baselineSource, hasPixelBaseline: histNDVI != null && histNDVI.length > 0 },
+    "[Satellite] Computing per-pixel anomalies in-server",
+  );
 
-  const ndviPoints = computeAnomalyPoints(liveNDVI, histNDVI);
-  const ndrePoints = computeAnomalyPoints(liveNDRE, histNDRE);
-  const rePoints = computeAnomalyPoints(liveRE, histRE);
+  const ndviPoints = computeAnomalyPoints(liveNDVI, histNDVI, ndviBaselineP50);
+  const ndrePoints = computeAnomalyPoints(liveNDRE, histNDRE, ndreBaselineP50);
+  const rePoints = computeAnomalyPoints(liveRE, histRE, reBaselineP50);
 
   const ndviStats = computeStats(ndviPoints.map((p) => p.pct));
   const ndreStats = computeStats(ndrePoints.map((p) => p.pct));
@@ -496,7 +561,7 @@ export async function fetchLiveVegetation(): Promise<LiveVegetation> {
     computeQuadrantStats(ndviPoints);
 
   // ── D: Local zone (extracted from already-loaded grids — zero extra I/O) ──
-  const localZone = computeLocalZone(liveNDVI, histNDVI);
+  const localZone = computeLocalZone(liveNDVI, histNDVI ?? [], ndviBaselineP50);
 
   // ── E: Ward-level mean values (for legacy delta comparison) ───────────────
   const validNDVI = ndviPoints
@@ -533,8 +598,10 @@ export async function fetchLiveVegetation(): Promise<LiveVegetation> {
     wardStressedPixels,
     worstQuadrant,
     quadrantMeanAnomalyPct,
-    baselineSource: "cosmos_pixel_grids",
-    historicalYearRange: "2014–2025",
+    baselineSource,
+    historicalYearRange: aggBaseline
+      ? (aggBaseline as any).window_label ?? "engine-managed"
+      : "no baseline",
     ...(localZone ? { localZone } : {}),
   };
 

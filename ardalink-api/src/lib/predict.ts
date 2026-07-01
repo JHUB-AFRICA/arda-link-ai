@@ -3,13 +3,13 @@
  *
  * Combines three signals:
  *  1. 14-day weather forecast from Open-Meteo (free, no API key)
- *  2. Cosmos DB monthly_baselines — seasonal NDVI trajectory
+ *  2. Engine's `baseline_aggregate` table — seasonal NDVI trajectory
  *  3. Current satellite state (stressed pixel %, anomaly, MAI)
  *
  * Output: 14-day vegetation risk outlook + recovery estimate + recommendation.
  */
 
-import { ardalinkDb } from "./cosmos.js";
+import { fetchBaselineAggregate } from "./engine.js";
 import { logger } from "./logger.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -55,7 +55,7 @@ export interface VegetationForecast {
   horizon: 14;
   /** 14-day precipitation & evaporation outlook */
   forecast14d: ForecastWindow;
-  /** Expected seasonal NDVI trajectory from Cosmos DB historical baselines */
+  /** Expected seasonal NDVI trajectory from the engine's baseline_aggregate */
   seasonal: SeasonalContext;
   /** Combined 44-day MAI (30-day past + 14-day future) */
   combinedMAI: number;
@@ -170,7 +170,7 @@ async function fetchForecastWindow(): Promise<ForecastWindow> {
   };
 }
 
-// ── Load seasonal context from Cosmos DB monthly_baselines ──────────────────
+// ── Load seasonal context from the engine's baseline_aggregate ──────────────
 
 async function fetchSeasonalContext(
   currentMonth: number,
@@ -178,38 +178,17 @@ async function fetchSeasonalContext(
   const nextMonth = (currentMonth % 12) + 1;
   const twoMonthsAhead = (nextMonth % 12) + 1;
 
-  const MONTH_NAMES = [
-    "JAN",
-    "FEB",
-    "MAR",
-    "APR",
-    "MAY",
-    "JUN",
-    "JUL",
-    "AUG",
-    "SEP",
-    "OCT",
-    "NOV",
-    "DEC",
-  ];
-  const pad = (n: number) => String(n).padStart(2, "0");
-
-  const ids = [currentMonth, nextMonth, twoMonthsAhead].map(
-    (m) => `baseline_${pad(m)}_${MONTH_NAMES[m - 1]}`,
-  );
-
+  // Pull (current, next, +2 months) NDVI p50 from the engine. Missing
+  // months fall back to 0; the caller treats that as "no baseline yet" via
+  // the trend direction (stable).
+  // Tenant slug → ward display name. The engine resolves name → wardcode.
+  const { TENANT_HOME_WARD } = await import("./geoHelpers.js");
+  const wardName = TENANT_HOME_WARD["bula-pesa"] ?? "Bulla Pesa";
+  const months = [currentMonth, nextMonth, twoMonthsAhead];
   const results = await Promise.all(
-    ids.map((id, idx) => {
-      const month = [currentMonth, nextMonth, twoMonthsAhead][idx]!;
-      return ardalinkDb
-        .container("monthly_baselines")
-        .item(id, month)
-        .read<{ bands: Record<string, { spatial_mean: number }> }>()
-        .then(
-          ({ resource }) => resource?.bands?.["NDVI_mean"]?.spatial_mean ?? 0,
-        )
-        .catch(() => 0);
-    }),
+    months.map((m) =>
+      fetchBaselineAggregate(wardName, m).then((row) => row?.ndvi_p50 ?? 0),
+    ),
   );
 
   const [curNDVI, nxtNDVI, t2NDVI] = results as [number, number, number];

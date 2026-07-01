@@ -5,6 +5,7 @@ import { logger } from "./lib/logger.js";
 import { handleVoiceStream } from "./lib/voiceStream.js";
 import { handleBrowserVoiceStream } from "./lib/voiceStreamBrowser.js";
 import { startScheduler } from "./lib/scheduler.js";
+import { startSatelliteJob } from "./jobs/index.js";
 import { consumeToken } from "./lib/callTokens.js";
 import { isTrustedOrigin } from "./lib/originGuard.js";
 
@@ -51,6 +52,14 @@ const httpServer = app.listen(port, (err) => {
   void startScheduler().catch((err) =>
     logger.error({ err }, "Scheduler bootstrap failed"),
   );
+
+  // Start the satellite GEE refresh job on seasonal schedule.
+  // Non-blocking — runs in background.
+  try {
+    startSatelliteJob();
+  } catch (err) {
+    logger.error({ err }, "Satellite job bootstrap failed");
+  }
 });
 
 // ── WebSocket upgrade handler ──────────────────────────────────────────────

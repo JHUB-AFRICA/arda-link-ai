@@ -70,7 +70,7 @@ function loadCountiesGeoJson(): unknown | null {
 
 // Same shape as the counties loader, but for the Isiolo-wards file.
 // Sourced from GADM v4.1 (https://gadm.org) — 10 wards within Isiolo
-// County: BullaPesa, Burat, Chari, Cherab, NgareMara, Oldo/Nyiro,
+// County: Bulla Pesa, Burat, Chari, Cherab, Ngare Mara, Oldonyiro,
 // Wabera, Garbatulla, Kinna, Sericho. Bundled at 142 KB.
 let isioloWardsGeoJsonCache: unknown | null = null;
 function loadIsioloWardsGeoJson(): unknown | null {
@@ -241,8 +241,8 @@ router.get("/open-data/geo/kenya-counties", (_req, res): void => {
 /**
  * GET /api/open-data/geo/isiolo-wards
  *
- * Returns the 10 wards inside Isiolo County (BullaPesa, Burat, Chari,
- * Cherab, NgareMara, Oldo/Nyiro, Wabera, Garbatulla, Kinna, Sericho)
+ * Returns the 10 wards inside Isiolo County (Bulla Pesa, Burat, Chari,
+ * Cherab, Ngare Mara, Oldonyiro, Wabera, Garbatulla, Kinna, Sericho)
  * as a GeoJSON FeatureCollection. Sourced from GADM v4.1. Public —
  * no auth — so the dashboard can render the ward polygons before the
  * user signs in. Cached 1h on the server.
@@ -262,7 +262,7 @@ router.get("/open-data/geo/isiolo-wards", (_req, res): void => {
 /**
  * GET /api/open-data/geo/ward-aggregates
  *
- * Per-ward numeric aggregates (BullaPesa, Garbatulla, Sericho + the
+ * Per-ward numeric aggregates (Bulla Pesa, Garbatulla, Sericho + the
  * 7 surrounding Isiolo wards). The data comes from RLS-scoped
  * ground-truth reports + pastoralists and is bucketed by the
  * GADM ward the place name resolves to.
