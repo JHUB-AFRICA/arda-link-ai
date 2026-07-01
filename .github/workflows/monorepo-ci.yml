@@ -11,9 +11,9 @@ name: Monorepo CI
 
 on:
   pull_request:
-    branches: [master]
+    branches: [master, staging]
   push:
-    branches: [master]
+    branches: [master, staging]
   workflow_dispatch: {}
 
 permissions:
@@ -27,6 +27,7 @@ jobs:
   paths:
     name: Paths changed
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       engine: ${{ steps.filter.outputs.engine }}
       api: ${{ steps.filter.outputs.api }}
@@ -34,7 +35,6 @@ jobs:
       marketing: ${{ steps.filter.outputs.marketing }}
       docs: ${{ steps.filter.outputs.docs }}
       root: ${{ steps.filter.outputs.root }}
-      ci: ${{ steps.filter.outputs.ci }}
       any: ${{ steps.filter.outputs.any }}
     steps:
       - uses: actions/checkout@v4
@@ -72,16 +72,12 @@ jobs:
               - '.gitignore'
               - '.github/**'
               - 'CODEOWNERS'
-            ci:
-              - '.github/**'
-              - '**/ci.yml'
-              - '**/*.test.ts'
-              - '**/*.test.py'
 
   hygiene:
     name: Hygiene (root)
     needs: paths
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Fail on TODO/FIXME/XXX/HACK/STUB in committed source
@@ -205,6 +201,7 @@ jobs:
     needs: [paths, hygiene]
     if: needs.paths.outputs.root == 'true' || needs.paths.outputs.any == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
       - name: Root README links to JHUB-AFRICA/arda-link-ai
@@ -234,6 +231,10 @@ jobs:
     needs: [paths, hygiene]
     if: needs.paths.outputs.engine == 'true' || needs.paths.outputs.any == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -259,6 +260,10 @@ jobs:
     needs: [paths, hygiene]
     if: needs.paths.outputs.api == 'true' || needs.paths.outputs.any == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -288,6 +293,10 @@ jobs:
     needs: [paths, hygiene]
     if: needs.paths.outputs.web == 'true' || needs.paths.outputs.any == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -317,11 +326,14 @@ jobs:
     needs: [paths, hygiene]
     if: needs.paths.outputs.marketing == 'true' || needs.paths.outputs.any == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: pip install qrcode
+      - name: Install librsvg2-bin (rsvg-convert for PDF regen)
+        run: sudo apt-get update && sudo apt-get install -y librsvg2-bin
       - name: Regenerate posters from source
         run: |
           set -euo pipefail
@@ -379,6 +391,7 @@ jobs:
     needs: [paths, hygiene]
     if: needs.paths.outputs.docs == 'true' || needs.paths.outputs.any == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Every doc file must be ≤ 200 KB and ≤ 1500 lines
@@ -425,14 +438,16 @@ jobs:
       - docs
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Check all jobs succeeded
         run: |
           set -euo pipefail
           # GitHub Actions exposes each job's result via the needs.<job_id>.result
-          # expression. GitHub's expression engine does NOT expand shell variables
-          # inside ${{ }} — so we hardcode the list here. Adding a new required
-          # job means adding it both to 'needs' above and to this map.
+          # expression. The expression engine does NOT expand shell variables
+          # inside the expression syntax — so we hardcode the list here. Adding
+          # a new required job means adding it both to 'needs' above and to
+          # this map.
           declare -A results
           results[hygiene]="${{ needs.hygiene.result }}"
           results[root-readme]="${{ needs.root-readme.result }}"
