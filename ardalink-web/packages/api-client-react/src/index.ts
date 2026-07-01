@@ -576,6 +576,63 @@ export function useTimeTravel(metric: ChoroplethMetric, counties: string[]) {
   });
 }
 
+// ---- Ward detail (bbox + quadrants + landmarks + places) -----------------
+
+/** One named landmark inside a ward (settlement, river, worship, etc.). */
+export interface WardLandmark {
+  name: string;
+  category: string;
+  lat: number;
+  lon: number;
+}
+
+/** One named place inside a ward (town, settlement, water point, etc.). */
+export interface WardPlace {
+  name: string;
+  kind: string;
+  lat: number;
+  lon: number;
+}
+
+/** One quadrant of a ward's interior (NW / NE / SW / SE). */
+export interface WardQuadrant {
+  id: string;
+  name: string;
+  sub: string;
+  polygon: Array<[number, number]>;
+}
+
+/** Full ward-detail payload. `bbox` is undefined when the ward has no
+ *  detail data (the API still returns 200 with empty arrays). */
+export interface WardDetail {
+  bbox?: { west: number; south: number; east: number; north: number };
+  quadrants: WardQuadrant[];
+  landmarks: WardLandmark[];
+  places: WardPlace[];
+}
+
+export interface WardDetailResponse extends WardDetail {
+  ward: string;
+}
+
+export const getWardDetail = async (ward: string): Promise<WardDetailResponse> =>
+  apiFetch<WardDetailResponse>(
+    `/api/open-data/geo/ward-detail?ward=${encodeURIComponent(ward)}`,
+  );
+
+export const getWardDetailQueryKey = (ward: string) =>
+  ["open-data", "ward-detail", ward] as const;
+
+export function useWardDetail(ward: string | null | undefined) {
+  return useQuery<WardDetailResponse, Error>({
+    queryKey: getWardDetailQueryKey(ward ?? ""),
+    queryFn: () => getWardDetail(ward!),
+    // Landmarks are static OSM data; 1h stale keeps re-renders cheap.
+    staleTime: 60 * 60 * 1000,
+    enabled: ward != null && ward.length > 0,
+  });
+}
+
 // ---- Wards + pastoralist pins + report pins -----------------------------
 
 export interface WardPreset {

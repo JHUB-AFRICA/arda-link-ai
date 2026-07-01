@@ -259,6 +259,116 @@ router.get("/open-data/geo/isiolo-wards", (_req, res): void => {
   res.json(geo);
 });
 
+// Per-ward detail payload (bbox + quadrants + landmarks + named places).
+// Loaded from docs/local-dev/data/ward-detail.json. Currently populated
+// for Bula Pesa only; the Choropleth gracefully handles empty arrays for
+// the other 9 wards. Cached 1h on the server — landmarks are static OSM
+// data and don't change between requests.
+type WardQuadrant = {
+  id: string;
+  name: string;
+  sub: string;
+  polygon: Array<[number, number]>;
+};
+
+type WardLandmark = {
+  name: string;
+  category: string;
+  lat: number;
+  lon: number;
+};
+
+type WardPlace = {
+  name: string;
+  kind: string;
+  lat: number;
+  lon: number;
+};
+
+type WardDetail = {
+  bbox?: { west: number; south: number; east: number; north: number };
+  quadrants: WardQuadrant[];
+  landmarks: WardLandmark[];
+  places: WardPlace[];
+};
+
+type WardDetailMap = Record<string, WardDetail>;
+
+let wardDetailCache: WardDetailMap | null = null;
+function loadWardDetail(): WardDetailMap | null {
+  if (wardDetailCache) return wardDetailCache;
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const candidates = [
+      join(here, "..", "..", "..", "docs", "local-dev", "data", "ward-detail.json"),
+      join(here, "..", "..", "docs", "local-dev", "data", "ward-detail.json"),
+      join(process.cwd(), "docs", "local-dev", "data", "ward-detail.json"),
+      join(process.cwd(), "ardalink-api", "docs", "local-dev", "data", "ward-detail.json"),
+    ];
+    for (const c of candidates) {
+      if (existsSync(c)) {
+        const txt = readFileSync(c, "utf8");
+        const parsed = JSON.parse(txt) as WardDetailMap;
+        // Normalise: every ward has at minimum empty arrays for the three
+        // collections, so the dashboard never has to null-check.
+        for (const k of Object.keys(parsed)) {
+          parsed[k] = {
+            ...parsed[k],
+            quadrants: parsed[k].quadrants ?? [],
+            landmarks: parsed[k].landmarks ?? [],
+            places: parsed[k].places ?? [],
+          };
+        }
+        wardDetailCache = parsed;
+        logger.info(
+          {
+            path: c,
+            wards: Object.keys(parsed).length,
+            withDetail: Object.values(parsed).filter(
+              (w) => w.quadrants.length > 0 || w.landmarks.length > 0,
+            ).length,
+          },
+          "[OpenData] Loaded ward detail JSON",
+        );
+        return wardDetailCache;
+      }
+    }
+    logger.warn(
+      { tried: candidates },
+      "[OpenData] ward-detail.json not found — Choropleth detail view will be empty",
+    );
+    return null;
+  } catch (e) {
+    logger.error({ err: e }, "[OpenData] Failed to load ward-detail.json");
+    return null;
+  }
+}
+
+/**
+ * GET /api/open-data/geo/ward-detail?ward=<NAME_3>
+ *
+ * Per-ward geographic detail (bbox + quadrants + landmarks + named
+ * places). Currently populated for Bula Pesa only; other wards return
+ * an empty detail object so the client always has a well-defined
+ * shape. Public — no auth — because the data is OSM-sourced and
+ * static.
+ */
+router.get("/open-data/geo/ward-detail", (req, res): void => {
+  const ward = String(req.query.ward ?? "").trim();
+  const all = loadWardDetail();
+  if (!all) {
+    res.status(503).json({ error: "ward-detail.json not bundled in this build" });
+    return;
+  }
+  if (!ward) {
+    res.status(400).json({ error: "missing required query parameter: ward" });
+    return;
+  }
+  const detail = all[ward] ?? { quadrants: [], landmarks: [], places: [] };
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.json({ ward, ...detail });
+});
+
 /**
  * GET /api/open-data/geo/ward-aggregates
  *

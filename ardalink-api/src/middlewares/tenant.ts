@@ -99,4 +99,5 @@ const PUBLIC_PATHS = new Set<string>([
   "/api/open-data/geo/county-presets",
   "/api/open-data/geo/isiolo-wards",
   "/api/open-data/geo/ward-presets",
+  "/api/open-data/geo/ward-detail",
 ]);

@@ -2,13 +2,15 @@
  * Choropleth — ward-level choropleth with herder + report pins.
  *
  * Orchestrator component. Owns:
- * - the metric and slice state (synced to localStorage-friendly defaults)
+ * - the metric and slice state
  * - the layer-visibility state (herder pins, report pins)
- * - the selected-ward state (controlled)
+ * - the selected-ward camera state (fits to ward bbox when selected)
  *
- * Reads data via {@link useChoroplethData} and delegates rendering to:
+ * Reads data via {@link useChoroplethData} and {@link useWardDetail},
+ * delegates rendering to:
  * - {@link Header}            — control bar
  * - {@link WardsLayer}        — choropleth layer
+ * - {@link WardDetailLayer}   — rich-detail overlay for the selected ward
  * - {@link PastoralistPinsLayer} — herder pins
  * - {@link ReportPinsLayer}   — report pins
  * - {@link AlertMarkersLayer} — alert pins
@@ -29,16 +31,18 @@ import {
   ZoomControl,
   useMap,
 } from "react-leaflet";
-import { Loader2, AlertTriangle } from "lucide-react";
+import { Loader2, AlertTriangle, Info } from "lucide-react";
 import type { LatLngBoundsExpression } from "leaflet";
 import type {
   ChoroplethMetric,
   TimeSlice,
+  WardDetail,
 } from "@workspace/api-client-react";
 import { Header } from "./Header";
 import { Hud } from "./Hud";
 import { Legend } from "./Legend";
 import { WardsLayer } from "./WardsLayer";
+import { WardDetailLayer } from "./WardDetailLayer";
 import { PastoralistPinsLayer } from "./PastoralistPinsLayer";
 import { ReportPinsLayer } from "./ReportPinsLayer";
 import { AlertMarkersLayer } from "./AlertMarkersLayer";
@@ -48,6 +52,7 @@ import { TimeTravelSparkline } from "./Panels/TimeTravelSparkline";
 import { InsightsPanel } from "./Panels/InsightsPanel";
 import {
   useChoroplethData,
+  useWardDetail,
   type IsioloWardsFeatureCollection,
 } from "./hooks";
 
@@ -68,12 +73,34 @@ const ISIOLO_BBOX: LatLngBoundsExpression = [
   [1.2, 39.5],
 ];
 
-/** Camera controller — fits the map to the Isiolo wards on mount. */
-function FitOnMount() {
+type FitCameraProps = {
+  /** Detail payload — when present and has a bbox, fit the map to it. */
+  detail: WardDetail | null | undefined;
+  /** True when a ward is selected (drives the fit-to-ward behaviour). */
+  hasSelection: boolean;
+};
+
+/**
+ * FitCamera — keeps the map view in sync with the current selection.
+ *
+ * - On first mount: fit to the Isiolo bbox (overview).
+ * - When a ward is selected and its detail has a bbox: fly to it.
+ * - When the selection clears: fly back to the Isiolo overview.
+ */
+function FitCamera({ detail, hasSelection }: FitCameraProps) {
   const map = useMap();
   useEffect(() => {
-    map.fitBounds(ISIOLO_BBOX, { padding: [20, 20] });
-  }, [map]);
+    if (hasSelection && detail?.bbox) {
+      const { west, south, east, north } = detail.bbox;
+      const bbox: LatLngBoundsExpression = [
+        [south, west],
+        [north, east],
+      ];
+      map.flyToBounds(bbox, { padding: [40, 40], duration: 0.6, maxZoom: 12 });
+    } else if (!hasSelection) {
+      map.flyToBounds(ISIOLO_BBOX, { padding: [20, 20], duration: 0.6 });
+    }
+  }, [map, hasSelection, detail?.bbox]);
   return null;
 }
 
@@ -82,9 +109,12 @@ function FitOnMount() {
  *
  * Responsibilities:
  * 1. Load the Isiolo wards GeoJSON once on mount.
- * 2. Drive all data hooks via {@link useChoroplethData}.
+ * 2. Drive all data hooks via {@link useChoroplethData} + {@link useWardDetail}.
  * 3. Compose the header, map, and four analysis panels.
  * 4. Relay the operator's selected ward back to the parent.
+ * 5. When a ward is selected and has detail data, mount the
+ *    {@link WardDetailLayer} so the operator sees quadrants + landmarks
+ *    + named places — matching the home map's depth for that ward.
  */
 export function Choropleth({
   selectedWardId,
@@ -138,6 +168,14 @@ export function Choropleth({
   }, []);
 
   const data = useChoroplethData(metric, slice);
+  const wardDetailQuery = useWardDetail(selectedWardId);
+  const wardDetail = wardDetailQuery.data;
+  const hasDetailContent =
+    wardDetail != null &&
+    (wardDetail.quadrants.length > 0 ||
+      wardDetail.landmarks.length > 0 ||
+      wardDetail.places.length > 0);
+
   const selectedWardPreset = selectedWardId
     ? data.wardPresets?.wards.find((w) => w.name === selectedWardId) ?? null
     : null;
@@ -179,11 +217,23 @@ export function Choropleth({
           </div>
         )}
 
+        {/* Detail-availability hint — only when a ward IS selected but
+            has no detail data. Other wards gracefully fall through. */}
+        {selectedWardId && wardDetailQuery.isSuccess && !hasDetailContent && (
+          <div
+            data-testid="choropleth-no-detail-hint"
+            className="absolute z-[500] top-3 left-1/2 -translate-x-1/2 bg-gray-950/85 backdrop-blur border border-gray-700 rounded-lg px-3 py-1.5 text-[11px] text-gray-300 shadow flex items-center gap-1.5"
+          >
+            <Info className="w-3.5 h-3.5 text-gray-400" />
+            No detailed landmarks for {selectedWardPreset?.displayName ?? selectedWardId} yet
+          </div>
+        )}
+
         <MapContainer
           center={[0.49, 38.0]}
           zoom={8}
           minZoom={5}
-          maxZoom={13}
+          maxZoom={16}
           maxBounds={[
             [-5.0, 33.5],
             [5.0, 42.0],
@@ -201,28 +251,36 @@ export function Choropleth({
           <ZoomControl position="bottomright" />
 
           {isioloWards && (
-            <>
-              <WardsLayer
-                wards={isioloWards}
-                metric={metric}
-                aggregates={data.wardAggregates}
-                presets={data.wardPresets}
-                selectedWardId={selectedWardId}
-                onSelectWard={onSelectWard}
-              />
-              {showHerderPins && (
-                <PastoralistPinsLayer
-                  pins={data.pastoralistPins?.pins ?? []}
-                />
-              )}
-              {showReportPins && (
-                <ReportPinsLayer pins={data.reportPins?.pins ?? []} />
-              )}
-              <AlertMarkersLayer markers={data.alerts?.markers ?? []} />
-            </>
+            <WardsLayer
+              wards={isioloWards}
+              metric={metric}
+              aggregates={data.wardAggregates}
+              presets={data.wardPresets}
+              selectedWardId={selectedWardId}
+              onSelectWard={onSelectWard}
+            />
           )}
 
-          <FitOnMount />
+          {/* Rich-detail overlay for the selected ward — only mounts
+              when a ward is selected AND the API returned detail data. */}
+          {selectedWardId && hasDetailContent && (
+            <WardDetailLayer detail={wardDetail} />
+          )}
+
+          {showHerderPins && (
+            <PastoralistPinsLayer
+              pins={data.pastoralistPins?.pins ?? []}
+            />
+          )}
+          {showReportPins && (
+            <ReportPinsLayer pins={data.reportPins?.pins ?? []} />
+          )}
+          <AlertMarkersLayer markers={data.alerts?.markers ?? []} />
+
+          <FitCamera
+            detail={wardDetail ?? null}
+            hasSelection={selectedWardId != null}
+          />
         </MapContainer>
 
         <Legend
