@@ -429,11 +429,20 @@ jobs:
       - name: Check all jobs succeeded
         run: |
           set -euo pipefail
-          # GitHub Actions exposes job results as ${{ needs.<job>.result }}.
-          # We hardcode the expected set here so a missing job is also flagged.
+          # GitHub Actions exposes each job's result via the needs.<job_id>.result
+          # expression. GitHub's expression engine does NOT expand shell variables
+          # inside ${{ }} — so we hardcode the list here. Adding a new required
+          # job means adding it both to 'needs' above and to this map.
           declare -A results
-          for j in hygiene root-readme engine api web marketing docs; do
-            r="${{ needs.$j.result }}"
+          results[hygiene]="${{ needs.hygiene.result }}"
+          results[root-readme]="${{ needs.root-readme.result }}"
+          results[engine]="${{ needs.engine.result }}"
+          results[api]="${{ needs.api.result }}"
+          results[web]="${{ needs.web.result }}"
+          results[marketing]="${{ needs.marketing.result }}"
+          results[docs]="${{ needs.docs.result }}"
+          for j in "${!results[@]}"; do
+            r="${results[$j]}"
             if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then
               echo "::error::$j job status: $r"
               exit 1
