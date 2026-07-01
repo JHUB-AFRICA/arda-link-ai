@@ -46,11 +46,11 @@ export function AlertMarkersLayer({ markers }: AlertMarkersLayerProps) {
             }}
           >
             <LeafletTooltip direction="top" sticky>
-              <div style="font-weight:600">
+              <div style={{ fontWeight: 600 }}>
                 [{m.severity.toUpperCase()}] {m.kind.replace(/_/g, " ")}
               </div>
-              <div style="opacity:0.8">{m.message}</div>
-              <div style="opacity:0.6">
+              <div style={{ opacity: 0.8 }}>{m.message}</div>
+              <div style={{ opacity: 0.6 }}>
                 Quadrant: {m.quadrant ?? "—"} · {new Date(m.createdAt).toLocaleDateString()}
               </div>
             </LeafletTooltip>

@@ -58,14 +58,14 @@ export function ReportPinsLayer({ pins }: ReportPinsLayerProps) {
             }}
           >
             <LeafletTooltip direction="top" sticky>
-              <div style="font-weight:600">
+              <div style={{ fontWeight: 600 }}>
                 Report #{p.id} · {escapeHtml(p.ward)}
               </div>
-              <div style="opacity:0.7">{escapeHtml(p.placeName)}{p.quadrant ? ` · ${escapeHtml(p.quadrant)}` : ""}</div>
-              <div style="font-family:monospace;font-size:11px">
+              <div style={{ opacity: 0.7 }}>{escapeHtml(p.placeName)}{p.quadrant ? ` · ${escapeHtml(p.quadrant)}` : ""}</div>
+              <div style={{ fontFamily: "monospace", fontSize: "11px" }}>
                 {bcs != null && <>BCS {bcs.toFixed(1)} </>}
                 {ndvi != null && <>NDVI {ndvi >= 0 ? "+" : ""}{ndvi.toFixed(1)}% </>}
-                {p.mortalityRate === "4-plus" && <span style="color:#ef4444"> · 4+ deaths</span>}
+                {p.mortalityRate === "4-plus" && <span style={{ color: "#ef4444" }}> · 4+ deaths</span>}
               </div>
             </LeafletTooltip>
           </CircleMarker>

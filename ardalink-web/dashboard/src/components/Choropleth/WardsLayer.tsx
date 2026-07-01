@@ -66,7 +66,7 @@ export function WardsLayer({
               ? `<div style="opacity:0.7">Demo home ward · ${escapeHtml(meta.label)} · ${escapeHtml(meta.unit)}</div>`
               : `<div style="opacity:0.7">${escapeHtml(meta.label)} · ${escapeHtml(meta.unit)}</div>`,
             value == null
-              ? '<div style="color:#9ca3af">No data</div>'
+              ? `<div style="color:#9ca3af">No data</div>`
               : `<div style="color:${valueColor(value, meta)};font-weight:600">${formatValue(value, meta)}</div>`,
           ];
           layer.bindTooltip(lines.join(""), {

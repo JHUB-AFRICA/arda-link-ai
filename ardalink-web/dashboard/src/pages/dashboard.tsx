@@ -1266,7 +1266,7 @@ export default function Dashboard({ session }: { session?: import("@/components/
   const d = statusData?.last_run as any;
   const f = forecastData as any;
 
-  const navigate = (next: "map" | "pastoralists" | "groundtruth" | "chat") => {
+  const navigate = (next: "map" | "pastoralists" | "groundtruth" | "chat" | "choropleth") => {
     setTab(next);
     setNavOpen(false);
   };

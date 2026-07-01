@@ -37,16 +37,16 @@ export function PastoralistPinsLayer({ pins }: PastoralistPinsLayerProps) {
             }}
           >
             <LeafletTooltip direction="top" sticky>
-              <div style="font-weight:600">{escapeHtml(p.name)}</div>
-              <div style="opacity:0.7">{escapeHtml(p.placeName)} · {escapeHtml(p.ward)}</div>
-              <div style="font-family:monospace;font-size:11px">
+              <div style={{ fontWeight: 600 }}>{escapeHtml(p.name)}</div>
+              <div style={{ opacity: 0.7 }}>{escapeHtml(p.placeName)} · {escapeHtml(p.ward)}</div>
+              <div style={{ fontFamily: "monospace", fontSize: "11px" }}>
                 cattle {p.cattle} · goats {p.goats} · camels {p.camels}
                 {p.alertsSent > 0 && (
-                  <span style="color:#facc15"> · {p.alertsSent} alerts</span>
+                  <span style={{ color: "#facc15" }}> · {p.alertsSent} alerts</span>
                 )}
               </div>
               {!p.mapped && (
-                <div style="color:#9ca3af;font-style:italic">unmapped — ward centre</div>
+                <div style={{ color: "#9ca3af", fontStyle: "italic" }}>unmapped — ward centre</div>
               )}
             </LeafletTooltip>
           </CircleMarker>
