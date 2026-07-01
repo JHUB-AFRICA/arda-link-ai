@@ -29,9 +29,9 @@ export function tenantMiddleware(
   if (PUBLIC_PATHS.has(req.path)) {
     return next();
   }
-  // /api/demo/* — demo simulators (USSD, SMS, Voice) for local testing
+  // /api/demo* — demo simulators (USSD, SMS, Voice) for local testing
   // without Africa's Talking dependency. Safe to expose publicly.
-  if (req.path.startsWith("/api/demo/")) {
+  if (req.path === "/api/demo" || req.path.startsWith("/api/demo/")) {
     return next();
   }
   // /api/call-tokens/:token (GET) — recipient-page status check; harmless
