@@ -29,6 +29,11 @@ export function tenantMiddleware(
   if (PUBLIC_PATHS.has(req.path)) {
     return next();
   }
+  // /api/demo/* — demo simulators (USSD, SMS, Voice) for local testing
+  // without Africa's Talking dependency. Safe to expose publicly.
+  if (req.path.startsWith("/api/demo/")) {
+    return next();
+  }
   // /api/call-tokens/:token (GET) — recipient-page status check; harmless
   // lookup, must work on phones where the recipient clicked a shared link
   // and may not have a Bearer token. Minting (POST) still requires both
@@ -72,6 +77,8 @@ export function tenantMiddleware(
  *   /api/voice-events                       — AT call lifecycle events; can't sign JWTs
  *   /api/ussd-callback                      — AT USSD gateway; can't sign JWTs
  *   /api/sms-callback                       — AT inbound SMS; can't sign JWTs
+ *   /api/demo/*                             — demo simulators (USSD, SMS, Voice) for local
+ *                                              testing without Africa's Talking dependency
  *   /api/call-tokens/:token                 — recipient-page status check; harmless lookup
  *
  * Everything else goes through tenantMiddleware.
