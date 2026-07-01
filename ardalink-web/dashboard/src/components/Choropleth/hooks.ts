@@ -20,11 +20,13 @@ import {
   useTimeTravel,
   usePastoralistPins,
   useReportPins,
+  useWardDetail,
   type ChoroplethMetric,
   type TimeSlice,
   type PastoralistPin,
   type ReportPin,
   type AlertMarker,
+  type WardDetail,
 } from "@workspace/api-client-react";
 
 /** Geographic feature collection for the 10 Isiolo wards. */
@@ -133,4 +135,8 @@ export function useChoroplethData(
 
 // Re-export the upstream types so sub-components don't need to reach
 // into @workspace/api-client-react directly.
-export type { PastoralistPin, ReportPin, AlertMarker };
+export type { PastoralistPin, ReportPin, AlertMarker, WardDetail };
+
+// Re-export the upstream hook so the orchestrator has a single import
+// surface for the ward-detail data flow.
+export { useWardDetail };
