@@ -903,6 +903,9 @@ export default function Dashboard({ session }: { session?: import("@/components/
   const [tab, setTab] = useState<
     "map" | "pastoralists" | "groundtruth" | "chat" | "choropleth" | "demos"
   >("map");
+  // Ward selected in the Choropleth tab. Owned here so the selection
+  // survives a tab switch.
+  const [selectedWardId, setSelectedWardId] = useState<string | null>(null);
   const [navOpen, setNavOpen] = useState(false);
   const [callOpen, setCallOpen] = useState(false);
   const [mintingCall, setMintCall] = useState(false);
@@ -1263,7 +1266,7 @@ export default function Dashboard({ session }: { session?: import("@/components/
   const d = statusData?.last_run as any;
   const f = forecastData as any;
 
-  const navigate = (next: "map" | "pastoralists" | "groundtruth" | "chat" | "choropleth" | "demos") => {
+const navigate = (next: "map" | "pastoralists" | "groundtruth" | "chat" | "choropleth" | "demos") => {
     setTab(next);
     setNavOpen(false);
   };
@@ -2062,11 +2065,14 @@ export default function Dashboard({ session }: { session?: import("@/components/
           {/* --- Tab: Ground Truth Intelligence --- */}
           {tab === "groundtruth" && <GroundTruthSection />}
 
-          {/* --- Tab: Choropleth (Kenya counties) --- */}
+          {/* --- Tab: Choropleth (Isiolo wards) --- */}
           {tab === "choropleth" && (
             <div className="p-3 sm:p-6 md:overflow-y-auto h-full">
               <ChoroplethErrorBoundary>
-                <Choropleth />
+                <Choropleth
+                  selectedWardId={selectedWardId}
+                  onSelectWard={setSelectedWardId}
+                />
               </ChoroplethErrorBoundary>
             </div>
           )}

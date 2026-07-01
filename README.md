@@ -88,8 +88,9 @@ For the local dev stack (one Makefile, no secrets, 27-check bring-up), see
 | [`ARCHITECTURE-V2.md`](./ARCHITECTURE-V2.md) | Canonical system architecture and data flow | Engineers, CTOs |
 | [`RUNBOOK.md`](./RUNBOOK.md) | Step-by-step operator manual | Operators, on-call |
 | [`LOCAL_SETUP.md`](./LOCAL_SETUP.md) | 5-minute install on a fresh machine | New contributors |
-| [`Arda-link-AI-Docs/`](./Arda-link-AI-Docs/) | Long-form narrative (8 deep-dive guides) | Engineers, partners |
-| `ardalink-{engine,api,web}/docs/` | Per-service 8-doc CTO navigation (service-specific) | Service-level readers |
+| [`CONVENTIONS.md`](./CONVENTIONS.md) | Shared code conventions + per-service addenda | Contributors, reviewers |
+| [`Arda-link-AI-Docs/`](./Arda-link-AI-Docs/) | Long-form narrative (8 guides: api, architecture, data, deployment, onboarding, satellite, security, voice) | Engineers, partners |
+| `ardalink-{engine,api,web}/docs/` | Per-service 8-doc CTO navigation | Service-level readers |
 
 ### Deep-dive guides in `Arda-link-AI-Docs/`
 

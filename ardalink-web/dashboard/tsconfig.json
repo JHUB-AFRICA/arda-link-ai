@@ -14,9 +14,5 @@
       "@/*": ["./src/*"]
     }
   },
-  "references": [
-    {
-      "path": "../packages/api-client-react"
-    }
-  ]
+"references": []
 }
