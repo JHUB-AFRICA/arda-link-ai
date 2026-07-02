@@ -13,11 +13,12 @@ Step-by-step manual for running the full local stack. Read this if
 1. [Prerequisites](#1-prerequisites)
 2. [One-time setup on a new machine](#2-one-time-setup-on-a-new-machine)
 3. [Daily workflow](#3-daily-workflow)
-4. [Common operations](#4-common-operations)
-5. [Verifying a release candidate](#5-verifying-a-release-candidate)
-6. [Troubleshooting](#6-troubleshooting)
-7. [Disaster recovery](#7-disaster-recovery)
-8. [How to read the source](#8-how-to-read-the-source)
+4. [Git workflow](#4-git-workflow)
+5. [Common operations](#5-common-operations)
+6. [Verifying a release candidate](#6-verifying-a-release-candidate)
+7. [Troubleshooting](#7-troubleshooting)
+8. [Disaster recovery](#8-disaster-recovery)
+9. [How to read the source](#9-how-to-read-the-source)
 
 ---
 
@@ -194,9 +195,57 @@ cd ardalink-engine && uv run python -m ardalink_engine.main &
 
 ---
 
-## 4. Common operations
+## 4. Git workflow
 
-### 4.1 Mint a demo JWT
+Three long-lived branches, strict promotion order:
+
+```
+master ← staging ← dev ← feature/*, fix/*, chore/*, refactor/*, docs/*
+```
+
+- **Active work**: branch off `dev`, open a PR to `dev` when ready.
+- **Integration**: open `dev` → `staging` PRs for final touches (copy polish, env-var audit, last-minute bumps).
+- **Release**: open `staging` → `master` PRs. Tag the merge commit with the version.
+- **Back-merge**: after every `staging` → `master` promotion, sync `master` back to `dev` so `dev` never falls behind.
+
+Full rules, branch naming, commit message format, and PR-target checklist live in [`CONTRIBUTING.md`](./CONTRIBUTING.md). Read it once; follow it always.
+
+### Promotion quick-reference
+
+```bash
+# Local: stage a dev → staging promotion (do this on the staging branch)
+git checkout staging
+git merge --no-ff dev                       # merge with history
+pnpm run typecheck && pnpm run test         # local sanity
+git push origin staging                     # CI will run
+
+# After staging → master lands + e2e green, back-merge:
+git checkout dev
+git merge --no-ff master
+git push origin dev
+```
+
+### Daily sanity (5 seconds, run before opening any PR)
+
+```bash
+# Are you on a feature branch, not dev?
+git branch --show-current                   # ^ should NOT be `dev`
+
+# Is your branch up to date with dev?
+git fetch origin
+git status -sb                             # ^ should say "ahead/behind 0 0" or just "ahead"
+
+# Is your history clean (no merge commits, no WIP)?
+git log --oneline dev..HEAD                # ^ scan for "WIP", "fixup!", "merge branch dev"
+```
+
+If any answer is wrong, fix it before opening the PR — don't push a messy branch and expect reviewers to clean it up.
+
+---
+
+## 5. Common operations
+
+### 5.1 Mint a demo JWT
 
 ```bash
 cd ardalink-api/docs/local-dev
@@ -215,7 +264,7 @@ make token T=garbatulla
 make token T=merti
 ```
 
-### 4.2 Call an authenticated API
+### 5.2 Call an authenticated API
 
 ```bash
 TOKEN=$(make token T=bula-pesa)
@@ -223,7 +272,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
   http://localhost:3000/api/ground-truth/recent?limit=5 | jq .
 ```
 
-### 4.3 Query Postgres directly (as `ardalink` superuser)
+### 5.3 Query Postgres directly (as `ardalink` superuser)
 
 ```bash
 PGPASSWORD=ardalink_dev_only psql -h 127.0.0.1 -p 15432 -U ardalink -d ardalink
@@ -243,7 +292,7 @@ SELECT tenant_id, count(*) FROM public.ground_truth_reports GROUP BY tenant_id;
 SELECT * FROM pg_policies WHERE schemaname = 'public' AND tablename = 'pastoralists';
 ```
 
-### 4.4 Query Postgres as `ardalink_app` (proves RLS works)
+### 5.4 Query Postgres as `ardalink_app` (proves RLS works)
 
 ```bash
 PGPASSWORD=ardalink_dev_only psql -h 127.0.0.1 -p 15432 -U ardalink_app -d ardalink
@@ -259,7 +308,7 @@ SET app.current_tenant_id = 'garbatulla';
 SELECT count(*) FROM ground_truth_reports;   -- returns 12, different rows
 ```
 
-### 4.5 Run a single test suite
+### 5.5 Run a single test suite
 
 ```bash
 # API unit tests
@@ -272,7 +321,7 @@ cd ardalink-web && pnpm --filter @workspace/dashboard run test
 cd ardalink-engine && uv run pytest -q
 ```
 
-### 4.6 Tail service logs
+### 5.6 Tail service logs
 
 ```bash
 cd ardalink-api/docs/local-dev
@@ -287,7 +336,7 @@ tail -f /tmp/ardalink-local/engine.log
 tail -f /tmp/ardalink-local/web.log
 ```
 
-### 4.7 Add a new tenant + seed data
+### 5.7 Add a new tenant + seed data
 
 Edit `ardalink-api/docs/local-dev/seed-data/seed-demo.sql` and
 re-run:
@@ -307,7 +356,7 @@ VALUES ('new-ward', 'New Ward', 'Isiolo County');
 
 ---
 
-## 5. Verifying a release candidate
+## 6. Verifying a release candidate
 
 This is the script the team runs before promoting any branch to
 production. It assumes nothing about local state — it starts from
@@ -344,7 +393,7 @@ If any step fails, do not promote. Fix the branch and re-run.
 
 ---
 
-## 6. Troubleshooting
+## 7. Troubleshooting
 
 ### Symptom: "Cannot find module 'X'"
 
@@ -443,9 +492,9 @@ docker stop <container_id>
 
 ---
 
-## 7. Disaster recovery
+## 8. Disaster recovery
 
-### 7.1 The "nothing works, start over" reset
+### 9.1 The "nothing works, start over" reset
 
 This is destructive — it deletes the demo data.
 
@@ -458,7 +507,7 @@ make up
 
 Takes ~90 seconds. After this the stack is back to the demo state.
 
-### 7.2 The "I broke my workspace" reset
+### 9.2 The "I broke my workspace" reset
 
 If `node_modules/`, `.venv/`, or the lockfile is in a weird state
 and reinstall doesn't fix it:
@@ -480,7 +529,7 @@ rm -rf .venv
 uv sync --extra dev
 ```
 
-### 7.3 The "my entire machine is on fire" reset
+### 9.3 The "my entire machine is on fire" reset
 
 ```bash
 # 1. Stop everything
@@ -495,7 +544,7 @@ rm -rf ardalink-api/node_modules ardalink-web/node_modules ardalink-engine/.venv
 # 3. Start over from the One-time Setup section above
 ```
 
-### 7.4 The "I committed a bug and the verify now fails" recovery
+### 9.4 The "I committed a bug and the verify now fails" recovery
 
 1. `git log --oneline -10` to find the suspect commit.
 2. `git revert <commit>` to undo it cleanly.
@@ -504,7 +553,7 @@ rm -rf ardalink-api/node_modules ardalink-web/node_modules ardalink-engine/.venv
 
 ---
 
-## 8. How to read the source
+## 9. How to read the source
 
 If you want to understand what a request does, start here:
 

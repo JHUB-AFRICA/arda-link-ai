@@ -4,6 +4,14 @@
   note explaining why in the PR body and link to the tracking issue.
 -->
 
+## Target branch
+
+- [ ] `dev` — feature / fix / refactor / chore / docs (the usual case)
+- [ ] `staging` — final touches for the next release (less common; opens from `dev`)
+- [ ] `master` — cutting a release (rare; opens from `staging` after CI green)
+
+See [`../CONTRIBUTING.md`](../CONTRIBUTING.md) for the full branching model. PRs opened against the wrong branch will be closed and re-opened.
+
 ## What this PR changes
 
 <!-- One-paragraph summary. Link issues with `Fixes #123`. -->
