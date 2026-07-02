@@ -451,7 +451,7 @@ function GroundTruthSection() {
 
   return (
     <div
-      className="p-4 sm:p-6 space-y-6 md:overflow-y-auto"
+      className="p-4 sm:p-6 space-y-6"
       data-testid="section-ground-truth"
     >
       {/* KPI strip */}
@@ -1297,7 +1297,7 @@ const navigate = (next: "map" | "pastoralists" | "groundtruth" | "demos") => {
   );
 
   return (
-    <div className="flex flex-col md:flex-row min-h-[100dvh] md:h-screen w-full bg-gray-950 text-gray-100 font-sans md:overflow-hidden">
+    <div className="flex flex-col md:flex-row min-h-screen w-full bg-gray-950 text-gray-100 font-sans">
       {/* --- Mobile top bar (sidebar trigger) --- */}
       <div className="md:hidden flex items-center justify-between px-4 py-3 bg-gray-900 border-b border-gray-800 shrink-0 sticky top-0 z-30">
         <div className="flex items-center gap-2 min-w-0">
@@ -1469,12 +1469,11 @@ const navigate = (next: "map" | "pastoralists" | "groundtruth" | "demos") => {
           )}
         </div>
 
-        <div className="flex-1 md:overflow-hidden md:relative">
+        <div className="flex-1 flex flex-col min-h-0">
           {/* --- Tab: Map --- */}
           {tab === "map" && (
-            <div className="md:absolute md:inset-0 flex flex-col md:flex-row">
-              <div className="flex-1 p-3 sm:p-6 md:overflow-y-auto">
-                <div className="h-full bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden relative flex flex-col items-center justify-center p-4">
+            <div className="flex-1 flex flex-col md:flex-row overflow-y-auto">
+              <div className="h-full bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden relative flex flex-col items-center justify-center p-4">
                   {loadingStatus && !d ? (
                     <div className="flex flex-col items-center text-gray-500 gap-4">
                       <Loader2 className="w-8 h-8 animate-spin" />
@@ -1548,7 +1547,6 @@ const navigate = (next: "map" | "pastoralists" | "groundtruth" | "demos") => {
                     </div>
                   )}
                 </div>
-              </div>
 
               <div className="w-full md:w-80 md:shrink-0 border-t md:border-t-0 md:border-l border-gray-800 bg-gray-900/40 md:overflow-y-auto p-3 sm:p-4 space-y-6">
                 {loadingStatus && !d ? (
@@ -1668,7 +1666,7 @@ const navigate = (next: "map" | "pastoralists" | "groundtruth" | "demos") => {
 
           {/* --- Tab: Pastoralists --- */}
           {tab === "pastoralists" && (
-            <div className="md:absolute md:inset-0 flex flex-col md:flex-row p-3 sm:p-6 gap-4 sm:gap-6 md:overflow-y-auto">
+            <div className="flex-1 flex flex-col md:flex-row p-3 sm:p-6 gap-4 sm:gap-6 overflow-y-auto">
               <div className="flex-1 bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden flex flex-col">
                 <div className="p-4 border-b border-gray-800 bg-gray-900 flex items-center justify-between">
                   <h2 className="text-base font-semibold text-white">
@@ -1947,11 +1945,15 @@ const navigate = (next: "map" | "pastoralists" | "groundtruth" | "demos") => {
           )}
 
           {/* --- Tab: Ground Truth Intelligence --- */}
-          {tab === "groundtruth" && <GroundTruthSection />}
+          {tab === "groundtruth" && (
+            <div className="flex-1 overflow-y-auto">
+              <GroundTruthSection />
+            </div>
+          )}
 
           {/* --- Tab: Demo Simulators --- */}
           {tab === "demos" && (
-            <div className="p-3 sm:p-6 md:overflow-y-auto h-full">
+            <div className="flex-1 p-3 sm:p-6 overflow-y-auto">
               <div className="max-w-4xl mx-auto">
                 <div className="mb-6">
                   <h2 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
