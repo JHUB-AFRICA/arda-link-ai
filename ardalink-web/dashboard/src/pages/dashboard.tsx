@@ -3,7 +3,6 @@ import {
   MapPin,
   Satellite,
   Cloud,
-  MessageSquare,
   Users,
   Activity,
   TrendingDown,
@@ -12,7 +11,6 @@ import {
   Wind,
   AlertTriangle,
   ChevronRight,
-  Send,
   Radio,
   Plus,
   Trash2,
@@ -21,7 +19,7 @@ import {
   Menu,
   ClipboardList,
   Heart,
-  Globe,
+  ExternalLink,
 } from "lucide-react";
 import {
   BarChart,
@@ -49,7 +47,6 @@ import {
   useListPastoralists,
   useCreatePastoralist,
   useDeletePastoralist,
-  useChatWithLand,
   useTriggerCheck,
   useListGroundTruthRecent,
   useGetGroundTruthSummary,
@@ -101,7 +98,8 @@ import { OpenDataCard } from "@/components/OpenDataCard";
 import { Choropleth } from "@/components/Choropleth";
 import { ChoroplethErrorBoundary } from "@/components/ChoroplethErrorBoundary";
 import { UserMenu } from "@/components/UserMenu";
-import { PhoneCall, ExternalLink } from "lucide-react";
+import { ChatModal, ChatFloatingButton } from "@/components/ChatModal";
+import { PhoneCall } from "lucide-react";
 
 // --- Helpers ---
 function stressColor(pct: number) {
@@ -901,15 +899,17 @@ function KpiCard({
 // --- Main Dashboard ---
 export default function Dashboard({ session }: { session?: import("@/components/AuthGate").SessionInfo }) {
   const [tab, setTab] = useState<
-    "map" | "pastoralists" | "groundtruth" | "chat" | "choropleth" | "demos"
+    "map" | "pastoralists" | "groundtruth" | "demos"
   >("map");
   // Ward selected in the Choropleth tab. Owned here so the selection
   // survives a tab switch.
   const [selectedWardId, setSelectedWardId] = useState<string | null>(null);
   const [navOpen, setNavOpen] = useState(false);
   const [callOpen, setCallOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const [mintingCall, setMintCall] = useState(false);
   const [briefLang, setBriefLang] = useState<"en" | "sw">("en");
+  const [briefExpanded, setBriefExpanded] = useState(false);
   // Pre-minted token so the "Hear ArdaLink call you" button can open the
   // new tab INSTANTLY — no network roundtrip on click, no about:blank
   // splash. Refreshed in the background after each use. Tokens are
@@ -1211,62 +1211,10 @@ export default function Dashboard({ session }: { session?: import("@/components/
     );
   };
 
-  // --- Chat ---
-  const [chatInput, setChatInput] = useState("");
-  const [chatHistory, setChatHistory] = useState<
-    { role: "user" | "assistant" | "system"; content: string; context?: any }[]
-  >([
-    {
-      role: "system",
-      content: "ArdaLink is ready. Ask me anything about your land.",
-    },
-  ]);
-  const chatMutation = useChatWithLand();
-  const chatEndRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatHistory, chatMutation.isPending]);
-
-  const handleSendChat = (messageText: string = chatInput) => {
-    if (!messageText.trim() || chatMutation.isPending) return;
-
-    const userMsg = messageText.trim();
-    setChatInput("");
-    setChatHistory((prev) => [...prev, { role: "user", content: userMsg }]);
-
-    const historyForApi = chatHistory
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      }));
-
-    chatMutation.mutate(
-      { data: { message: userMsg, history: historyForApi } },
-      {
-        onSuccess: (reply: { ok?: boolean; message?: string }) => {
-          setChatHistory((prev) => [
-            ...prev,
-            {
-              role: "assistant",
-              content: reply.reply,
-              context: reply.context,
-            },
-          ]);
-        },
-        onError: () => {
-          toast({ title: "Failed to send message", variant: "destructive" });
-          setChatHistory((prev) => prev.slice(0, -1)); // Remove failed message
-        },
-      },
-    );
-  };
-
   const d = statusData?.last_run as any;
   const f = forecastData as any;
 
-const navigate = (next: "map" | "pastoralists" | "groundtruth" | "chat" | "choropleth" | "demos") => {
+const navigate = (next: "map" | "pastoralists" | "groundtruth" | "demos") => {
     setTab(next);
     setNavOpen(false);
   };
@@ -1313,7 +1261,7 @@ const navigate = (next: "map" | "pastoralists" | "groundtruth" | "chat" | "choro
           onClick={() => navigate("pastoralists")}
           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${tab === "pastoralists" ? "bg-amber-600/20 text-amber-400 border border-amber-600/30" : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"}`}
         >
-          <Users className="w-4 h-4" /> Pastoralists
+          <Users className="w-4 h-4" /> Herders
         </button>
         <button
           data-testid="nav-groundtruth"
@@ -1323,25 +1271,11 @@ const navigate = (next: "map" | "pastoralists" | "groundtruth" | "chat" | "choro
           <ClipboardList className="w-4 h-4" /> Ground Truth
         </button>
         <button
-          data-testid="nav-choropleth"
-          onClick={() => navigate("choropleth" as "map" | "pastoralists" | "groundtruth" | "chat" | "choropleth" | "demos")}
-          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${tab === "choropleth" ? "bg-amber-600/20 text-amber-400 border border-amber-600/30" : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"}`}
-        >
-          <Globe className="w-4 h-4" /> Choropleth
-        </button>
-        <button
           data-testid="nav-demos"
-          onClick={() => navigate("demos" as "map" | "pastoralists" | "groundtruth" | "chat" | "choropleth" | "demos")}
+          onClick={() => navigate("demos")}
           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${tab === "demos" ? "bg-purple-600/20 text-purple-400 border border-purple-600/30" : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"}`}
         >
           <Radio className="w-4 h-4" /> Demo Simulators
-        </button>
-        <button
-          data-testid="nav-chat"
-          onClick={() => navigate("chat")}
-          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${tab === "chat" ? "bg-amber-600/20 text-amber-400 border border-amber-600/30" : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"}`}
-        >
-          <MessageSquare className="w-4 h-4" /> Chat with Land
         </button>
       </nav>
 
@@ -1418,11 +1352,7 @@ const navigate = (next: "map" | "pastoralists" | "groundtruth" | "chat" | "choro
                   ? "Herder Registry"
                   : tab === "groundtruth"
                     ? "Ground Truth Intelligence"
-                    : tab === "demos"
-                      ? "Demo Simulators"
-                      : tab === "choropleth"
-                        ? "Kenya Counties Choropleth"
-                        : "Chat with your Land"}
+                    : "Demo Simulators"}
             </h1>
             <p className="text-xs sm:text-sm text-gray-500">
               {tab === "map" && d
@@ -1431,11 +1361,7 @@ const navigate = (next: "map" | "pastoralists" | "groundtruth" | "chat" | "choro
                   ? "Manage herders and alerts"
                   : tab === "groundtruth"
                     ? "Herder voice reports → ILRI/FAO BCS, FEWS NET, LEGS, WFP CSI standards"
-                    : tab === "demos"
-                      ? "Test USSD, SMS, and Voice simulators with live AI"
-                      : tab === "choropleth"
-                        ? "Vegetation conditions across Kenya counties"
-                        : "Ask anything in English or Swahili"}
+                    : "Test USSD, SMS, and Voice simulators with live AI"}
             </p>
           </div>
           <div className="flex items-center flex-wrap gap-2 sm:gap-3">
@@ -1520,69 +1446,27 @@ const navigate = (next: "map" | "pastoralists" | "groundtruth" | "chat" | "choro
           </div>
         </div>
         <CallModal open={callOpen} onOpenChange={setCallOpen} />
+        <ChatModal open={chatOpen} onOpenChange={setChatOpen} />
 
-        {/* --- Value proposition strip (visible on every tab so judges always see it) --- */}
-        <div className="px-3 sm:px-6 py-3 border-b border-gray-800 bg-gradient-to-r from-amber-950/40 via-gray-900/60 to-gray-900/30 shrink-0">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <div className="min-w-0 md:max-w-2xl">
-              <p className="text-xs sm:text-sm text-gray-200 leading-snug">
-                <span className="text-amber-400 font-semibold">
-                  When pasture dies, herders are the last to know.
-                </span>{" "}
-                ArdaLink spots drought from satellites — then{" "}
-                <span className="text-amber-300 font-medium">
-                  phones each herder in their own language
-                </span>
-                .{" "}
-                <span className="text-gray-300">Swahili and English today</span>
-                <span className="text-gray-500">
-                  {" "}
-                  · Borana, Turkana, Samburu &amp; Somali next
-                </span>
-                .{" "}
-                <span className="text-gray-400">
-                  No smartphone. No app. Just a 2G voice call.
-                </span>
-              </p>
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-gray-800/80 border border-gray-700 text-gray-400">
-                  Satellite → AI → Voice call
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-900/40 border border-amber-700/50 text-amber-300 font-medium">
-                  ● Live · Isiolo County, Kenya
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-900/40 border border-emerald-700/50 text-emerald-300 font-medium">
-                  Multi-dialect ready
-                </span>
-              </div>
+        {/* --- AI Intelligence Brief --- */}
+        <div className="border-b border-gray-800 bg-gray-950/40">
+          <button
+            onClick={() => setBriefExpanded(!briefExpanded)}
+            className="w-full px-3 sm:px-6 py-2 flex items-center justify-between text-left hover:bg-gray-900/50 transition-colors"
+          >
+            <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">
+              Intelligence Brief
+            </span>
+            <ChevronRight className={`w-4 h-4 text-gray-500 transition-transform ${briefExpanded ? 'rotate-90' : ''}`} />
+          </button>
+          {briefExpanded && (
+            <div className="px-3 sm:px-6 py-3 border-t border-gray-800">
+              <IntelligenceBrief
+                lang={briefLang}
+                onLangChange={setBriefLang}
+              />
             </div>
-            {d?.live?.anomaly && (
-              <div className="md:text-right shrink-0 border-t md:border-t-0 md:border-l border-gray-800 md:pl-4 pt-2 md:pt-0">
-                <div className="text-[10px] uppercase tracking-wider text-gray-500">
-                  Currently monitoring
-                </div>
-                <div className="text-sm font-semibold text-white">
-                  {d.live.anomaly.wardStressedPixelPct?.toFixed(1)}% of ward
-                  stressed
-                </div>
-                <div className="text-xs text-amber-300">
-                  {d.live.anomaly.worstQuadrant} quadrant{" "}
-                  {d.live.anomaly.quadrantMeanAnomalyPct?.[
-                    d.live.anomaly.worstQuadrant
-                  ]?.toFixed(1)}
-                  % vs 11-yr norm
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* --- AI Intelligence Brief — always-visible hero card --- */}
-        <div className="px-3 sm:px-6 py-3 border-b border-gray-800 bg-gray-950/40 shrink-0">
-          <IntelligenceBrief
-            lang={briefLang}
-            onLangChange={setBriefLang}
-          />
+          )}
         </div>
 
         <div className="flex-1 md:overflow-hidden md:relative">
@@ -2065,18 +1949,6 @@ const navigate = (next: "map" | "pastoralists" | "groundtruth" | "chat" | "choro
           {/* --- Tab: Ground Truth Intelligence --- */}
           {tab === "groundtruth" && <GroundTruthSection />}
 
-          {/* --- Tab: Choropleth (Isiolo wards) --- */}
-          {tab === "choropleth" && (
-            <div className="p-3 sm:p-6 md:overflow-y-auto h-full">
-              <ChoroplethErrorBoundary>
-                <Choropleth
-                  selectedWardId={selectedWardId}
-                  onSelectWard={setSelectedWardId}
-                />
-              </ChoroplethErrorBoundary>
-            </div>
-          )}
-
           {/* --- Tab: Demo Simulators --- */}
           {tab === "demos" && (
             <div className="p-3 sm:p-6 md:overflow-y-auto h-full">
@@ -2181,143 +2053,12 @@ const navigate = (next: "map" | "pastoralists" | "groundtruth" | "chat" | "choro
                     </a>
                   </div>
                 </div>
-
-                {/* Instructions */}
-                <div className="mt-6 p-4 bg-purple-900/20 border border-purple-800/40 rounded-xl">
-                  <h4 className="text-sm font-semibold text-purple-300 mb-2">How it works</h4>
-                  <ul className="text-xs text-gray-400 space-y-1.5">
-                    <li className="flex items-start gap-2">
-                      <span className="text-purple-400 mt-0.5">•</span>
-                      <span>Simulators use the same <code className="text-purple-300">intelligenceCore.ts</code> AI pipeline as production</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-purple-400 mt-0.5">•</span>
-                      <span>All responses are generated from live satellite + climate data</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-purple-400 mt-0.5">•</span>
-                      <span>No Africa's Talking keys required for testing</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-purple-400 mt-0.5">•</span>
-                      <span>Swahili and English responses with local pastoralist context</span>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* --- Tab: Chat --- */}
-          {tab === "chat" && (
-            <div className="md:absolute md:inset-0 flex flex-col bg-gray-900 min-h-[60vh]">
-              <div className="flex-1 md:overflow-y-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
-                {chatHistory.map((msg, idx) => (
-                  <div
-                    key={idx}
-                    className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                  >
-                    <div
-                      className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm ${
-                        msg.role === "system"
-                          ? "bg-blue-900/20 border border-blue-800/40 text-blue-200"
-                          : msg.role === "user"
-                            ? "bg-amber-600/20 border border-amber-600/30 text-amber-100 rounded-tr-sm"
-                            : "bg-gray-800 border border-gray-700 text-gray-200 rounded-tl-sm flex gap-3 items-start"
-                      }`}
-                    >
-                      {msg.role === "assistant" && (
-                        <div className="w-6 h-6 rounded-full bg-gradient-to-br from-green-600 to-emerald-800 flex items-center justify-center shrink-0 mt-0.5">
-                          <Radio className="w-3 h-3 text-green-100" />
-                        </div>
-                      )}
-                      <div>
-                        {msg.role === "system" && (
-                          <span className="font-semibold text-blue-400 mr-2">
-                            System:
-                          </span>
-                        )}
-                        {msg.content}
-                        {msg.context && (
-                          <div className="mt-3 flex flex-wrap gap-2">
-                            {msg.context.riskLevel && (
-                              <span className="px-2 py-0.5 text-[10px] rounded-full bg-gray-900 text-gray-400 border border-gray-700">
-                                Risk: {msg.context.riskLevel}
-                              </span>
-                            )}
-                            {msg.context.worstQuadrant && (
-                              <span className="px-2 py-0.5 text-[10px] rounded-full bg-gray-900 text-gray-400 border border-gray-700">
-                                Worst: {msg.context.worstQuadrant}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-
-                {chatMutation.isPending && (
-                  <div className="flex justify-start">
-                    <div className="max-w-[80%] bg-gray-800 border border-gray-700 text-gray-400 rounded-2xl rounded-tl-sm px-4 py-3 text-sm flex items-center gap-3">
-                      <Loader2 className="w-4 h-4 animate-spin text-amber-500" />
-                      Analyzing satellite + climate data...
-                    </div>
-                  </div>
-                )}
-                <div ref={chatEndRef} />
-              </div>
-
-              <div className="p-4 bg-gray-950 border-t border-gray-800 shrink-0">
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {[
-                    "Je, mvua inakuja lini?",
-                    "Where is the best pasture now?",
-                    "Should I move my cattle from SE?",
-                    "Hali ya maji Bula Pesa?",
-                  ].map((q, i) => (
-                    <button
-                      key={i}
-                      onClick={() => handleSendChat(q)}
-                      className="px-3 py-1.5 bg-gray-900 hover:bg-gray-800 border border-gray-800 rounded-full text-xs text-gray-400 transition-colors"
-                      data-testid={`btn-quick-chat-${i}`}
-                    >
-                      {q}
-                    </button>
-                  ))}
-                </div>
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    handleSendChat();
-                  }}
-                  className="flex items-end gap-3"
-                >
-                  <div className="flex-1 relative">
-                    <Input
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      placeholder="Ask about conditions, forecast, or recommendations..."
-                      className="w-full bg-gray-900 border-gray-700 text-white h-12 pl-4 pr-12 rounded-xl focus-visible:ring-amber-500"
-                      disabled={chatMutation.isPending}
-                      data-testid="input-chat"
-                    />
-                  </div>
-                  <Button
-                    type="submit"
-                    disabled={!chatInput.trim() || chatMutation.isPending}
-                    size="icon"
-                    className="h-12 w-12 rounded-xl bg-amber-600 hover:bg-amber-700 shrink-0"
-                    data-testid="btn-send-chat"
-                  >
-                    <Send className="w-5 h-5 text-white" />
-                  </Button>
-                </form>
               </div>
             </div>
           )}
         </div>
       </div>
+      <ChatFloatingButton onClick={() => setChatOpen(true)} />
     </div>
   );
 }
