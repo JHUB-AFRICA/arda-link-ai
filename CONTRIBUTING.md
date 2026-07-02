@@ -35,16 +35,18 @@ Three long-lived branches, with a strict promotion order:
 
 ### What lives where
 
-| Branch | What it contains | Who pushes | Approval |
+| Branch | What it contains | Who pushes | Gate |
 |---|---|---|---|
-| `master` | Released code. Tag every commit that ships. | No direct pushes | 1+ codeowner + e2e green |
-| `staging` | What we're queueing for the next release. Final touches, doc polish, last-minute config. | No direct pushes | 1+ codeowner |
-| `dev` | Active development. Every feature lands here first. | No direct pushes | 1+ codeowner |
-| `feature/*` | One focused change. ≤ ~400 LOC + accompanying tests. Branched from `dev`. | Author | Codeowner review |
-| `fix/*` | Same as `feature/*` but for bug fixes. Branched from `dev`. | Author | Codeowner review |
-| `chore/*` | Tooling, deps, hygiene. Branched from `dev`. | Author | Codeowner review |
-| `refactor/*` | Restructuring without behaviour change. Branched from `dev`. | Author | 2 codeowners (extra review because of surface area) |
+| `master` | Released code. Tag every commit that ships. | No direct pushes | CI green + e2e green |
+| `staging` | What we're queueing for the next release. Final touches, doc polish, last-minute config. | No direct pushes | CI green |
+| `dev` | Active development. Every feature lands here first. | No direct pushes | CI green |
+| `feature/*` | One focused change. ≤ ~400 LOC + accompanying tests. Branched from `dev`. | Author | CI green |
+| `fix/*` | Same as `feature/*` but for bug fixes. Branched from `dev`. | Author | CI green |
+| `chore/*` | Tooling, deps, hygiene. Branched from `dev`. | Author | CI green |
+| `refactor/*` | Restructuring without behaviour change. Branched from `dev`. | Author | CI green |
 | `docs/*` | Documentation only. Branched from `dev`. | Author | Optional review |
+
+> **Re-introduce approval requirements when the team grows.** Today the team is small enough that the cost of round-tripping approval exceeds its value. Document this in the PR review checklist and re-enable in the GitHub branch-protection rules when the team passes ~5 active contributors.
 
 ### Promotion flow (the actual day-to-day)
 
@@ -140,10 +142,10 @@ The PR template (`.github/PULL_REQUEST_TEMPLATE.md`) reminds you to confirm the 
 ### Required checks before merge
 
 - All CI jobs green (lint, typecheck, test, build, gitleaks, hygiene)
-- 1+ codeowner approval per `/CODEOWNERS`
 - Branch is up-to-date with the target
 - Commit history is clean (squash / rebase before review, not after)
 - Diff is reviewable: if it's > ~600 LOC, split it
+- `/CODEOWNERS` paths touched? → mention the relevant owner in the PR description so they're notified (informational — no formal approval gate today)
 
 ### Reviewing a PR
 
@@ -151,6 +153,7 @@ The PR template (`.github/PULL_REQUEST_TEMPLATE.md`) reminds you to confirm the 
 - Be explicit: ✅ ship / ❌ change-request / 💬 discussion
 - Reviewers are empowered to request a split or docs addition without "earning" the comment
 - "This module is too big" or "Please add a function doc" is a complete review comment
+- **When the team grows past ~5 active contributors**, the PR template's "Reviewers" section becomes the formal approval gate — see "Required checks before merge" above.
 
 ---
 

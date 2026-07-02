@@ -86,10 +86,12 @@ See [`../CONTRIBUTING.md`](../CONTRIBUTING.md) for the full branching model. PRs
 
 ### Reviewers
 
-<!-- CODEOWNERS auto-assigns based on path. Add explicit reviewers below for cross-team review. -->
+<!-- CODEOWNERS auto-notifies based on path. Not a hard gate today — see
+     /CONTRIBUTING.md for when this becomes a formal approval. Add
+     relevant teammates here for cross-team awareness. -->
 
-- [ ] Codeowner approval received from the team listed in `/CODEOWNERS` for the paths touched
-- [ ] (Breaking changes only) Second reviewer from `@ardalink/maintainers`
+- Paths I touched (per `/CODEOWNERS`):
+- [ ] (Optional) I asked for an explicit review from the owner because this is high-risk / cross-cutting
 
 ---
 
