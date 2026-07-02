@@ -198,6 +198,7 @@ If the smoke test fails, the rest of your day will be debugging — fix that fir
 
 - `RUNBOOK.md` — operator-facing local-dev setup and incident response
 - `CONVENTIONS.md` — code organisation and documentation standard
+- `scripts/branch-hygiene.sh` — weekly branch cleanup (run with `--cleanup` for suggested deletes)
 - Per-service `docs/00-EXECUTIVE-INDEX.md` — service architecture
 - Slack `#ardalink-dev` — for the humans in the loop
 - GitHub Discussions — for things that don't need a PR

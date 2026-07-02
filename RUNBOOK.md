@@ -241,6 +241,29 @@ git log --oneline dev..HEAD                # ^ scan for "WIP", "fixup!", "merge 
 
 If any answer is wrong, fix it before opening the PR — don't push a messy branch and expect reviewers to clean it up.
 
+### Weekly branch hygiene (2 minutes, run on Fridays)
+
+The repo accumulates stale branches fast. Run `scripts/branch-hygiene.sh` once a week to spot them:
+
+```bash
+./scripts/branch-hygiene.sh                # human report
+./scripts/branch-hygiene.sh --cleanup     # also prints delete commands
+./scripts/branch-hygiene.sh --json        # machine-readable for CI
+```
+
+The script never deletes anything. With `--cleanup` it prints the exact `git branch -d` / `git push origin --delete` commands for each branch it classifies as `MERGED` (already in `dev`), `EMPTY` (no commits past master — recreate the name when actual work starts), or `STALE` (behind `dev` with no activity — rebase or close). Copy-paste the commands you agree with; ignore the rest.
+
+**Classification rules the script uses:**
+
+| Class | Meaning | Action |
+|---|---|---|
+| `MERGED` | All commits reachable from `dev` | Safe to delete (local + remote) |
+| `EMPTY` | No commits past `master` | Delete — recreate the name when work actually starts |
+| `STALE` | Has commits, but `dev` has moved on | Either rebase onto `dev` and keep working, or close the branch |
+| `ACTIVE` | Has commits `dev` doesn't | Keep working — open the PR |
+
+Protected branches (`master`, `staging`, `dev`) are never reported.
+
 ---
 
 ## 5. Common operations
