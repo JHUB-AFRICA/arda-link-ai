@@ -4,6 +4,22 @@
 
 ---
 
+## Documentation Map
+
+| # | Document | Description |
+|---|----------|-------------|
+| 01 | [Architecture](01-ARCHITECTURE.md) | System layers and components |
+| 02 | [API](02-API.md) | FastAPI endpoints and contracts |
+| 03 | [Deployment](03-DEPLOYMENT.md) | Hosting and operations |
+| 04 | [Security](04-SECURITY.md) | Threat model and controls |
+| 05 | [Observability](05-OBSERVABILITY.md) | Monitoring and alerting |
+| 06 | [Costs](06-COSTS.md) | GEE quota and Azure spend |
+| 07 | [Runbooks](07-RUNBOOKS.md) | Common operational tasks |
+| 08 | [Team](08-TEAM.md) | Roles and responsibilities |
+| 10 | [Engine ↔ API Flow](10-ENGINE-API-FLOW.md) | How Python engine and Node.js API work together |
+
+---
+
 ## Where we are
 
 ArdaLink Engine is the **biophysical brain** of the ArdaLink platform. It ingests
