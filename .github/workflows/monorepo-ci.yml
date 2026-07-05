@@ -413,11 +413,13 @@ jobs:
         run: |
           set -euo pipefail
           # Every relative .md link inside Arda-link-AI-Docs must point
-          # to a file that exists.
+          # to a file that exists. Anchors are stripped before checking.
           cd Arda-link-AI-Docs
           broken=0
           while IFS= read -r ref; do
             target="${ref#./}"
+            # Strip anchor (#) and everything after it
+            target="${target%%#*}"
             if [ ! -f "$target" ]; then
               echo "::error::Broken reference in docs: $ref"
               broken=1
