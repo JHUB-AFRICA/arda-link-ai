@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request, type Response } from "express";
 import { logger } from "../lib/logger.js";
 
 // Optional: Use the new intelligenceCore if ENABLE_INTELLIGENCE_CORE is set

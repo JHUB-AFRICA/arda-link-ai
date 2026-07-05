@@ -8,8 +8,6 @@ happy-path row shape (when a row exists in the DB).
 
 from __future__ import annotations
 
-import json
-import os
 from unittest.mock import MagicMock, patch
 
 import pytest

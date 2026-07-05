@@ -81,9 +81,9 @@ export function GroundTruthSection() {
     samples: number;
   }[] = (summary?.byQuadrant ?? []).map((q) => ({
     name: QUADRANT_LABEL[q.quadrant] ?? q.quadrant,
-    bcs: q.bcsAverage,
-    ndvi: q.ndviAverage,
-    samples: q.bcsSampleCount,
+    bcs: q.bcsAvg,
+    ndvi: q.ndviAvg,
+    samples: q.reportCount,
   }));
 
   if (summaryQ.isLoading) {
