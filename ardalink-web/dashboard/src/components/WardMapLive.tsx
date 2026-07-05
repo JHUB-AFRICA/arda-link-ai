@@ -478,27 +478,6 @@ export function WardMapLive({
           </div>
         )}
       </div>
-
-      {/* Legend */}
-      <div className="absolute bottom-3 right-3 z-[400] bg-gray-950/90 border border-gray-800 rounded-lg px-3 py-2 text-[10px] text-gray-300 backdrop-blur space-y-1 pointer-events-none">
-        <div className="font-semibold text-white text-[11px] mb-1">
-          Vegetation vs 11-yr norm
-        </div>
-        {[
-          ["#22c55e", "Normal"],
-          ["#eab308", "Mild stress"],
-          ["#f97316", "High stress"],
-          ["#ef4444", "Critical"],
-        ].map(([c, l]) => (
-          <div key={l} className="flex items-center gap-2">
-            <span
-              className="inline-block w-3 h-3 rounded-sm"
-              style={{ background: c as string }}
-            />{" "}
-            {l}
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

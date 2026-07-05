@@ -47,8 +47,6 @@ import { PastoralistPinsLayer } from "./PastoralistPinsLayer";
 import { ReportPinsLayer } from "./ReportPinsLayer";
 import { AlertMarkersLayer } from "./AlertMarkersLayer";
 import { Comparison } from "./Panels/Comparison";
-import { SeverityBars } from "./Panels/SeverityBars";
-import { TimeTravelSparkline } from "./Panels/TimeTravelSparkline";
 import { InsightsPanel } from "./Panels/InsightsPanel";
 import {
   useChoroplethData,
@@ -292,22 +290,14 @@ export function Choropleth({
         <Hud slice={slice} />
       </div>
 
-      {/* Side-by-side analysis panels */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-px bg-gray-800">
+      {/* Analysis panels */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-px bg-gray-800">
         <Comparison
           metric={metric}
           slice={slice}
           wardAggregates={data.wardAggregates}
           wardPresets={data.wardPresets?.wards ?? []}
           selectedWardId={selectedWardId}
-        />
-        <SeverityBars
-          rows={data.rankings?.rows ?? []}
-          metric={(data.rankings?.metric ?? metric) as ChoroplethMetric}
-        />
-        <TimeTravelSparkline
-          timeTravel={data.timeTravel}
-          metric={metric}
         />
         <InsightsPanel
           insights={data.insights}
