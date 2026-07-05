@@ -16,14 +16,13 @@ and the Prosopis juliflora penalty.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from ..geo.wards import WARDS
 from ..logging_config import get_logger
-from ..pipeline.gee import GEENotConfigured, GEEInitError
+from ..pipeline.gee import GEEInitError, GEENotConfigured
 
 logger = get_logger("ardalink.api.satellite")
 

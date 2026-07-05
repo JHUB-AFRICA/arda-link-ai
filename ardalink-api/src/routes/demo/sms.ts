@@ -17,8 +17,8 @@ import {
   generateAiResponse,
   loadIntelligenceContext,
   type ParsedInput,
-} from "../../lib/channels/intelligenceCore.ts";
-import { SmsAdapter } from "../../lib/channels/adapters.ts";
+} from "../../lib/channels/intelligenceCore";
+import { SmsAdapter } from "../../lib/channels/adapters";
 
 const router: IRouter = Router();
 

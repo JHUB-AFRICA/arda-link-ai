@@ -27,7 +27,7 @@ export function useSatelliteCheck() {
 
   const handleTriggerCheck = () => {
     triggerCheck.mutate(
-      { data: { dryRun: true, forceAlert: false } },
+      { dryRun: true, forceAlert: false },
       {
         onSuccess: () => {
           toast({ title: "Satellite check complete" });

@@ -22,8 +22,8 @@ import {
   endSession,
   getSession,
   type ParsedInput,
-} from "../../lib/channels/intelligenceCore.ts";
-import { VoiceAdapter } from "../../lib/channels/adapters.ts";
+} from "../../lib/channels/intelligenceCore";
+import { VoiceAdapter } from "../../lib/channels/adapters";
 
 const router: IRouter = Router();
 
@@ -481,8 +481,8 @@ router.get("/state", (req: Request, res: Response): void => {
   res.json({
     phone: session.phone,
     channel: session.channel,
-    startedAt: session.createdAt,
-    lastInteraction: session.lastActivity,
+    startedAt: session.startedAt,
+    lastInteraction: session.lastInteraction,
     lastQuestion: session.lastQuestion,
     indicatorState: session.indicatorState,
   });

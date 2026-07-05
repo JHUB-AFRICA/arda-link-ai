@@ -18,8 +18,8 @@ import {
   loadIntelligenceContext,
   type ParsedInput,
   type AiResponse,
-} from "../../lib/channels/intelligenceCore.ts";
-import { UssdAdapter } from "../../lib/channels/adapters.ts";
+} from "../../lib/channels/intelligenceCore";
+import { UssdAdapter } from "../../lib/channels/adapters";
 
 const router: IRouter = Router();
 

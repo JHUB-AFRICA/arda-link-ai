@@ -62,9 +62,7 @@ export function PastoralistForm() {
   const createPastoralist = useCreatePastoralist();
 
   const onSubmit = (data: PastoralistFormData) => {
-    createPastoralist.mutate(
-      { data },
-      {
+    createPastoralist.mutate(data, {
         onSuccess: () => {
           toast({ title: "Pastoralist registered successfully" });
           form.reset();
