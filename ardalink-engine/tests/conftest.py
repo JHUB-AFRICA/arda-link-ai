@@ -7,6 +7,10 @@ lifespan hook can run without crashing.
 from __future__ import annotations
 
 import os
+from unittest.mock import AsyncMock
+
+import pytest
+from fastapi.testclient import TestClient
 
 # Set defaults BEFORE any application import.
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/ardalink_test")
@@ -16,3 +20,12 @@ os.environ.setdefault("TENANT_ATTESTATION_SECRET", "test-attestation-secret-32-c
 os.environ.setdefault("GEE_SERVICE_ACCOUNT", "test@project.iam.gserviceaccount.com")
 os.environ.setdefault("GEE_PROJECT", "test-project")
 os.environ.setdefault("INGEST_SCHEDULER_ENABLED", "0")
+
+
+@pytest.fixture
+def client():
+    """Create a FastAPI TestClient for testing."""
+    # Import the app here to avoid importing it before env vars are set
+    from ardalink_engine.api import app
+
+    return TestClient(app)

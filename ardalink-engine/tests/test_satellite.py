@@ -5,6 +5,7 @@ Tests the /api/v1/satellite/* endpoints in the engine.
 Uses the safe_run pattern to skip when GEE is not configured.
 """
 
+import pytest
 from fastapi.testclient import TestClient
 
 
