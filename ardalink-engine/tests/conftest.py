@@ -7,7 +7,6 @@ lifespan hook can run without crashing.
 from __future__ import annotations
 
 import os
-from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
