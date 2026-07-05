@@ -200,7 +200,8 @@ def _count_cells(bbox: tuple[float, float, float, float] | None) -> int:
 
 
 def _iter_cell_chunks(
-    bbox: tuple[float, float, float, float] | None, size: int
+    bbox: tuple[float, float, float, float] | None, size: int,
+    start_cell_id: int = -1,
 ) -> Iterable[list[dict]]:
     """Stream grid cells in chunks of ``size``, keyset-paginated by ``cell_id``.
 
@@ -211,7 +212,7 @@ def _iter_cell_chunks(
     Engine reductions between chunks.
     """
     schema = db_client.schema
-    last_id = -1
+    last_id = start_cell_id
     while True:
         if bbox is None:
             rows = db_client.fetch_all(
@@ -539,7 +540,9 @@ def _soil_image():
 
 
 def ingest_layer(
-    layer: str, bbox: tuple[float, float, float, float] | None = None
+    layer: str,
+    bbox: tuple[float, float, float, float] | None = None,
+    start_cell_id: int = -1,
 ) -> dict:
     """Refresh one dynamic layer for every cell. Returns counts + source.
 
@@ -634,7 +637,7 @@ def ingest_layer(
     total = 0
     written = 0
     started = time.time()
-    for idx, chunk in enumerate(_iter_cell_chunks(bbox, settings.GRID_CHUNK_SIZE)):
+    for idx, chunk in enumerate(_iter_cell_chunks(bbox, settings.GRID_CHUNK_SIZE, start_cell_id)):
         props = _reduce_chunk(image, chunk, spec, scale)
         if layer == "vegetation":
             # Load this chunk's stored seasonal envelope so _row can compute VCI.
