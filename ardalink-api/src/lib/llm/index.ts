@@ -31,3 +31,4 @@ export type {
 export { MockClient } from './providers/mock.js';
 export { ZaiClient } from './providers/zai.js';
 export { MinimaxClient } from './providers/minimax.js';
+export { AzureOpenAIClient } from './providers/azure.js';

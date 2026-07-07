@@ -19,11 +19,16 @@ import { logger } from "./logger.js";
 import { db, groundTruthReportsTable } from "@workspace/db";
 import type { VegetationDelta } from "./baseline.js";
 import { droughtLabel, maiLabel } from "./climate.js";
+import { isSpeechConfigured, textToSpeech } from "./speech.js";
 
 // ── Azure OpenAI Realtime endpoint ─────────────────────────────────────────
+// Works for both classic Azure OpenAI (*.openai.azure.com) and AI Foundry
+// project resources (*.services.ai.azure.com) — both host the /openai/realtime
+// path. Set AZURE_OPENAI_ENDPOINT to the RESOURCE ROOT (without /api/projects/*).
 const REALTIME_DEPLOYMENT =
   process.env.AZURE_OPENAI_REALTIME_DEPLOYMENT ?? "gpt-4o-realtime-preview";
-const REALTIME_API_VERSION = "2025-04-01-preview";
+const REALTIME_API_VERSION =
+  process.env.AZURE_OPENAI_REALTIME_API_VERSION ?? "2025-04-01-preview";
 
 function realtimeUrl(): string {
   const base = process.env
@@ -224,12 +229,76 @@ export function handleVoiceStream(atWs: WebSocket, phone: string): void {
 
   logger.info({ phone, hasSession: !!session }, "Voice stream opened");
 
+  // Tracks whether the Realtime WS ever successfully opened. If it errors
+  // out or closes before `open`, we fall back to TTS-only playback so the
+  // caller at least hears the pre-generated Swahili opening instead of
+  // silence. Fallback path is best-effort; a proper stitched STT+LLM+TTS
+  // duplex is a Phase-2 delivery.
+  let realtimeOpened = false;
+  let fallbackTriggered = false;
+
+  const tryTtsFallback = async (cause: string): Promise<void> => {
+    if (fallbackTriggered || callEnded) return;
+    fallbackTriggered = true;
+    if (!isSpeechConfigured()) {
+      logger.warn(
+        { phone, cause },
+        "[Voice] Realtime failed and Azure Speech not configured — call will be silent",
+      );
+      closeAtSocket("realtime-failed-no-fallback");
+      return;
+    }
+    // Wait briefly for AT `start` if we don't have streamSid yet — the
+    // stream event lands within a few hundred ms of the WS open.
+    const waitStart = Date.now();
+    while (!streamSid && Date.now() - waitStart < 4000) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    if (!streamSid || atWs.readyState !== WebSocket.OPEN) {
+      closeAtSocket("realtime-failed-no-streamsid");
+      return;
+    }
+    const spoken =
+      session?.script ??
+      "Habari yako. Mimi ni ArdaLink. Samahani, kuna hitilafu ya kiufundi — tutakupigia tena hivi karibuni. Asante.";
+    logger.info(
+      { phone, cause, chars: spoken.length },
+      "[Voice] Playing TTS fallback to caller",
+    );
+    try {
+      const { audio } = await textToSpeech(spoken, {
+        lang: "sw",
+        format: "raw-8khz-8bit-mono-mulaw",
+      });
+      // Africa's Talking media frames: 20 ms of 8 kHz mulaw = 160 bytes.
+      const FRAME_BYTES = 160;
+      for (let i = 0; i < audio.length; i += FRAME_BYTES) {
+        if (atWs.readyState !== WebSocket.OPEN) break;
+        const frame = audio.subarray(i, i + FRAME_BYTES);
+        atWs.send(
+          JSON.stringify({
+            event: "media",
+            streamSid,
+            media: { payload: frame.toString("base64") },
+          }),
+        );
+        // 20 ms pacing keeps the mulaw stream real-time on AT's side.
+        await new Promise((r) => setTimeout(r, 20));
+      }
+    } catch (err) {
+      logger.error({ err, phone }, "[Voice] TTS fallback failed");
+    } finally {
+      setTimeout(() => closeAtSocket("tts-fallback-complete"), 400);
+    }
+  };
+
   // ── Connect to Azure OpenAI Realtime ──────────────────────────────────────
   openaiWs = new WebSocket(realtimeUrl(), {
     headers: { "api-key": process.env.AZURE_OPENAI_API_KEY! },
   });
 
   openaiWs.on("open", async () => {
+    realtimeOpened = true;
     logger.info({ phone }, "OpenAI Realtime connected");
 
     const instructions = session
@@ -556,12 +625,14 @@ Greet the herder warmly and ask about the current state of their rangeland and l
     }
   });
 
-  openaiWs.on("close", () =>
-    logger.info({ phone }, "OpenAI Realtime WS closed"),
-  );
-  openaiWs.on("error", (err) =>
-    logger.error({ err, phone }, "OpenAI Realtime WS error"),
-  );
+  openaiWs.on("close", () => {
+    logger.info({ phone, realtimeOpened }, "OpenAI Realtime WS closed");
+    if (!realtimeOpened) void tryTtsFallback("realtime-closed-before-open");
+  });
+  openaiWs.on("error", (err) => {
+    logger.error({ err, phone, realtimeOpened }, "OpenAI Realtime WS error");
+    if (!realtimeOpened) void tryTtsFallback("realtime-error-before-open");
+  });
 
   // ── Handle Africa's Talking WebSocket events ──────────────────────────────
   atWs.on("message", (raw) => {

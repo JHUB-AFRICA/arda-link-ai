@@ -70,8 +70,8 @@ export function GroundTruthSection() {
     summary?.byQuadrant ?? []
   ).map((q) => ({
     name: QUADRANT_LABEL[q.quadrant] ?? q.quadrant,
-    bcs: q.bcsAverage,
-    samples: q.bcsSampleCount,
+    bcs: q.bcsAvg,
+    samples: q.reportCount,
   }));
 
   const correlationData: {
@@ -81,9 +81,9 @@ export function GroundTruthSection() {
     samples: number;
   }[] = (summary?.byQuadrant ?? []).map((q) => ({
     name: QUADRANT_LABEL[q.quadrant] ?? q.quadrant,
-    bcs: q.bcsAverage,
-    ndvi: q.ndviAverage,
-    samples: q.bcsSampleCount,
+    bcs: q.bcsAvg,
+    ndvi: q.ndviAvg,
+    samples: q.reportCount,
   }));
 
   if (summaryQ.isLoading) {
@@ -105,30 +105,22 @@ export function GroundTruthSection() {
           icon={<ClipboardList className="w-4 h-4" />}
         />
         <KpiCard
-          label="Last 7 days"
-          value={summary?.reportsLast7Days ?? 0}
+          label="Avg BCS"
+          value={summary?.avgBcs ? summary.avgBcs.toFixed(1) : "—"}
           icon={<Activity className="w-4 h-4" />}
           accent="text-amber-400"
         />
         <KpiCard
-          label="Avg completeness"
-          value={
-            summary?.averageCompletenessPercent != null
-              ? `${Math.round(summary.averageCompletenessPercent)}%`
-              : "—"
-          }
+          label="Quadrants"
+          value={summary?.byQuadrant.length ?? 0}
           icon={<Heart className="w-4 h-4" />}
           accent="text-emerald-400"
         />
         <KpiCard
-          label="BCS follow-ups"
-          value={summary?.bcsFollowupCount ?? 0}
+          label="Recent reports"
+          value={reports.length}
           icon={<AlertTriangle className="w-4 h-4" />}
-          accent={
-            (summary?.bcsFollowupCount ?? 0) > 0
-              ? "text-orange-400"
-              : "text-gray-300"
-          }
+          accent={reports.length > 0 ? "text-orange-400" : "text-gray-300"}
         />
       </div>
 
@@ -149,31 +141,32 @@ export function GroundTruthSection() {
             </span>
           </h3>
           <span className="text-xs text-gray-500">
-            {summary?.alerts.length ?? 0} active
+            {reports.length} active
           </span>
         </div>
-        {summary && summary.alerts.length > 0 ? (
+        {reports.length > 0 ? (
           <div className="space-y-2" data-testid="alerts-list">
-            {summary.alerts.slice(0, 8).map((a) => (
+            {reports.slice(0, 8).map((report: any) => (
               <div
-                key={`${a.id}-${a.kind}`}
+                key={report.id}
                 className={`flex items-start gap-3 p-3 rounded-lg border ${
-                  a.severity === "red"
+                  (report.bcs ?? 0) < 3
                     ? "bg-red-950/30 border-red-900/60"
                     : "bg-yellow-950/30 border-yellow-900/60"
                 }`}
               >
                 <span
                   className={`mt-1 w-2 h-2 rounded-full shrink-0 ${
-                    a.severity === "red" ? "bg-red-400" : "bg-yellow-400"
+                    (report.bcs ?? 0) < 3 ? "bg-red-400" : "bg-yellow-400"
                   }`}
                 />
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm text-gray-100">{a.message}</div>
+                  <div className="text-sm text-gray-100">
+                    {report.bcs != null ? `BCS: ${report.bcs.toFixed(1)}` : "No BCS data"}
+                  </div>
                   <div className="text-xs text-gray-500 mt-0.5">
-                    {a.location ? `${a.location} · ` : ""}
-                    {a.quadrant ?? "unmapped"} ·{" "}
-                    {new Date(a.createdAt).toLocaleString()}
+                    {report.location ?? "Unknown location"} ·{" "}
+                    {new Date(report.created_at).toLocaleString()}
                   </div>
                 </div>
               </div>

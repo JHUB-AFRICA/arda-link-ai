@@ -16,21 +16,20 @@ and the Prosopis juliflora penalty.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from ..geo.wards import WARDS
 from ..logging_config import get_logger
-from ..pipeline.gee import GEENotConfigured, GEEInitError
+from ..pipeline.gee import GEEInitError, GEENotConfigured
 
 logger = get_logger("ardalink.api.satellite")
 
 router = APIRouter(prefix="/api/v1/satellite", tags=["satellite"])
 
-# Demo wards that are actively supported
-DEMO_WARDS = ["bula-pesa", "garbatulla", "merti"]
+# Demo wards that are actively supported (slugs that map to WARDS keys)
+DEMO_WARDS = ["bula-pesa", "garbatulla", "kinna"]
 
 
 class VCISnapshot(BaseModel):
@@ -62,7 +61,7 @@ def _resolve_ward(ward_id: str) -> str:
     """Resolve a ward ID to a normalized ward name.
 
     Accepts either a slug (e.g. 'bula-pesa') or a display name
-    (e.g. 'Bulla Pesa'). Returns the slug used in WARDS keys.
+    (e.g. 'Bulla Pesa'). Returns the canonical name used in WARDS keys.
     """
     # Direct match
     if ward_id in WARDS:
@@ -73,6 +72,16 @@ def _resolve_ward(ward_id: str) -> str:
     for key in WARDS:
         if key.lower() == lower:
             return key
+
+    # Try slug-to-display-name conversion (hyphens to spaces, title case)
+    if "-" in ward_id:
+        converted = ward_id.replace("-", " ").title()
+        if converted in WARDS:
+            return converted
+        # Try case-insensitive after conversion
+        for key in WARDS:
+            if key.lower() == converted.lower():
+                return key
 
     raise HTTPException(
         status_code=404,
@@ -150,7 +159,7 @@ def get_vci(
 def trigger_all_wards(
     dry_run: bool = Query(False, description="If true, skip actual GEE calls"),
 ) -> TriggerResponse:
-    """Fetch VCI for all demo wards (Bula Pesa, Garbatulla, Merti).
+    """Fetch VCI for all demo wards (Bula Pesa, Garbatulla, Kinna).
 
     Calls ``fetch_vegetation_index`` for each ward in parallel and returns
     the combined results. Use this for scheduled refreshes or manual
@@ -177,9 +186,14 @@ def trigger_all_wards(
 
         for ward_slug in DEMO_WARDS:
             try:
-                result = fetch_vegetation_index(ward_slug)
+                # Resolve slug to canonical ward name before calling fetch_vegetation_index
+                ward_name = _resolve_ward(ward_slug)
+                result = fetch_vegetation_index(ward_name)
                 results[ward_slug] = result
                 logger.info("VCI fetch succeeded for %s: %.1f", ward_slug, result["vci"])
+            except HTTPException:
+                # Re-raise HTTPExceptions (including unknown_ward) as-is
+                raise
             except GEENotConfigured:
                 errors[ward_slug] = "GEE not configured"
                 raise  # Re-raise so caller sees 503

@@ -630,8 +630,9 @@ export async function computePerCountyAggregates(
  *
  *   - **Pastoral demo** — always visible, always-on the map. Every
  *     demo tenant lives in one of these counties. (Bula Pesa, Garbatulla
- *     and Merti are all wards of Isiolo County, so for the demo we
- *     surface Isiolo as the home county.)
+ *     and Kinna are wards of Isiolo County, and the Merti Sub-County
+ *     operator tenant sits here too, so for the demo we surface Isiolo
+ *     as the home county.)
  *   - **Main reference** — selectable. The operator toggles these
  *     to set the comparison set. Nairobi is the canonical urban
  *     reference; Mombasa / Kisumu / Nakuru / Eldoret / Kakamega round
@@ -647,7 +648,7 @@ export interface CountyPreset {
 
 export const COUNTY_PRESETS: CountyPreset[] = [
   { name: "ISIOLO", displayName: "Isiolo", group: "pastoral",
-    why: "Bula Pesa · Garbatulla · Merti — all three demo wards sit here." },
+    why: "Bula Pesa · Garbatulla · Kinna wards + Merti Sub-County operator — all live here." },
   { name: "NAIROBI", displayName: "Nairobi", group: "main",
     why: "Urban reference (cool, green, high livestock density)." },
   { name: "MOMBASA", displayName: "Mombasa", group: "main",

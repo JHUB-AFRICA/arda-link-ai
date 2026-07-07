@@ -11,7 +11,11 @@
 import { triggerSatelliteRefresh, type SatelliteTriggerResponse } from "../lib/engine.js";
 import { logger } from "../lib/logger.js";
 
-const DEMO_WARDS = ["bula-pesa", "garbatulla", "merti"] as const;
+// Mirrors the engine's DEMO_WARDS in ardalink_engine/src/api/satellite.py.
+// Used for logging only — the engine decides which wards its /trigger route
+// iterates. Merti Sub-County operator (tenant slug "merti") lives in Sericho
+// ward and is out of the satellite demo loop; Kinna is the third demo ward.
+const DEMO_WARDS = ["bula-pesa", "garbatulla", "kinna"] as const;
 
 /**
  * Determine if we're currently in dry season or wet season.

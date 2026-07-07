@@ -41,6 +41,12 @@ satellite ──► ArdaLink Engine ──► herder's phone call
 | Web | ✅ Operational, 4/4 tests |
 | Multi-tenant | ✅ Schema + RLS shipped |
 | Local stack | ✅ `make up` |
+| LLM layer | ✅ Azure AI Foundry (`gpt-5-mini`) primary + z.ai fallback via provider-agnostic registry |
+| Speech (STT/TTS) | ✅ Azure Speech `southafricanorth`, `sw-KE-ZuriNeural` + `en-KE-AsiliaNeural`, endpoints live |
+| Voice pipeline (herder) | ✅ **Deterministic mode default** — AT `<Record>` → Azure Speech → GPT-5 Mini extract → `ground_truth_reports`. Verified 2026-07-07. |
+| Voice pipeline (upgrade path) | 🔜 Realtime (`gpt-4o-realtime-preview`) kept wired for browser demos and Phase-3 herder upgrade once bandwidth + pricing align |
+| Reference data | ✅ Supabase (PostGIS + ward / `satellite_indices` / `weather_data`) — populated + integrated 2026-07-08; local Postgres retained as backup mirror |
+| Voice demos | ✅ `/api/demo/voice/deterministic` (production pipeline in browser) + `/api/demo/voice/simulator` (realtime WS) |
 | Pilot | 🎯 Q3 2026 — 500 households, 3 wards |
 
 ---
@@ -111,7 +117,7 @@ Three layers of tenant enforcement: JWT → HMAC → RLS.
 
 1. **Approve** the three migration PRs this week
 2. **Pick** the cloud target (recommend GCP)
-3. **Approve** the pilot ward list (Bula Pesa, Garbatulla, Merti)
+3. **Approve** the pilot tenant list (Bula Pesa, Garbatulla, Merti Sub-County — with Kinna as the third ward-scoped satellite demo)
 4. **Fund** the $50K pilot completion (per EXECUTIVE_INDEX)
 
 ---

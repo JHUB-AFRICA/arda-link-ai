@@ -1,6 +1,6 @@
 # ArdaLink — System Status
 
-**Author**: Lead Software Engineer · **Date**: 2026-07-01
+**Author**: Lead Software Engineer · **Date**: 2026-07-07
 **Audience**: Engineering team + funders + partners
 **Scope**: Current production state, what's deployed and operational, what's in progress, and what remains to be built.
 
@@ -8,6 +8,12 @@
 > stack) see [`Arda-link-AI-Docs/architecture.md`](./Arda-link-AI-Docs/architecture.md).
 > This document focuses on the *strategic* view — the gap from current
 > to production, the vendor matrix, and the implementation roadmap.**
+
+> **Tenant vs. ward terminology**: Bulla Pesa, Garbatulla, and Merti are the
+> three demo *operator tenants*. The satellite VCI demo iterates over three
+> *wards* — Bulla Pesa, Garbatulla, and Kinna — because `merti` is a Sub-County
+> (its operator's home ward is Sericho). We keep both distinctions because
+> both are real: `merti` is a real tenant slug, `kinna` is a real ward.
 
 ---
 
@@ -17,11 +23,13 @@
 |---|---|---|
 | **Operator dashboard** | ✅ Login + multi-tenant + choropleth + brief | ✅ Same, with auth UX hardened |
 | **Backend API** | ✅ Express + Postgres + RLS | ✅ Same, hardened + observability |
-| **Intelligence layer** | ✅ Provider-agnostic LLM registry (z.ai primary, MiniMax fallback) operational; voice bridge via Azure OpenAI Realtime (separate path) | ✅ Real LLM with provider failover, real-time voice |
-| **Voice call pipeline** | ⚠️ Azure Realtime + AT webhook plumbing only (no key) | ✅ Live outbound + inbound over 2G/3G |
-| **Satellite drought pipeline** | ✅ GEE pipeline wired + live API routes (`/api/satellite/vci`, `/api/satellite/trigger`, `/api/satellite/snapshots`). Engine endpoint `/api/v1/satellite/vci` returns MODIS VCI data. API proxy routes authenticated via JWT, writes to `satellite_snapshots` table. Tests passing (7/7). | ✅ Real Sentinel-2 / MODIS / CHIRPS at ward scale, surfaced via `/api/satellite` |
-| **Language stack** | ⚠️ Swahili phrases mixed into EN prompts only | ✅ STT/TTS/MT for Swahili + Borana + Turkana + Samburu + Somali |
-| **Herder-facing UI** | ⚠️ `/talk` placeholder only | ✅ Voice-first call receiver + USSD fallback + SMS keyword |
+| **Intelligence layer** | ✅ Provider-agnostic LLM registry with **Azure AI Foundry (GPT-5 Mini) as primary**, z.ai as fallback, MiniMax as secondary fallback. Verified: `/api/intelligence/brief` returns real Swahili brief from `provider: azure, model: gpt-5-mini` (~6s, 787 tokens). Voice bridge via Azure OpenAI Realtime (`gpt-4o-realtime-preview` deployment). | ✅ Real LLM with provider failover, real-time voice |
+| **Voice call pipeline** | ✅ **Two modes, chosen by `CALL_PIPELINE_MODE` env (default `deterministic`)**. Deterministic: value-first opener → DTMF category menu → 20 s AT `<Record>` → Azure Fast Transcription (with auto-fallback to short-audio REST for regions like `southafricanorth` that don't host Fast yet) → GPT-5 Mini indicator extraction → `ground_truth_reports` row per call. Robust on 2G, guaranteed data capture, no Realtime deployment needed. Realtime (optional): Azure OpenAI Realtime WS bridge for full-duplex conversation on `/api/voice-stream` (AT mulaw) and `/api/browser-voice-stream` (PCM16 24 kHz). Kept for the operator/demo path and as the future upgrade once herder connections and Realtime pricing improve. `voiceStream.ts` has TTS fallback via Azure Speech if Realtime WS fails to open — caller hears the pre-generated Swahili script instead of silence. | ✅ Live outbound + inbound over 2G/3G |
+| **Satellite drought pipeline** | ✅ **Supabase primary** (ward-level `satellite_indices`, `weather_data`, `api_latest_satellite_indices` / `api_latest_weather_data` views; 1,082 satellite rows + 20 weather rows + 2.24M cell rows for 5 active wards, PostGIS 3.4). Local `satellite_snapshots` retained as per-call cache. GEE pipeline still wired (`/api/satellite/vci`, `/trigger`, `/snapshots`) — engine `/api/v1/satellite/vci` returns MODIS VCI for Bulla Pesa, Garbatulla, Kinna. Tests 14/14. | ✅ Real Sentinel-2 / MODIS / CHIRPS at ward scale, surfaced via `/api/satellite` |
+| **Reference data layer** | ✅ **Supabase source of truth** (2026-07-08). `wards` (5 active + 5 dormant), `ward_neighbors` (28), `ward_cells` (26,975), `pastoralists` (upsert-on-first-call), `ground_truth_calls` (thin, dual-written from local rich `ground_truth_reports`). PostgREST client `src/lib/supabase.ts` with 60 s cache; ward-id mapping `src/lib/wardMapping.ts` (Bula Pesa → 242). Local Postgres remains a backup mirror; falls back cleanly when Supabase env unset. Verified 2026-07-08 (Mohamed Ali `+254712000004` upsert + NDVI 0.25272 + 2 real dual-written calls). | ✅ Same, with per-tenant secret rotation |
+| **Cross-service tenancy (engine ↔ api)** | ✅ HMAC-SHA256 attestation wired: api's `engine.ts` signs `X-Tenant-ID` with `TENANT_ATTESTATION_SECRET`; engine's `TenantAttestationMiddleware` verifies + calls `set_tenant()` so Postgres RLS on `gis_engine.*` enforces isolation. Dev mode (secret unset) passes through. | ✅ Same, with the secret rotated per environment |
+| **Language stack** | ✅ **Azure Speech (STT/TTS) wired end-to-end**, region `southafricanorth`. Neural voices `sw-KE-ZuriNeural`, `en-KE-AsiliaNeural`. Endpoints: `GET /api/speech/status`, `GET /api/speech/token` (browser SDK), `POST /api/speech/tts`, `GET /api/speech/brief.mp3?lang=sw` (Swahili audio brief for callbacks). Borana/Turkana/Samburu/Somali still upstream-only. | ✅ STT/TTS/MT for Swahili + Borana + Turkana + Samburu + Somali |
+| **Herder-facing UI** | ✅ **All three channel simulators are now deterministic and herder-personalized**. `/api/demo/voice/simulator` = phone-lookup → localized TTS opener → DTMF category → 20 s recording → Speech + GPT-5 Mini extract → ground truth. `/api/demo/ussd/simulator` = fixed menu screens (no LLM in-loop) that pull ward satellite numbers + the herder's location/last-BCS from `pastoralists` + `ground_truth_reports`. `/api/demo/sms/simulator` = fixed keyword responses (BULA, MALISHO, ONGEA, RIPOTI, STOP) with the same personalization. Realtime WS demo kept at `/simulator-realtime` as a Phase-3 preview. Turn-based sim retained at `/simulator-legacy`. `/talk` React app also live. | ✅ Voice-first call receiver + USSD fallback + SMS keyword |
 | **Identity proofing** | ⚠️ Email/password for operators only | ✅ Voice biometric + phone OTP for herders |
 | **Payouts / value transfer** | ❌ None | ✅ M-Pesa B2C, Airtel Money, integration |
 | **Offline / poor-connectivity** | ❌ Not designed for | ✅ USSD + queued SMS + edge sync |
@@ -411,7 +419,7 @@ The dashboard is **substantially complete** for the Tuesday demo. Gaps for produ
 
 - ✅ Operator dashboard with login + multi-tenant + choropleth
 - ✅ Multi-tenant auth (3 demo wards)
-- ✅ Intelligence brief in EN + SW (provider-agnostic LLM registry, operational — z.ai primary, MiniMax fallback; voice bridge via Azure OpenAI Realtime, separate path)
+- ✅ Intelligence brief in EN + SW (provider-agnostic LLM registry, operational — **Azure AI Foundry GPT-5 Mini primary**, z.ai fallback, MiniMax secondary fallback; voice bridge via Azure OpenAI Realtime `gpt-4o-realtime-preview`, separate path)
 - ✅ Engine's own Postgres baseline tables (`gis_engine.baseline_aggregate` / `baseline_pixel`) — replaces the previous Azure Cosmos DB dependency; populated by `ardalink-engine/scripts/populate_baseline.py`
 - ✅ Choropleth with wards, herder pins, report pins, time-travel
 - ✅ Open-data integration (Open-Meteo, Planetary Computer)
@@ -423,12 +431,16 @@ The dashboard is **substantially complete** for the Tuesday demo. Gaps for produ
 | Week | Work | Cost | Status |
 |---|---|---|---|
 | 1 | Africa\'s Talking paid plan, toll-free DID, real outbound calls | $200 | ⏳ Pending |
-| 1 | Provider-agnostic LLM registry: z.ai (GLM-4.5-Flash) primary + MiniMax (M3) fallback, with cache + cost guard + audit ring buffer. See `ardalink-api/docs/llm-integration.md`. | $0 (free tier) | ✅ **Complete** (current branch `dev`) |
-| 1 | Azure OpenAI gpt-4o + Realtime deployment (voice bridge — separate path, not in the LLM registry) | $300 | ✅ **Complete** |
-| 1 | Azure Speech sw-KE STT/TTS, replace the in-house Whisper stub | $50 | ⏳ Pending |
+| 1 | Provider-agnostic LLM registry: z.ai (GLM-4.5-Flash) + MiniMax (M3), with cache + cost guard + audit ring buffer. See `ardalink-api/docs/llm-integration.md`. | $0 (free tier) | ✅ **Complete** |
+| 1 | **Azure AI Foundry (GPT-5 Mini) added as primary LLM provider** — new `providers/azure.ts`, wired into registry, handles GPT-5 quirks (`max_completion_tokens`, `reasoning_effort: minimal`, no `temperature`). Verified 2026-07-06. | ~$0 (usage-based) | ✅ **Complete** |
+| 1 | **Deterministic voice pipeline (herder production path)** — `src/lib/voiceDeterministicPipeline.ts` + dual-mode `routes/voice.ts`. AT `<Record>` → Azure Fast Transcription (region-aware fallback) → GPT-5 Mini extract → RLS-scoped `ground_truth_reports` insert. `CALL_PIPELINE_MODE=deterministic` default. Verified 2026-07-07 end-to-end (row #39: BCS=2, species=goats, mortality=1-3). | dev | ✅ **Complete** |
+| 1 | **Supabase reference data plane (source of truth)** — `src/lib/supabase.ts` PostgREST client + `src/lib/wardMapping.ts` + Supabase-first `src/lib/herderContext.ts` + `writeSupabaseMirror()` in `voiceDeterministicPipeline.ts` and `routes/talk.ts`. Dual-write: rich `ground_truth_reports` local + thin `ground_truth_calls` on Supabase; pastoralist upsert on first call. Wards/satellite/weather/views populated. Local Postgres kept as fallback mirror. Verified 2026-07-08 (NDVI 0.25272, temp 29.5°C, rain 2.5 mm for ward 242; Mohamed Ali `+254712000004` upsert; 2 dual-written calls). | ~$0 (Supabase free tier for pilot volume) | ✅ **Complete** |
+| 1 | Azure OpenAI Realtime deployment (`gpt-4o-realtime-preview`, voice bridge — kept as demo + future upgrade path) | $300 | ✅ **Complete** |
+| 1 | **Azure Speech `sw-KE-ZuriNeural` + `en-KE-AsiliaNeural` STT/TTS** — `src/lib/speech.ts` + `routes/speech.ts`. Endpoints: `/api/speech/status`, `/api/speech/token`, `/api/speech/tts`, `/api/speech/brief.mp3`. `fastTranscribe()` auto-falls back to short-audio REST when Fast Transcription isn't offered in the resource's region (e.g. `southafricanorth`). Verified 2026-07-06 (26 KB MP3 in 2.5 s). | $50 | ✅ **Complete** |
 | 2 | End-to-end call test (operator → AT → herder → Azure Realtime → AT → herder) | $200 testing | ⏳ Pending |
-| 2 | SMS keyword ("BULA") triggers callback, end-to-end | $50 | ⏳ Pending |
-| 3 | USSD gateway `*123*8#` | $200 | ⏳ Pending |
+| 2 | SMS keyword handler (`/api/sms`) — landed 2026-07-05, awaiting live AT key | $50 | ✅ **Wired**, ⏳ needs live key |
+| 3 | USSD gateway handler (`/api/ussd`) — landed 2026-07-05, awaiting short-code registration | $200 | ✅ **Wired**, ⏳ needs short-code |
+| 3 | Engine ↔ api tenant attestation + Postgres RLS on `gis_engine.*` — landed 2026-07-05 | dev | ✅ **Complete** |
 | 3 | Sentry + Grafana observability | $0 | ⏳ Pending |
 | 4 | Herder memory (last-call context) — already exists, harden | dev | ⏳ Pending |
 | 5 | Bilingual EN/SW prompt suite (50 real calls, iterate) | $100 in call costs | ⏳ Pending |
@@ -524,4 +536,11 @@ For Phase 4 (field-grade):
 
 ---
 
-*Maintained by the Lead Software Engineer. Last updated 2026-07-01 (Phase 12: Satellite API routes implemented. `feature/satellite-api-route` complete with engine endpoint `/api/v1/satellite/vci`, API proxy routes `/api/satellite/vci`, `/api/satellite/trigger`, `/api/satellite/snapshots`. Tests passing 7/7. Next: `feature/satellite-scheduler` for automated refresh).*
+*Maintained by the Lead Software Engineer. Last updated 2026-07-05.*
+*Landed this cycle*:
+* Satellite API routes + scheduler (`feature/satellite-api-route`, `feature/satellite-scheduler`).
+* Engine ↔ api tenant attestation (HMAC-SHA256 over `TENANT_ATTESTATION_SECRET`) and full Postgres RLS enforcement on `gis_engine.baseline_aggregate`, `gis_engine.baseline_pixel` via `set_tenant()`.
+* SMS + USSD route stubs (`/api/sms`, `/api/ussd`) waiting on live Africa's Talking credentials.
+* Ward/tenant terminology alignment: Bulla Pesa, Garbatulla, Merti are the three tenants; Bulla Pesa, Garbatulla, Kinna are the three demo wards. Doc drift fixed across README, RUNBOOK, LOCAL_SETUP, and API/UI copy.
+
+*Next*: live Africa's Talking key + short-code registration; Sentry / Grafana observability wiring.

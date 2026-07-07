@@ -82,6 +82,12 @@ export interface AiResponse {
   data?: Record<string, unknown>; // Structured data for complex responses
   ended: boolean; // true if session should end
   language: "sw" | "en" | "both"; // Response language
+  meta?: {
+    provider: string;
+    model: string;
+    latencyMs: number;
+    cached: boolean;
+  };
 }
 
 export interface ChannelFormatter {
@@ -471,6 +477,12 @@ Respond in JSON: {"response": "<your acknowledgment + next question>", "question
         question: parsed.question,
         ended: parsed.shouldEnd,
         language: "both",
+        meta: {
+          provider: response.provider,
+          model: response.model,
+          latencyMs: response.latencyMs,
+          cached: response.cached,
+        },
       };
     }
   } catch (err) {

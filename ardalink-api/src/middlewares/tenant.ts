@@ -100,4 +100,17 @@ const PUBLIC_PATHS = new Set<string>([
   "/api/open-data/geo/isiolo-wards",
   "/api/open-data/geo/ward-presets",
   "/api/open-data/geo/ward-detail",
+  // Speech surfaces: /api/speech/status is diagnostic; /api/speech/token
+  // must be reachable from the browser /talk client (which has no bearer);
+  // /api/speech/tts is used by the operator dashboard's TTS previews.
+  // /api/speech/brief.mp3 is used by AT callbacks that can't sign JWTs.
+  "/api/speech/status",
+  "/api/speech/token",
+  "/api/speech/tts",
+  "/api/speech/brief.mp3",
+  // /api/talk/* — the public /talk React app calls these to look up herder
+  // context and post recordings. No JWT (public users); in-process rate
+  // limit + Speech configuration guard prevent abuse.
+  "/api/talk/context",
+  "/api/talk/record",
 ]);

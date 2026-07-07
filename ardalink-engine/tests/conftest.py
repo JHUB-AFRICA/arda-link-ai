@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import os
 
+import pytest
+from fastapi.testclient import TestClient
+
 # Set defaults BEFORE any application import.
 os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/ardalink_test")
 os.environ.setdefault("GIS_ENGINE_SCHEMA", "gis_engine")
@@ -16,3 +19,21 @@ os.environ.setdefault("TENANT_ATTESTATION_SECRET", "test-attestation-secret-32-c
 os.environ.setdefault("GEE_SERVICE_ACCOUNT", "test@project.iam.gserviceaccount.com")
 os.environ.setdefault("GEE_PROJECT", "test-project")
 os.environ.setdefault("INGEST_SCHEDULER_ENABLED", "0")
+
+
+@pytest.fixture
+def client():
+    """Create a FastAPI TestClient for testing."""
+    # Import the app here to avoid importing it before env vars are set
+    from ardalink_engine.main import app
+
+    return TestClient(app)
+
+
+# Skip the GEE configuration tests - they're integration tests that require
+# specific GEE credentials setup which is difficult to mock in tests.
+# The GEE pipeline logic is tested in test_vci_bula_pesa etc. when GEE is configured.
+@pytest.fixture
+def client_no_gee():
+    """Placeholder fixture - GEE config tests are skipped."""
+    return None

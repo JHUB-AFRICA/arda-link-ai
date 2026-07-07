@@ -210,6 +210,7 @@ export interface ChatResponse {
 }
 
 export interface TriggerCheckInput {
+  phone?: string;
   dryRun?: boolean;
   forceAlert?: boolean;
 }
@@ -217,6 +218,7 @@ export interface TriggerCheckInput {
 export interface TriggerCheckResponse {
   ok: boolean;
   message?: string;
+  triggered?: boolean;
 }
 
 export interface IntelligenceBriefResponse {

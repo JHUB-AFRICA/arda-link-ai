@@ -15,6 +15,8 @@ import publicTalkRouter from "./publicTalk.js";
 import openDataRouter from "./openData.js";
 import llmRouter from "./llm.js";
 import satelliteRouter from "./satellite.js";
+import speechRouter from "./speech.js";
+import talkRouter from "./talk.js";
 import demoRouter from "./demo/index.js";
 
 const router: IRouter = Router();
@@ -36,6 +38,8 @@ router.use(publicTalkRouter);
 router.use(openDataRouter);
 router.use(llmRouter);
 router.use(satelliteRouter);
+router.use(speechRouter);
+router.use(talkRouter);
 
 // Demo routes (for local testing without Africa's Talking)
 router.use("/demo", demoRouter);

@@ -51,7 +51,7 @@ export function CallModal({
       return;
     }
     triggerCheck.mutate(
-      { data: { phone: phone.trim(), forceAlert: true } },
+      { phone: phone.trim(), forceAlert: true },
       {
         onSuccess: (res) => {
           toast({

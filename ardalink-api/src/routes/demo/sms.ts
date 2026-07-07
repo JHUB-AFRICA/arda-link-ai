@@ -12,15 +12,89 @@
  */
 
 import { Router, type IRouter, type Request, type Response } from "express";
-import {
-  parseSmsInput,
-  generateAiResponse,
-  loadIntelligenceContext,
-  type ParsedInput,
-} from "../../lib/channels/intelligenceCore.ts";
-import { SmsAdapter } from "../../lib/channels/adapters.ts";
+import { resolveHerderContext, buildLocalizedBrief } from "../../lib/herderContext";
 
 const router: IRouter = Router();
+
+const DEMO_TENANT_ID = process.env.DETERMINISTIC_TENANT_ID ?? "bula-pesa";
+
+// Deterministic SMS keyword handler. No LLM in the interaction loop —
+// every response is a fixed template filled with fresh ward numbers and
+// the herder's specific context (if their phone is in `pastoralists`).
+function classifyKeyword(text: string): string {
+  const t = text.trim().toLowerCase();
+  if (!t) return "help";
+  if (/^bula|^malisho\s*brief|^brief/i.test(t)) return "bula";
+  if (/^malisho|^water|^maji/i.test(t)) return "malisho";
+  if (/^ongea|^call|^piga/i.test(t)) return "ongea";
+  if (/^ripoti|^my ?report|^last/i.test(t)) return "ripoti";
+  if (/^stop|^opt.?out|^acha/i.test(t)) return "stop";
+  return "help";
+}
+
+async function replyFor(from: string, text: string): Promise<{ intent: string; reply: string; ended: boolean }> {
+  const intent = classifyKeyword(text);
+  const ctx = await resolveHerderContext(from, DEMO_TENANT_ID);
+  if (intent === "bula") {
+    return {
+      intent,
+      reply: buildLocalizedBrief(ctx, "sw"),
+      ended: false,
+    };
+  }
+  if (intent === "malisho") {
+    // Fixed list of top-5 nearest water points (matches USSD deterministic list).
+    const lines = [
+      "Bulla Pesa Borehole (SW ~2km)",
+      "Ngare Mara Spring (NE ~9km)",
+      "Kambi Garba Dam (SE ~14km)",
+      "Wabera Well (NW ~7km)",
+      "Burat Pan (NW ~12km)",
+    ];
+    return {
+      intent,
+      reply: "Malisho karibu nawe: " + lines.join("; "),
+      ended: false,
+    };
+  }
+  if (intent === "ongea") {
+    return {
+      intent,
+      reply:
+        "Sawa. ArdaLink atapiga simu hivi karibuni / We will call you shortly to record your report.",
+      ended: false,
+    };
+  }
+  if (intent === "ripoti") {
+    if (!ctx.known || ctx.lastBcsScore == null) {
+      return {
+        intent,
+        reply: "Hakuna ripoti bado / No report on file yet. Text ONGEA to request a voice call.",
+        ended: false,
+      };
+    }
+    return {
+      intent,
+      reply:
+        `Ripoti yako ya mwisho: BCS ${ctx.lastBcsScore.toFixed(1)} (${ctx.lastBcsSpecies ?? "?"}), ` +
+        `${ctx.lastActionTag ?? "no tag"}. ${ctx.lastReportedLocation ? "Ulisema uko " + ctx.lastReportedLocation + "." : ""}`.slice(0, 300),
+      ended: false,
+    };
+  }
+  if (intent === "stop") {
+    return {
+      intent,
+      reply: "Umeondolewa kwenye orodha / You have been opted out. Text START to rejoin.",
+      ended: true,
+    };
+  }
+  return {
+    intent: "help",
+    reply:
+      "ArdaLink SMS: BULA (brief), MALISHO (water), ONGEA (voice call), RIPOTI (my last report), STOP (opt out).",
+    ended: false,
+  };
+}
 
 interface SmsMessage {
   id: string;
@@ -281,20 +355,10 @@ router.post("/send", async (req: Request, res: Response): Promise<void> => {
       direction: "in",
     });
 
-    // Parse input
-    const parsed: ParsedInput = parseSmsInput(from, text);
+    // Deterministic: no LLM in the interaction loop.
+    const { intent, reply, ended } = await replyFor(from, text);
 
-    // Load intelligence context
-    const intelContext = loadIntelligenceContext();
-
-    // Generate AI response
-    const aiResponse = await generateAiResponse(parsed, intelContext);
-
-    // Format for SMS
-    const reply = SmsAdapter.format(aiResponse);
-
-    // Record outgoing message (if any)
-    if (reply && aiResponse.text !== "") {
+    if (reply) {
       conv.messages.push({
         id: `msg_${Date.now()}_out`,
         from: to,
@@ -308,9 +372,9 @@ router.post("/send", async (req: Request, res: Response): Promise<void> => {
     res.json({
       from,
       to,
-      keyword: parsed.intent,
+      keyword: intent,
       reply,
-      ended: aiResponse.ended,
+      ended,
       timestamp: new Date().toISOString(),
     });
   } catch (err: unknown) {

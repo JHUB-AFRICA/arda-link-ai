@@ -31,7 +31,11 @@ router.get("/satellite/vci", async (req: Request, res: Response): Promise<void> 
   }
 
   try {
-    const vci = await fetchSatelliteVCI(wardId);
+    // The engine's tenancy middleware requires an attested X-Tenant-ID header
+    // when TENANT_ATTESTATION_SECRET is set. Fall back to "isiolo" when the
+    // caller has no bound tenant (public/demo requests).
+    const tenantId = req.tenant?.tenant_id ?? "isiolo";
+    const vci = await fetchSatelliteVCI(wardId, tenantId);
 
     if (!vci) {
       res.status(503).json({
@@ -42,7 +46,6 @@ router.get("/satellite/vci", async (req: Request, res: Response): Promise<void> 
     }
 
     // Also write to satellite_snapshots table for persistence
-    const tenantId = req.tenant?.tenant_id ?? "isiolo";
     await withTenantContext(tenantId, async (tx) => {
       await tx
         .insert(satelliteSnapshotsTable)
@@ -75,14 +78,15 @@ router.get("/satellite/vci", async (req: Request, res: Response): Promise<void> 
 /**
  * POST /api/satellite/trigger?dryRun=false
  *
- * Triggers VCI fetch for all demo wards (Bula Pesa, Garbatulla, Merti).
+ * Triggers VCI fetch for all demo wards (Bula Pesa, Garbatulla, Kinna).
  * Used by the satellite scheduler and manual trigger from the dashboard.
  */
 router.post("/satellite/trigger", async (req: Request, res: Response): Promise<void> => {
   const dryRun = req.query.dryRun === "true" || req.body?.dryRun === true;
 
   try {
-    const result = await triggerSatelliteRefresh(dryRun);
+    const tenantId = req.tenant?.tenant_id ?? "isiolo";
+    const result = await triggerSatelliteRefresh(dryRun, tenantId);
 
     if (!result) {
       res.status(503).json({
@@ -94,8 +98,6 @@ router.post("/satellite/trigger", async (req: Request, res: Response): Promise<v
 
     // If successful and not a dry run, write results to satellite_snapshots
     if (result.status === "success" && result.results && !dryRun) {
-      const tenantId = req.tenant?.tenant_id ?? "isiolo";
-
       for (const [wardId, snapshot] of Object.entries(result.results)) {
         if (!snapshot) continue;
 

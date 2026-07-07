@@ -41,6 +41,7 @@ import { createHash } from 'node:crypto';
 import { logger } from '../logger.js';
 import { MinimaxClient } from './providers/minimax.js';
 import { ZaiClient } from './providers/zai.js';
+import { AzureOpenAIClient } from './providers/azure.js';
 import type {
   LlmClient,
   LlmRequest,
@@ -84,15 +85,20 @@ function cacheKey(req: LlmRequest, task: LlmTask): string {
   return h.digest('hex');
 }
 
+type ProviderName = 'z' | 'minimax' | 'azure';
+
 function pickProvider(task: LlmTask, role: 'primary' | 'fallback'): LlmClient {
   // Allow global override via env
   const globalPrimary = process.env.LLM_PRIMARY_PROVIDER;
   const globalFallback = process.env.LLM_FALLBACK_PROVIDER;
-  // Per-task override via env: LLM_TASK_SUMMARIZE_PRIMARY=minimax
+  // Per-task override via env: LLM_TASK_SUMMARIZE_PRIMARY=azure
   const taskEnv = `LLM_TASK_${task.toUpperCase()}_${
     role === 'primary' ? 'PRIMARY' : 'FALLBACK'
   }`;
-  const TABLE: Record<LlmTask, { primary: 'z' | 'minimax'; fallback: 'z' | 'minimax' }> = {
+  const TABLE: Record<
+    LlmTask,
+    { primary: ProviderName; fallback: ProviderName }
+  > = {
     multilingual: { primary: 'z', fallback: 'minimax' },
     voice_script: { primary: 'z', fallback: 'minimax' },
     summarize:    { primary: 'z', fallback: 'minimax' },
@@ -101,10 +107,11 @@ function pickProvider(task: LlmTask, role: 'primary' | 'fallback'): LlmClient {
     extract:      { primary: 'z', fallback: 'minimax' },
     default:      { primary: 'z', fallback: 'minimax' },
   };
-  const want = (process.env[taskEnv] as 'z' | 'minimax' | undefined)
+  const want = (process.env[taskEnv] as ProviderName | undefined)
     ?? (role === 'primary'
-      ? (globalPrimary as 'z' | 'minimax' | undefined) ?? TABLE[task].primary
-      : (globalFallback as 'z' | 'minimax' | undefined) ?? TABLE[task].fallback);
+      ? (globalPrimary as ProviderName | undefined) ?? TABLE[task].primary
+      : (globalFallback as ProviderName | undefined) ?? TABLE[task].fallback);
+  if (want === 'azure') return AzureOpenAIClient.create();
   if (want === 'z') return ZaiClient.create();
   return MinimaxClient.create();
 }
@@ -248,6 +255,7 @@ export async function providersHealth(): Promise<
   Record<string, { ok: boolean; latencyMs: number; error?: string }>
 > {
   const providers = [
+    AzureOpenAIClient.create(),
     ZaiClient.create(),
     MinimaxClient.create(),
   ];

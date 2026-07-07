@@ -7,7 +7,7 @@
 
 > **For the strategic view (gap analysis from current to production,
 > vendor matrix, 5-phase implementation roadmap, privacy + ethics)
-> see [`/ARCHITECTURE-V2.md`](../ARCHITECTURE-V2.md).** This document
+> see [`../STATUS.md`](../STATUS.md).** This document
 > is the *technical* C4-style reference for engineers.
 
 ---
