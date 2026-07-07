@@ -6,8 +6,9 @@ ArdaLink gives pastoralist communities in Isiolo County a low-bandwidth, multi-c
 early-warning and decision-support system for drought stress. Herders reach it through
 USSD (`*123*8#`), SMS, browser voice, or an operator dashboard. Three independent services
 ingest open satellite + climate data, run biophysical models, and surface actionable
-summaries scoped to a single ward (Bulla Pesa, Garbatulla, Merti) — with strict
-tenant isolation enforced at the database boundary.
+summaries scoped to a single ward (Bulla Pesa, Garbatulla, Kinna — with the
+Merti Sub-County operator also live as a tenant) — with strict tenant
+isolation enforced at the database boundary.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/Node-24-339933?logo=node.js&logoColor=white)](https://nodejs.org)
@@ -40,8 +41,9 @@ Each service has its own README, lockfile, Dockerfile, and CI workflow.
 
 ## Architecture at a glance
 
-Read [`ARCHITECTURE-V2.md`](./ARCHITECTURE-V2.md) for the canonical system architecture
-and data-flow diagrams.
+Read [`STATUS.md`](./STATUS.md) for the strategic view (current vs production, vendor
+matrix, roadmap) and [`Arda-link-AI-Docs/architecture.md`](./Arda-link-AI-Docs/architecture.md)
+for the C4-style component diagrams.
 
 Five-line summary for anyone in a hurry:
 
@@ -85,7 +87,7 @@ For the local dev stack (one Makefile, no secrets, 27-check bring-up), see
 
 | Doc | Purpose | Audience |
 |---|---|---|
-| [`ARCHITECTURE-V2.md`](./ARCHITECTURE-V2.md) | Canonical system architecture and data flow | Engineers, CTOs |
+| [`STATUS.md`](./STATUS.md) | Strategic view — current vs production, vendor matrix, roadmap | Engineers, CTOs, funders |
 | [`RUNBOOK.md`](./RUNBOOK.md) | Step-by-step operator manual | Operators, on-call |
 | [`LOCAL_SETUP.md`](./LOCAL_SETUP.md) | 5-minute install on a fresh machine | New contributors |
 | [`CONVENTIONS.md`](./CONVENTIONS.md) | Shared code conventions + per-service addenda | Contributors, reviewers |

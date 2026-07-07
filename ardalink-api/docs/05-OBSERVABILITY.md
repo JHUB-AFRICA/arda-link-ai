@@ -27,34 +27,46 @@ propagated from `ardalink-engine` and clients.
 All text generation goes through `src/lib/llm/` — a provider-agnostic
 registry with caching, budget guard, audit trail, and per-task routing.
 
-### Routing table (env-overridable)
+### Routing table (env-overridable, shipped defaults)
+
+The shipped `docs/local-dev/.env` sets `LLM_PRIMARY_PROVIDER=azure`
+which flips every task's primary to Azure AI Foundry (`gpt-5-mini`).
+z.ai stays as the global fallback.
 
 | Task          | Primary   | Fallback  | Used by                                                                              |
 |---------------|-----------|-----------|--------------------------------------------------------------------------------------|
-| `multilingual`| z.ai      | minimax   | `POST /api/chat`, `POST /api/talk-chat` — Swahili/English code-switching             |
-| `voice_script`| z.ai      | minimax   | `generateScript()` in `src/lib/openai.ts` — Realtime opening copy                     |
-| `summarize`   | z.ai      | minimax   | `GET /api/intelligence/brief` — tenant-scoped brief                                   |
-| `extract`     | z.ai      | minimax   | `extractIndicators()`, `generateActionTag()` — post-call BCS / classification         |
-| `reasoning`   | minimax   | z.ai      | Multi-step / tool-use paths                                                          |
-| `code`        | minimax   | z.ai      | Function-calling synthesis                                                           |
-| `default`     | z.ai      | minimax   | Safe default for any new code path                                                   |
+| `multilingual`| azure     | z.ai      | `POST /api/chat`, `POST /api/talk-chat` — Swahili/English code-switching             |
+| `voice_script`| azure     | z.ai      | `generateScript()` in `src/lib/openai.ts` — Realtime opening copy                     |
+| `summarize`   | azure     | z.ai      | `GET /api/intelligence/brief` — tenant-scoped brief                                   |
+| `extract`     | azure     | z.ai      | `extractIndicators()`, `generateActionTag()` — post-call BCS / classification         |
+| `reasoning`   | azure     | z.ai      | Multi-step / tool-use paths                                                          |
+| `code`        | azure     | z.ai      | Function-calling synthesis                                                           |
+| `default`     | azure     | z.ai      | Safe default for any new code path                                                   |
 
 Env overrides:
 
-- `LLM_PRIMARY_PROVIDER=z|minimax` — change ALL primaries at once
-- `LLM_FALLBACK_PROVIDER=z|minimax` — change ALL fallbacks at once
-- `LLM_TASK_<NAME>_PRIMARY=z|minimax` — per-task override (e.g. `LLM_TASK_REASONING_PRIMARY=z`)
-- `LLM_TASK_<NAME>_FALLBACK=z|minimax` — per-task fallback override
+- `LLM_PRIMARY_PROVIDER=azure|z|minimax` — change ALL primaries at once
+- `LLM_FALLBACK_PROVIDER=azure|z|minimax` — change ALL fallbacks at once
+- `LLM_TASK_<NAME>_PRIMARY=azure|z|minimax` — per-task override (e.g. `LLM_TASK_REASONING_PRIMARY=z`)
+- `LLM_TASK_<NAME>_FALLBACK=azure|z|minimax` — per-task fallback override
 
-### Why z.ai is primary for the four text tasks
+### Why Azure (GPT-5 Mini) is primary today
 
-- **Free**: `glm-4.5-flash` is the free tier — zero per-token cost.
-- **Swahili**: native handling of Swahili / English / Borana-flavoured
-  Swahili code-switching, which is what every pastoralist surface needs.
-- **JSON mode**: `response_format: { type: "json_object" }` works
-  correctly for the post-call BCS extractor schema.
-- **Latency**: ~3 s on a Swahili prompt (with `thinking: disabled`),
-  vs minimax M3's 15–30 s without thinking controls.
+- **Quality**: multilingual with strong Swahili/English/code-switching
+  handling. Verified against a real `bula-pesa` intelligence brief.
+- **JSON mode**: `response_format: { type: "json_object" }` works for
+  the post-call BCS extractor schema.
+- **Latency**: ~2.5 s per voice turn, ~6 s per full brief, with
+  `reasoning_effort: minimal` (client sets this automatically for
+  every `gpt-5*` deployment).
+- **Deployment**: single Foundry resource can also host the Realtime
+  voice deployment (`gpt-4o-realtime-preview`) and Whisper — reducing
+  vendor sprawl.
+
+**Why z.ai is retained as fallback**: `glm-4.5-flash` is the free
+tier — zero per-token cost — and has been battle-tested for Swahili
+code-switching. If the Azure Foundry quota trips or the key rotates,
+every task falls through to z.ai without a route-level code change.
 
 minimax (M3) is paid with no free tier; it's reserved for tasks where
 its cost is justified (multi-step reasoning, function synthesis).
@@ -66,7 +78,7 @@ The Azure OpenAI **Realtime** WebSocket path stays hardcoded in
 Realtime API is a bidirectional mulaw audio bridge — it's not chat
 completions, and neither z.ai nor minimax offer an equivalent product
 yet. Realtime stays on Azure (or any future OpenAI Realtime
-deployment) until Phase 3 (ARCHITECTURE-V2 §5.3) introduces a
+deployment) until Phase 3 (STATUS.md §5) introduces a
 self-hosted VITS + Whisper pipeline.
 
 ### Observability surfaces
@@ -93,6 +105,25 @@ self-hosted VITS + Whisper pipeline.
   `tokens`, `latency_ms` so the dashboard can render which model
   served each request.
 
+- **Azure Speech status** — `GET /api/speech/status` (public) returns
+  `{ configured, region, voiceSw, voiceEn }` so dashboards can show
+  whether STT/TTS is live. Useful health probe from the front-end.
+
+- **Demo voice health** — `GET /api/demo/voice/simulator` runs the
+  deterministic phone-call sim: phone lookup → personalized TTS opener
+  → DTMF category → 20 s recording → Azure Speech → GPT-5 Mini extract
+  → RLS-scoped ground truth insert. This is the herder default and the
+  fastest way to eyeball "is the deterministic pipeline OK end-to-end".
+  Alias: `GET /api/demo/voice/deterministic` (older link).
+- **Realtime preview** — `GET /api/demo/voice/simulator-realtime` still
+  runs the WS + PCM16 duplex Azure Realtime bridge for the Phase-3
+  preview. Requires an active `gpt-4o-realtime-preview` Azure
+  deployment; not shown in the demo hub.
+- **Herder personalization** — `GET /api/demo/voice/context?phone=+254…`
+  returns the full herder context payload the sim uses (pastoralist
+  profile + last report + fresh ward intelligence). Cheap to poll; no
+  LLM calls involved.
+
 ### Failure semantics
 
 - **Both providers down** for a given task → the registry throws,
@@ -104,3 +135,60 @@ self-hosted VITS + Whisper pipeline.
   same as provider-down (template / null).
 - **Cache hit** → registry returns the cached response with
   `cached: true`; the audit entry records the hit.
+
+## Supabase data plane
+
+Reference data (wards, `satellite_indices`, `weather_data`, the
+`api_latest_*` views, `pastoralists`, `ground_truth_calls`) is served
+by Supabase as of 2026-07-08. Local Postgres is a backup mirror.
+Client: `src/lib/supabase.ts` (PostgREST over `SUPABASE_URL` +
+`SUPABASE_SECRET_KEY`). Every helper returns `null` on failure and
+callers fall back to the local mirror.
+
+### Health probe from the ops side
+
+```bash
+# Sanity — should return one ward row
+curl -s "$SUPABASE_URL/rest/v1/wards?limit=1" \
+  -H "apikey: $SUPABASE_SECRET_KEY" \
+  -H "Authorization: Bearer $SUPABASE_SECRET_KEY" | jq .
+
+# Latest satellite indices for ward 242 (Bula Pesa)
+curl -s "$SUPABASE_URL/rest/v1/api_latest_satellite_indices?ward_id=eq.242" \
+  -H "apikey: $SUPABASE_SECRET_KEY" | jq '.[0] | {ndvi_mean,vci,updated_at}'
+
+# Full schema dump (tables, columns, row counts) → /tmp/supabase-report.json
+python3 ardalink-api/scripts/explore-supabase.py
+```
+
+### Known-broken views (skip in clients)
+
+- `api_latest_cell_satellite_indices` — HTTP 500
+- `api_ward_cell_latest_rollup` — HTTP 500
+
+Flagged to the Supabase project owner; the client library never calls
+these two views, so the api stays green.
+
+### Cache behavior
+
+- Reference-table reads (`listWards`, `listActiveWards`,
+  `listWardNeighbors`, `latestSatelliteFor`, `latestWeatherFor`)
+  cache for `SUPABASE_CACHE_TTL_MS` (default 60 s).
+- Per-phone reads (`callContextByPhone`, `pastoralistByPhone`) are
+  not cached — always fresh.
+- Writes (`upsertPastoralist`, `insertGroundTruthCall`) never touch
+  the cache; they invalidate on next read via TTL.
+
+### Fallback semantics
+
+- `resolveHerderContext(phone)` returns a `HerderContext` tagged
+  `source: "supabase" | "local" | "none"`. When Supabase is
+  unreachable or the env vars are unset, the resolver drops to
+  local-only and tags `source: "local"` — no user-visible error.
+- The dual-write to `ground_truth_calls` is fire-and-forget: if
+  Supabase rejects the insert, the local rich `ground_truth_reports`
+  row is already committed and the call is still logged. The failure
+  surfaces in `pino` logs, not in the caller's response.
+- The env var `SUPABASE_URL` unset ⇒ every helper short-circuits to
+  `null`, `resolveHerderContext` returns `source: "local"`, and the
+  stack behaves exactly like it did pre-2026-07-08.

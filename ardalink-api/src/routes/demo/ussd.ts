@@ -12,16 +12,18 @@
  */
 
 import { Router, type IRouter, type Request, type Response } from "express";
-import {
-  parseUssdInput,
-  generateAiResponse,
-  loadIntelligenceContext,
-  type ParsedInput,
-  type AiResponse,
-} from "../../lib/channels/intelligenceCore";
-import { UssdAdapter } from "../../lib/channels/adapters";
+import { resolveHerderContext, buildLocalizedBrief } from "../../lib/herderContext";
 
 const router: IRouter = Router();
+
+const DEMO_TENANT_ID = process.env.DETERMINISTIC_TENANT_ID ?? "bula-pesa";
+
+// Fixed, category-driven USSD screens. No LLM is called in the interaction
+// loop — every response is a deterministic function of (menu path, herder
+// context, latest ward intelligence). The LLM only runs later, if the herder
+// chooses to submit a voice or text report via a follow-up channel.
+interface UssdScreen { text: string; ended: boolean; }
+
 
 // In-memory session store for demo
 interface DemoSession {
@@ -252,6 +254,140 @@ router.get("/simulator", (_req: Request, res: Response): void => {
  *
  * Processes USSD input and returns the next screen.
  */
+function parseAccumulated(text: string): { parts: string[]; last: string; level: number } {
+  const parts = text.split("*").filter((s) => s.length > 0);
+  return { parts, last: parts[parts.length - 1] ?? "", level: parts.length };
+}
+
+async function screenFor(
+  phone: string,
+  text: string,
+): Promise<UssdScreen> {
+  const { parts, last, level } = parseAccumulated(text);
+
+  // Root menu — level 0
+  if (level === 0) {
+    return {
+      text:
+        "CON ArdaLink — Bula Pesa\n" +
+        "1. Ward brief (SW/EN)\n" +
+        "2. Water points near me\n" +
+        "3. Request voice callback\n" +
+        "4. My last report\n" +
+        "0. Toka / Exit",
+      ended: false,
+    };
+  }
+
+  // Level 1: top-level selection
+  if (level === 1) {
+    switch (last) {
+      case "1":
+        return {
+          text:
+            "CON Bula Pesa brief\n" +
+            "1. Kwa Kiswahili\n" +
+            "2. In English\n" +
+            "0. Rudi / Back",
+          ended: false,
+        };
+      case "2": {
+        // Deterministic water-point list — top 5 nearest OSM points.
+        const lines = [
+          "Bulla Pesa Borehole (SW, ~2km)",
+          "Ngare Mara Spring (NE, ~9km)",
+          "Kambi Garba Dam (SE, ~14km)",
+          "Wabera Shallow Well (NW, ~7km)",
+          "Burat Pan (NW, ~12km)",
+        ];
+        return {
+          text: "END Malisho / Water points:\n" + lines.map((l, i) => `${i + 1}. ${l}`).join("\n"),
+          ended: true,
+        };
+      }
+      case "3":
+        return {
+          text:
+            "CON Ongea na AI (voice callback):\n" +
+            "1. Sasa / Now\n" +
+            "2. Kesho / Tomorrow\n" +
+            "0. Rudi / Back",
+          ended: false,
+        };
+      case "4": {
+        const ctx = await resolveHerderContext(phone, DEMO_TENANT_ID);
+        if (!ctx.known) {
+          return {
+            text:
+              "END Hakuna ripoti bado / No report yet.\n" +
+              "Piga simu ArdaLink kupitia menu 3.",
+            ended: true,
+          };
+        }
+        const parts2: string[] = [];
+        parts2.push(`Ripoti ya ${ctx.name || phone}:`);
+        if (ctx.location) parts2.push(`Eneo: ${ctx.location}`);
+        if (ctx.lastBcsScore != null)
+          parts2.push(`BCS: ${ctx.lastBcsScore.toFixed(1)} (${ctx.lastBcsSpecies ?? "?"})`);
+        if (ctx.lastActionTag) parts2.push(`Kitagi: ${ctx.lastActionTag}`);
+        if (ctx.lastReportedLocation)
+          parts2.push(`Ulisema uko: ${ctx.lastReportedLocation}`);
+        return { text: "END " + parts2.join("\n"), ended: true };
+      }
+      case "0":
+        return { text: "END Asante. Kwaheri.", ended: true };
+      default:
+        return {
+          text: "END Chaguo batili / Invalid choice.",
+          ended: true,
+        };
+    }
+  }
+
+  // Level 2
+  if (level === 2) {
+    const top = parts[0];
+    if (top === "1") {
+      // Brief in chosen language, personalized by phone.
+      if (last === "0") return screenFor(phone, ""); // back
+      const lang = last === "1" ? "sw" : last === "2" ? "en" : null;
+      if (!lang) {
+        return { text: "END Chaguo batili.", ended: true };
+      }
+      const ctx = await resolveHerderContext(phone, DEMO_TENANT_ID);
+      return {
+        text: "END " + buildLocalizedBrief(ctx, lang),
+        ended: true,
+      };
+    }
+    if (top === "3") {
+      if (last === "0") return screenFor(phone, "");
+      if (last === "1")
+        return {
+          text: "END ArdaLink atapiga simu sasa hivi / calling you shortly.",
+          ended: true,
+        };
+      if (last === "2")
+        return {
+          text: "END ArdaLink atapiga simu kesho / calling you tomorrow.",
+          ended: true,
+        };
+      return { text: "END Chaguo batili.", ended: true };
+    }
+    return { text: "END Chaguo batili.", ended: true };
+  }
+
+  return { text: "END Mazoezi mengi / too many steps.", ended: true };
+}
+
+/**
+ * POST /api/demo/ussd/input  — deterministic, LLM-free.
+ *
+ * Every response is a pure function of (menu path, herder context,
+ * ward intelligence). We compose the AT-style `text` field (accumulated
+ * across turns, `*`-separated) so the simulator mirrors the real AT
+ * USSD gateway contract.
+ */
 router.post("/input", async (req: Request, res: Response): Promise<void> => {
   const { phone = "+254711082200", text = "", dial = false } = req.body as {
     phone?: string;
@@ -261,32 +397,17 @@ router.post("/input", async (req: Request, res: Response): Promise<void> => {
 
   try {
     const session = getOrCreateSession(phone);
-    const inputHistory = [...session.inputHistory];
-
-    // If this is a dial (first interaction), start fresh
     const effectiveText = dial ? "" : text;
+    const screen = await screenFor(phone, effectiveText);
 
-    // Parse input
-    const parsed: ParsedInput = parseUssdInput(phone, effectiveText);
-
-    // Load intelligence context
-    const intelContext = loadIntelligenceContext();
-
-    // Generate AI response
-    const aiResponse: AiResponse = await generateAiResponse(parsed, intelContext);
-
-    // Format for USSD
-    const formatted = UssdAdapter.format(aiResponse);
-
-    // Update session
-    session.screenHistory.push(formatted);
-    session.currentScreen = formatted;
+    session.screenHistory.push(screen.text);
+    session.currentScreen = screen.text;
     session.inputHistory.push(effectiveText);
 
     res.json({
       phone,
-      display: formatted,
-      ended: aiResponse.ended,
+      display: screen.text,
+      ended: screen.ended,
       inputHistory: session.inputHistory,
       timestamp: new Date().toISOString(),
     });

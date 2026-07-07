@@ -233,6 +233,43 @@ _LLM_FALLBACK="$(grep -E '^LLM_FALLBACK_PROVIDER=' "$PUBLIC_DIR/.env" | tail -1 
 [ -z "$_LLM_PRIMARY" ] && _LLM_PRIMARY="z"
 [ -z "$_LLM_FALLBACK" ] && _LLM_FALLBACK="minimax"
 
+# Azure AI Foundry (chat + Realtime) and Azure Speech (STT/TTS)
+# Pull from local-dev/.env so the api process picks them up. Trim any
+# accidental trailing whitespace; strip inline shell-style comments.
+_read_env() {
+  local key="$1"
+  grep -E "^${key}=" "$PUBLIC_DIR/.env" 2>/dev/null | tail -1 | cut -d= -f2- \
+    | sed 's/[[:space:]]*#.*$//' | sed 's/[[:space:]]*$//'
+}
+_AZ_OPENAI_ENDPOINT="$(_read_env AZURE_OPENAI_ENDPOINT)"
+_AZ_OPENAI_FOUNDRY_ENDPOINT="$(_read_env AZURE_OPENAI_FOUNDRY_ENDPOINT)"
+_AZ_OPENAI_KEY="$(_read_env AZURE_OPENAI_API_KEY)"
+_AZ_OPENAI_CHAT_DEPLOY="$(_read_env AZURE_OPENAI_CHAT_DEPLOYMENT)"
+_AZ_OPENAI_CHAT_APIVER="$(_read_env AZURE_OPENAI_CHAT_API_VERSION)"
+_AZ_OPENAI_RT_DEPLOY="$(_read_env AZURE_OPENAI_REALTIME_DEPLOYMENT)"
+_AZ_OPENAI_RT_APIVER="$(_read_env AZURE_OPENAI_REALTIME_API_VERSION)"
+_AZ_OPENAI_WHISPER="$(_read_env AZURE_OPENAI_WHISPER_DEPLOYMENT)"
+_AZ_SPEECH_KEY="$(_read_env AZURE_SPEECH_KEY)"
+_AZ_SPEECH_KEY2="$(_read_env AZURE_SPEECH_KEY_SECONDARY)"
+_AZ_SPEECH_REGION="$(_read_env AZURE_SPEECH_REGION)"
+_AZ_SPEECH_ENDPOINT="$(_read_env AZURE_SPEECH_ENDPOINT)"
+_AZ_SPEECH_VOICE_SW="$(_read_env AZURE_SPEECH_TTS_VOICE_SW)"
+_AZ_SPEECH_VOICE_EN="$(_read_env AZURE_SPEECH_TTS_VOICE_EN)"
+_AZ_SPEECH_LANGS="$(_read_env AZURE_SPEECH_STT_LANGUAGES)"
+[ -z "$_AZ_OPENAI_CHAT_DEPLOY" ] && _AZ_OPENAI_CHAT_DEPLOY="gpt-5-mini"
+[ -z "$_AZ_OPENAI_CHAT_APIVER" ] && _AZ_OPENAI_CHAT_APIVER="2024-10-21"
+[ -z "$_AZ_OPENAI_RT_DEPLOY" ] && _AZ_OPENAI_RT_DEPLOY="gpt-4o-realtime-preview"
+[ -z "$_AZ_OPENAI_RT_APIVER" ] && _AZ_OPENAI_RT_APIVER="2025-04-01-preview"
+[ -z "$_AZ_OPENAI_WHISPER" ] && _AZ_OPENAI_WHISPER="whisper"
+[ -z "$_AZ_SPEECH_VOICE_SW" ] && _AZ_SPEECH_VOICE_SW="sw-KE-ZuriNeural"
+[ -z "$_AZ_SPEECH_VOICE_EN" ] && _AZ_SPEECH_VOICE_EN="en-KE-AsiliaNeural"
+[ -z "$_AZ_SPEECH_LANGS" ] && _AZ_SPEECH_LANGS="sw-KE,en-KE"
+
+# Supabase — shared reference-data + operational primary
+_SUPABASE_URL="$(_read_env SUPABASE_URL)"
+_SUPABASE_KEY="$(_read_env SUPABASE_SECRET_KEY)"
+_SUPABASE_ANON="$(_read_env SUPABASE_ANON_KEY)"
+
 cat > "$RUN_DIR/api.env" <<EOF
 NODE_ENV=development
 PORT=3000
@@ -240,11 +277,25 @@ LOG_LEVEL=info
 DATABASE_URL=postgresql://ardalink_app:${POSTGRES_PASSWORD}@127.0.0.1:15432/ardalink
 COSMOS_DB_ENDPOINT=
 COSMOS_DB_PRIMARY_KEY=
-AZURE_OPENAI_ENDPOINT=
-AZURE_OPENAI_API_KEY=
-AZURE_OPENAI_CHAT_DEPLOYMENT=gpt-4o
-AZURE_OPENAI_WHISPER_DEPLOYMENT=whisper
-AZURE_OPENAI_REALTIME_DEPLOYMENT=gpt-4o-realtime-preview
+AZURE_OPENAI_FOUNDRY_ENDPOINT=${_AZ_OPENAI_FOUNDRY_ENDPOINT}
+AZURE_OPENAI_ENDPOINT=${_AZ_OPENAI_ENDPOINT}
+AZURE_OPENAI_API_KEY=${_AZ_OPENAI_KEY}
+AZURE_OPENAI_CHAT_DEPLOYMENT=${_AZ_OPENAI_CHAT_DEPLOY}
+AZURE_OPENAI_CHAT_API_VERSION=${_AZ_OPENAI_CHAT_APIVER}
+AZURE_OPENAI_REALTIME_DEPLOYMENT=${_AZ_OPENAI_RT_DEPLOY}
+AZURE_OPENAI_REALTIME_API_VERSION=${_AZ_OPENAI_RT_APIVER}
+AZURE_OPENAI_WHISPER_DEPLOYMENT=${_AZ_OPENAI_WHISPER}
+AZURE_SPEECH_KEY=${_AZ_SPEECH_KEY}
+AZURE_SPEECH_KEY_SECONDARY=${_AZ_SPEECH_KEY2}
+AZURE_SPEECH_REGION=${_AZ_SPEECH_REGION}
+AZURE_SPEECH_ENDPOINT=${_AZ_SPEECH_ENDPOINT}
+AZURE_SPEECH_TTS_VOICE_SW=${_AZ_SPEECH_VOICE_SW}
+AZURE_SPEECH_TTS_VOICE_EN=${_AZ_SPEECH_VOICE_EN}
+AZURE_SPEECH_STT_LANGUAGES=${_AZ_SPEECH_LANGS}
+SUPABASE_URL=${_SUPABASE_URL}
+SUPABASE_SECRET_KEY=${_SUPABASE_KEY}
+SUPABASE_ANON_KEY=${_SUPABASE_ANON}
+DETERMINISTIC_TENANT_ID=bula-pesa
 GOOGLE_SERVICE_ACCOUNT_JSON='${_GEE_JSON_ESC}'
 GEE_PROJECT=${_GEE_PROJECT}
 AFRICASTALKING_USERNAME=sandbox
@@ -260,7 +311,7 @@ MINIMAX_API_KEY=${_MINIMAX_KEY}
 MINIMAX_DEFAULT_MODEL=${_MINIMAX_MODEL}
 LLM_PRIMARY_PROVIDER=${_LLM_PRIMARY}
 LLM_FALLBACK_PROVIDER=${_LLM_FALLBACK}
-LLM_TIMEOUT_MS=15000
+LLM_TIMEOUT_MS=90000
 LLM_CACHE_TTL_SECONDS=300
 LLM_DAILY_TOKEN_BUDGET=100000
 EOF
@@ -346,8 +397,15 @@ class H(http.server.SimpleHTTPRequestHandler):
 
     def _serve_app(self, app_dist, title):
         path = self.path.split("?")[0]
-        if path.startswith("/" + title.lower().split()[0]):
-            rel = path[len("/" + title.lower().split()[0]):].lstrip("/")
+        # Strip the URL routing prefix (do_GET dispatches by URL prefix,
+        # not by title tokens). Vite emits base=/talk/ so static assets
+        # arrive as /talk/assets/index-<hash>.js and must have the /talk/
+        # stripped before joining with app_dist. The dashboard is served
+        # at / so no prefix strip is needed for that path.
+        for prefix in ("/talk/", "/talk"):
+            if path.startswith(prefix):
+                rel = path[len(prefix):].lstrip("/")
+                break
         else:
             rel = path.lstrip("/")
         target = app_dist / rel if rel else app_dist / "index.html"

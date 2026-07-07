@@ -21,6 +21,7 @@ from contextlib import asynccontextmanager  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
 
 from ardalink_engine.src.api import baseline, satellite  # noqa: E402
+from ardalink_engine.src.api.tenancy_middleware import TenantAttestationMiddleware  # noqa: E402
 from ardalink_engine.src.config import settings  # noqa: E402
 from ardalink_engine.src.db.client import db_client  # noqa: E402
 from ardalink_engine.src.db.schema import create_tables  # noqa: E402
@@ -52,6 +53,7 @@ app = FastAPI(
     description="Biophysical engine — satellite ingestion, grid scoring, journey planning.",
     lifespan=lifespan,
 )
+app.add_middleware(TenantAttestationMiddleware)
 app.include_router(baseline.router)
 app.include_router(satellite.router)
 

@@ -118,29 +118,54 @@ router.get("/", (_req, res): void => {
     <div class="cards">
       <a href="/api/demo/ussd/simulator" class="card">
         <div class="icon">📱</div>
-        <h2>USSD Simulator</h2>
-        <p>Test USSD menu flows with an interactive feature-phone simulator. Dial *123*8# to start.</p>
+        <h2>USSD Simulator <span class="badge">DETERMINISTIC</span></h2>
+        <p>Feature-phone menu flow: dial *123*8#, pick 1 for a personalized brief in Swahili or English (real satellite numbers + your last report if known). Fixed screens, no LLM in-loop.</p>
       </a>
 
       <a href="/api/demo/sms/simulator" class="card">
         <div class="icon">💬</div>
-        <h2>SMS Simulator</h2>
-        <p>Test SMS keyword responses. Try BULA, MALISHO, ONGEA keywords.</p>
+        <h2>SMS Simulator <span class="badge">DETERMINISTIC</span></h2>
+        <p>Keywords: BULA (brief), MALISHO (water points), ONGEA (request voice call), RIPOTI (my last report), STOP. Personalized by phone lookup against pastoralists.</p>
       </a>
 
       <a href="/api/demo/voice/simulator" class="card">
         <div class="icon">📞</div>
-        <h2>Voice Simulator <span class="badge">BETA</span></h2>
-        <p>Test voice conversation flows with simulated speech-to-text input.</p>
+        <h2>Voice Simulator <span class="badge">HERDER PATH</span></h2>
+        <p>Deterministic phone-call flow: enter your phone → personalized opener plays → pick a category → record 20 s → Azure Speech → GPT-5 Mini extracts BCS/water/mortality → ground truth row. Mirrors the exact pipeline real herder calls run.</p>
       </a>
     </div>
 
+    <div id="statusCard" style="margin-top:24px;padding:16px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0;font-size:13px;color:#334155;">
+      <strong>Live services:</strong>
+      <div id="statusLine" style="margin-top:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#0f172a;">checking…</div>
+    </div>
+
     <div class="note">
-      <strong>Note:</strong> These simulators use the same intelligenceCore.ts and AI pipeline
-      as production, but without the Africa's Talking dependency. All responses are generated
-      from the latest satellite + climate data.
+      <strong>Note:</strong> All three simulators are now <strong>deterministic</strong> — the
+      LLM never runs in the interaction loop. Responses are fixed templates filled with fresh
+      ward satellite data and, when the phone maps to a known pastoralist, personalized with
+      their location, livestock counts, and last report. GPT-5 Mini only runs post-call on
+      voice recordings, to extract structured indicators (BCS / mortality / water status /
+      etc.) into <code>ground_truth_reports</code>. Realtime Azure OpenAI is kept in the
+      codebase as the Phase-3 upgrade path (see
+      <code>ardalink-api/docs/llm-integration.md §5.2</code>) but is not the herder default.
     </div>
   </div>
+
+  <script>
+    (async () => {
+      const line = document.getElementById('statusLine');
+      try {
+        const speech = await fetch('/api/speech/status').then(r => r.json());
+        const speechBit = speech.configured
+          ? '✅ Speech: Azure ' + speech.region + ' (voices ' + speech.voiceSw + ' / ' + speech.voiceEn + ')'
+          : '⚠️ Speech: not configured';
+        line.innerHTML = speechBit;
+      } catch (e) {
+        line.textContent = 'status probe failed';
+      }
+    })();
+  </script>
 </body>
 </html>
   `);

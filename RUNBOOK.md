@@ -3,8 +3,8 @@
 Step-by-step manual for running the full local stack. Read this if
 `LOCAL_SETUP.md` is too brief and you want the full picture. For the
 5-minute version, see `LOCAL_SETUP.md`. For diagrams, see
-`ARCHITECTURE-V2.md`. For the high-level project overview, see
-[`README.md`](./README.md).
+[`Arda-link-AI-Docs/architecture.md`](./Arda-link-AI-Docs/architecture.md).
+For the high-level project overview, see [`README.md`](./README.md).
 
 ---
 
@@ -589,6 +589,19 @@ If you want to understand what a request does, start here:
 | Where does the engine compute? | `ardalink-engine/ardalink_engine/src/` | pure-Python modules; FastAPI wrapper in `ardalink_engine/main.py` |
 | How is the demo data loaded? | `ardalink-api/docs/local-dev/seed-data/seed-demo.sql` | applied by `start-local.sh` after migrations |
 | What does `make verify` actually check? | `ardalink-api/docs/local-dev/scripts/verify.sh` | line by line, with section headers |
+| Where does the LLM registry live? | `ardalink-api/src/lib/llm/registry.ts` | `pickProvider` → `providers/{azure,zai,minimax,mock}.ts` |
+| How does the Azure GPT-5 provider handle `max_completion_tokens`, `reasoning_effort`, `temperature`? | `ardalink-api/src/lib/llm/providers/azure.ts` | `isGpt5` deployment-name check → body-shape rewrites |
+| Where does the speech (STT/TTS) bridge live? | `ardalink-api/src/lib/speech.ts` | `routes/speech.ts` → Azure Speech REST (STT + TTS + STS token) |
+| Which voice mode does a call use? | `ardalink-api/src/routes/voice.ts::resolveCallMode` | `CALL_PIPELINE_MODE` env (default `deterministic`) or per-request `?mode=` query |
+| How does the **deterministic** herder pipeline work? | `ardalink-api/src/routes/voice.ts` (dual-mode webhook) → `src/lib/voiceDeterministicPipeline.ts` | AT `<Say>`/`<GetDigits>`/`<Record>` XML stages → download recording → `fastTranscribe` → `extractIndicators` → `withTenantContext` + `insert(groundTruthReportsTable)` → `touchPastoralistLastContact` |
+| Which sim does the demo hub link to? | `ardalink-api/src/routes/demo/index.ts` | Only deterministic sims (voice / USSD / SMS). Realtime demo is kept at `/simulator-realtime` for Phase 3 but is not linked. |
+| How is a herder identified + personalized? | `ardalink-api/src/lib/herderContext.ts::resolveHerderContext` | Since 2026-07-08 **Supabase-first**: canonicalize phone → try `api_call_context` view or `pastoralists` on Supabase → overlay ward intelligence from `api_latest_satellite_indices` + `api_latest_weather_data` → enrich from local mirror (species breakdown, extraction detail) → fall back to local-only if Supabase unreachable → return `HerderContext { source, wardId, wardNdviMean, wardVci, ... }` used by voice / USSD / SMS sims |
+| Where does the Supabase client live? | `ardalink-api/src/lib/supabase.ts` | PostgREST over `SUPABASE_URL` + `SUPABASE_SECRET_KEY`; helpers `listWards` / `latestSatelliteFor` / `latestWeatherFor` / `callContextByPhone` / `pastoralistByPhone` / `upsertPastoralist` / `insertGroundTruthCall`; 60 s cache for reference reads (`SUPABASE_CACHE_TTL_MS`); null-on-failure so callers can fall back to local |
+| How is a tenant slug mapped to a Supabase ward_id? | `ardalink-api/src/lib/wardMapping.ts` | Static map: `bula-pesa → 242`. `garbatulla` and `merti` default to `242` until confirmed with the Supabase project owner. |
+| How does the dual-write to Supabase work? | `ardalink-api/src/lib/voiceDeterministicPipeline.ts::writeSupabaseMirror` (also called from `src/routes/talk.ts`) | After the local rich `ground_truth_reports` insert, upsert the pastoralist (uuid PK) if missing, then insert a thin `ground_truth_calls` row on Supabase. `mortality_rate` + `offtake_rate` bucket-to-proportion in `[0,1]`, `trust_score` divided by 100. Fire-and-forget: Supabase failure never rolls back the local write. |
+| How does the **realtime** browser demo work (Phase-3 preview)? | `ardalink-api/src/routes/demo/voice.ts` (`/simulator-realtime`) | `POST /api/demo/voice/token` → WS `/api/browser-voice-stream` → `handleBrowserVoiceStream` in `voiceStreamBrowser.ts` → Azure OpenAI Realtime |
+| Where is ground truth extracted from a call? | Deterministic: `voiceDeterministicPipeline.ts::processDeterministicVoiceRecording`. Realtime: `voiceStreamBrowser.ts::endBrowserCall` and `voiceStream.ts::endCall` for AT. | `extractIndicators(transcript)` → RLS-scoped `insert(groundTruthReportsTable)` with BCS / mortality / water / trust score |
+| Why does the demo `record-and-send` page use the same pipeline as real calls? | `ardalink-api/src/routes/demo/voice.ts::/record` | Directly calls `fastTranscribe` + `extractIndicators` — identical code path minus the AT XML stages |
 
 ---
 
@@ -597,10 +610,11 @@ If you want to understand what a request does, start here:
 ## Related docs
 
 - [`README.md`](./README.md) — high-level project overview, service table, deep-dive guide index
-- [`ARCHITECTURE-V2.md`](./ARCHITECTURE-V2.md) — canonical system architecture and data-flow diagrams
+- [`STATUS.md`](./STATUS.md) — strategic view, vendor matrix, phase-by-phase roadmap
+- [`Arda-link-AI-Docs/architecture.md`](./Arda-link-AI-Docs/architecture.md) — C4-style component diagrams
 - [`LOCAL_SETUP.md`](./LOCAL_SETUP.md) — 5-minute install on a fresh machine
 - [`Arda-link-AI-Docs/deployment.md`](./Arda-link-AI-Docs/deployment.md) — production hosting options
 - [`Arda-link-AI-Docs/security.md`](./Arda-link-AI-Docs/security.md) — auth, rate limiting, RLS threat model
 
-*See `ARCHITECTURE-V2.md` for the diagrams. See `LOCAL_SETUP.md` for the
-5-minute install.*
+*See `Arda-link-AI-Docs/architecture.md` for the diagrams. See `LOCAL_SETUP.md`
+for the 5-minute install.*

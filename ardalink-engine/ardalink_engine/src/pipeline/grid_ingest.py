@@ -272,6 +272,35 @@ def _reduce_chunk(image, cells: list[dict], spec: GridSpec, scale: int) -> dict[
     return out
 
 
+def _sample_chunk(image, cells: list[dict], scale: int) -> dict[int, dict]:
+    """Sample image at cell centre points; use for products coarser than the grid.
+
+    ``reduceRegions`` over 250 m rectangles fails silently when the product
+    resolution (e.g. SMAP at 9 km) is much coarser than the cell size — the
+    rectangle is smaller than one pixel so the intersection is empty.
+    Point sampling (``sampleRegions``) always hits the enclosing pixel.
+    """
+    import ee
+
+    features = [
+        ee.Feature(
+            ee.Geometry.Point([float(c["longitude"]), float(c["latitude"])]),
+            {"cid": int(c["cell_id"])},
+        )
+        for c in cells
+    ]
+    fc = ee.FeatureCollection(features)
+    sampled = image.sampleRegions(collection=fc, scale=scale, geometries=False)
+    info = sampled.getInfo()
+    out: dict[int, dict] = {}
+    for feat in info.get("features", []):
+        props = feat.get("properties", {})
+        cid = props.get("cid")
+        if cid is not None:
+            out[int(cid)] = props
+    return out
+
+
 def _bulk_update(table: str, columns: list[str], rows: list[tuple]) -> int:
     """Bulk ``UPDATE table SET col=v.col... FROM (VALUES ...) WHERE cell_id``.
 
@@ -287,8 +316,12 @@ def _bulk_update(table: str, columns: list[str], rows: list[tuple]) -> int:
         f'FROM (VALUES %s) AS v ({col_list}) '
         f'WHERE t.cell_id = v.cell_id'
     )
+    # Explicit casts prevent PostgreSQL from inferring NULL-only batches as
+    # type "text", which causes DatatypeMismatch against double precision columns
+    # (e.g. evapotranspiration_mm when MOD16A2 has a data gap for the whole chunk).
+    template = "(%s::bigint" + ", %s::double precision" * len(columns) + ")"
     with db_client.connection() as conn, conn.cursor() as cur:
-        psycopg2.extras.execute_values(cur, sql, rows)
+        psycopg2.extras.execute_values(cur, sql, rows, template=template)
     return len(rows)
 
 
@@ -637,8 +670,15 @@ def ingest_layer(
     total = 0
     written = 0
     started = time.time()
+    # SMAP is 9 km — too coarse for reduceRegions over 250 m rectangles (empty
+    # intersections). Use point sampling for soil; rectangles for all others.
+    use_point_sample = layer == "soil"
     for idx, chunk in enumerate(_iter_cell_chunks(bbox, settings.GRID_CHUNK_SIZE, start_cell_id)):
-        props = _reduce_chunk(image, chunk, spec, scale)
+        props = (
+            _sample_chunk(image, chunk, scale)
+            if use_point_sample
+            else _reduce_chunk(image, chunk, spec, scale)
+        )
         if layer == "vegetation":
             # Load this chunk's stored seasonal envelope so _row can compute VCI.
             veg_envelope.clear()

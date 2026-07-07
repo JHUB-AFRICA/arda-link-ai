@@ -31,6 +31,11 @@ export const groundTruthReportsTable = pgTable("ground_truth_reports", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   sessionId: text("session_id"),
   phone: text("phone"),
+  // Multi-tenant RLS: this column is retrofitted onto every operational
+  // table by migrations/0001_multitenant_public.up.sql. Every writer must
+  // populate it (and set app.current_tenant_id via withTenantContext), or
+  // the tenant_isolation RLS policy rejects the row.
+  tenantId: text("tenant_id"),
   month: text("month").notNull(),
   timestamp: timestamp("timestamp").notNull(),
 

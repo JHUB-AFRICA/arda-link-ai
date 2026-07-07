@@ -28,7 +28,10 @@ beforeAll(() => {
 });
 
 describe("POST /api/voice-callback — AT voice webhook", () => {
-  it("returns valid <Response><Stream/></Response> XML", async () => {
+  it("deterministic default: returns <Say>+<GetDigits> opener XML", async () => {
+    // Since 2026-07-07 the default CALL_PIPELINE_MODE is `deterministic`.
+    // AT gets a value-first opener + DTMF menu instead of the Stream XML.
+    // See ardalink-api/docs/llm-integration.md §5.
     const res = await request(app)
       .post("/api/voice-callback")
       .type("form")
@@ -43,9 +46,29 @@ describe("POST /api/voice-callback — AT voice webhook", () => {
     expect(res.headers["content-type"]).toMatch(/xml/);
     expect(res.text).toContain("<?xml");
     expect(res.text).toContain("<Response>");
+    expect(res.text).toContain("<Say>");
+    expect(res.text).toContain("<GetDigits");
+    expect(res.text).toContain("stage=dtmf");
+    expect(res.text).toContain("</Response>");
+  });
+
+  it("realtime mode (?mode=realtime): returns <Stream/> XML", async () => {
+    const res = await request(app)
+      .post("/api/voice-callback?mode=realtime")
+      .set("x-forwarded-host", "localhost:3000")
+      .set("x-forwarded-proto", "http")
+      .type("form")
+      .send({
+        callerNumber: "+254711082200",
+        destinationNumber: "+254700000000",
+        sessionId: "AT-test-rt",
+        direction: "outbound",
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toMatch(/xml/);
     expect(res.text).toContain("<Stream");
-    // AT requires the Stream URL to be wss:// for the call to bridge
-    expect(res.text).toMatch(/wss:\/\//);
+    expect(res.text).toContain("/api/voice-stream");
     expect(res.text).toContain("</Response>");
   });
 
