@@ -8,51 +8,63 @@ broken, what to fix first. Companion to [`data-sources.md`](./data-sources.md)
 
 ---
 
-## 1. Live state of the LLM stack (verified 2026-06-30)
+## 1. Live state of the LLM stack (verified 2026-07-06)
 
 Probed against the running dev stack via `GET /api/llm/status`:
 
 ```
-ROUTING TABLE:                              provider health (live /models probe):
-  multilingual -> primary=z  fallback=minimax      z      : ✗ down (3652ms)
-  voice_script -> primary=z  fallback=minimax      minimax: ✗ down (907ms)
-  summarize   -> primary=z  fallback=minimax
-  reasoning   -> primary=z  fallback=minimax
-  code        -> primary=z  fallback=minimax
-  extract     -> primary=z  fallback=minimax
-  default     -> primary=z  fallback=minimax
+ROUTING TABLE:                              provider health (live probe):
+  multilingual -> primary=azure  fallback=z      azure  : ✓ up   (~1800ms)
+  voice_script -> primary=azure  fallback=z      z      : status varies with key
+  summarize    -> primary=azure  fallback=z      minimax: status varies with key
+  reasoning    -> primary=azure  fallback=z
+  code         -> primary=azure  fallback=z
+  extract      -> primary=azure  fallback=z
+  default      -> primary=azure  fallback=z
 
-RECENT CALLS (last 24h, audit log):
-  2026-06-30T09:39:17.948Z  task=summarize  provider=z/(error)
-  2026-06-30T09:38:52.924Z  task=summarize  provider=z/(error)
-  2026-06-30T09:38:29.896Z  task=summarize  provider=z/(error)
-  2026-06-30T09:38:07.874Z  task=summarize  provider=z/(error)
-  2026-06-30T09:32:46.677Z  task=summarize  provider=z/(error)
+RECENT CALLS (verified 2026-07-06):
+  task=summarize (intelligence brief)  provider=azure/gpt-5-mini
+    tokens=787   latency=6.4s   language=sw   OK
+  task=voice_script (demo turn)        provider=azure/gpt-5-mini
+    tokens=~250  latency=2.5s   language=sw   OK
 
 BUDGET:
   daily token budget: 100,000 / task (default)
-  consumed: 0 across all tasks
 ```
 
 **Bottom line today:**
 
-1. The LLM **registry, routing table, cache, cost guard, and audit
-   log all work**. The 4 routes that use the LLM (`/api/chat`,
-   `/api/talk-chat`, `/api/intelligence/brief`, and the post-call
-   pipeline) correctly route through the provider-agnostic layer.
-2. **Both providers are down in dev** — `z.ai 401: token expired or
-   incorrect` and `minimax` returns 401 (placeholder key). The real
-   LLM path is exercised end-to-end (the audit log shows
-   `provider=z/(error)` rather than `provider=mock`), but every call
-   currently fails the primary and (since `minimax` is also down)
-   the fallback.
-3. The MockClient is **not** the live client — it's only used in unit
-   tests and as the `create()` fallback when no key is set. In
-   dev with a key set (even an expired one), the ZaiClient is
-   constructed and the live `/chat/completions` call is attempted.
-4. The LLM voice bridge (Azure OpenAI Realtime over WebSocket) is
-   **separate** — it lives in `voiceStream.ts` and is not part of
-   the LLM registry. See §5 below.
+1. **Azure AI Foundry (`gpt-5-mini`) is now the primary LLM provider.**
+   The `AzureOpenAIClient` in `providers/azure.ts` is registered in the
+   registry, `LLM_PRIMARY_PROVIDER=azure` is the default in
+   `docs/local-dev/.env`, and z.ai is the automatic fallback. Verified
+   with a real Swahili intelligence brief for tenant `bula-pesa`.
+2. The LLM **registry, routing table, cache, cost guard, and audit
+   log all work**. Every task now shows `provider=azure` in the audit
+   ring.
+3. Azure GPT-5 quirks are handled inside the provider (auto-switch to
+   `max_completion_tokens`, force `reasoning_effort: minimal`, drop
+   `temperature`). See §3.3 below.
+4. **Two voice paths, chosen per call by `CALL_PIPELINE_MODE`:**
+   - **`deterministic`** (default, herder production path) — no Realtime
+     needed. AT `<Say>` + `<GetDigits>` + `<Record>` collect a 20-second
+     clip; the server transcribes via Azure Speech, runs the registry's
+     `extractIndicators` (Azure GPT-5 Mini) and writes a full
+     `ground_truth_reports` row. Every call produces data. See
+     `src/lib/voiceDeterministicPipeline.ts`.
+   - **`realtime`** (optional, demo + future upgrade) — Azure OpenAI
+     Realtime over WebSocket, full-duplex live conversation. Requires a
+     `gpt-4o-realtime-preview` deployment on the Foundry resource. Kept
+     for browser demos (`/api/demo/voice/simulator`) and reserved as the
+     upgrade once herder connections and Realtime pricing improve.
+     Lives in `voiceStream.ts` and `voiceStreamBrowser.ts` — still
+     separate from the LLM registry because the WS bridge is bidirectional
+     audio, not chat completions.
+5. Azure Speech (STT/TTS) is also live but is not an LLM provider — see
+   `docs/05-OBSERVABILITY.md` or the endpoint list in `RUNBOOK.md`.
+   Its `fastTranscribe()` helper auto-falls back to the short-audio REST
+   endpoint when the Speech resource's region doesn't host the Fast
+   Transcription API (e.g. `southafricanorth`).
 
 ---
 
@@ -68,6 +80,7 @@ ardalink-api/src/lib/llm/
 │   └── tenant-brief.ts  Brief template (Cite numbers from DATA, never invent…)
 ├── index.ts          Public surface — routes / features import from here only
 └── providers/
+    ├── azure.ts      AzureOpenAIClient — POST /openai/deployments/<name>/chat/completions
     ├── zai.ts        ZaiClient — POST /chat/completions, OpenAI-compatible
     ├── minimax.ts    MinimaxClient — POST /chat/completions, OpenAI-compatible
     └── mock.ts       MockClient — used by tests + dev when no key
@@ -95,23 +108,30 @@ Cache TTL = `LLM_CACHE_TTL_SECONDS` (default 300s). Each call records
 
 ### Routing table (defaults, override via env)
 
+Table shows the **shipped default** (Azure primary, z fallback) — this is
+what the `docs/local-dev/.env` template gives you. The registry still
+supports `z` and `minimax` as primaries via `LLM_PRIMARY_PROVIDER`.
+
 | Task          | Primary | Fallback | Used by |
 |---|---|---|---|
-| `multilingual` | `z`     | `minimax` | `/api/chat`, `/api/talk-chat` (Swahili/English code-switching) |
-| `voice_script` | `z`     | `minimax` | `generateScript()` — pre-call bilingual opening |
-| `summarize`    | `z`     | `minimax` | `/api/intelligence/brief` |
-| `extract`      | `z`     | `minimax` | `extractIndicators()` — BCS, offtake, mortality, action tag |
-| `reasoning`    | `z`     | `minimax` | Multi-step / tool use |
-| `code`         | `z`     | `minimax` | Function-calling synthesis |
-| `default`      | `z`     | `minimax` | Safe default for new code paths |
+| `multilingual` | `azure` | `z`     | `/api/chat`, `/api/talk-chat` (Swahili/English code-switching) |
+| `voice_script` | `azure` | `z`     | `generateScript()` — pre-call bilingual opening |
+| `summarize`    | `azure` | `z`     | `/api/intelligence/brief` |
+| `extract`      | `azure` | `z`     | `extractIndicators()` — BCS, offtake, mortality, action tag |
+| `reasoning`    | `azure` | `z`     | Multi-step / tool use |
+| `code`         | `azure` | `z`     | Function-calling synthesis |
+| `default`      | `azure` | `z`     | Safe default for new code paths |
 
-All seven tasks use **z → minimax** in default config.
+The global `LLM_PRIMARY_PROVIDER=azure` env in `docs/local-dev/.env`
+puts Azure at the top for every task. To pin one task back to z.ai:
+`LLM_TASK_EXTRACT_PRIMARY=z`. To flip the whole stack back to z.ai
+primary: `LLM_PRIMARY_PROVIDER=z LLM_FALLBACK_PROVIDER=minimax`.
 
 Per-task env override:
-- `LLM_TASK_SUMMARIZE_PRIMARY=minimax`
-- `LLM_PRIMARY_PROVIDER=minimax`
-- `LLM_FALLBACK_PROVIDER=z`
-- `LLM_TIMEOUT_MS=120000` (default 90s)
+- `LLM_TASK_SUMMARIZE_PRIMARY=azure|z|minimax`
+- `LLM_PRIMARY_PROVIDER=azure|z|minimax`
+- `LLM_FALLBACK_PROVIDER=azure|z|minimax`
+- `LLM_TIMEOUT_MS=90000` (default 90s — GPT-5 non-minimal reasoning can burn this)
 
 ---
 
@@ -257,7 +277,38 @@ TTS request schema:
 **Music 2.6 / 2.0** — not relevant to the current ArdaLink stack.
 Possible future use: herder-voice ringtones, jingle for the dashboard.
 
-### 3.3 Which provider handles Swahili better?
+### 3.3 Azure AI Foundry (GPT-5 Mini) — the current primary
+
+**Added 2026-07-06.** Provider name in the registry: `azure`.
+
+- **Endpoint shape**: classic Azure OpenAI URL served on the AI Foundry
+  resource: `POST {AZURE_OPENAI_ENDPOINT}/openai/deployments/{deployment}/chat/completions?api-version={AZURE_OPENAI_CHAT_API_VERSION}`.
+  Auth: `api-key: <AZURE_OPENAI_API_KEY>`. Works for both classic
+  `*.openai.azure.com` resources and Foundry `*.services.ai.azure.com`
+  resources — the `/openai/deployments/...` path is served on both.
+- **Deployment name** in env: `AZURE_OPENAI_CHAT_DEPLOYMENT=gpt-5-mini`.
+- **API version**: `AZURE_OPENAI_CHAT_API_VERSION=2024-10-21` (default).
+- **Known GPT-5-family quirks** — handled inside `providers/azure.ts`:
+  - `max_tokens` is rejected. The client auto-detects deployments whose
+    name matches `/gpt-5/i` and sends `max_completion_tokens` instead.
+  - By default GPT-5 burns the entire completion budget on hidden
+    reasoning tokens (visible content = empty, finish_reason = "length").
+    The client forces `reasoning_effort: "minimal"` for every request —
+    override with env `AZURE_OPENAI_REASONING_EFFORT=low|medium|high`.
+  - `temperature` outside 1.0 is rejected. The client drops the field
+    for GPT-5 deployments and lets the model default apply.
+- **Verified behavior** (2026-07-06):
+  - Health probe (1-token completion): `azure ok=True lat=1800ms`.
+  - Real Swahili intelligence brief for `bula-pesa`:
+    provider=`azure`, model=`gpt-5-mini`, tokens=787, latency=6.4s.
+    Output is a full 3-paragraph Swahili summary + 3 recommended actions
+    grounded in real satellite + ground-truth data.
+  - Demo voice turn (voice_script task): ~250 tokens, 2.5s.
+- **Fallback**: when the Azure key is unset, `AzureOpenAIClient.create()`
+  returns a `MockClient` tagged `azure` so the registry still works and
+  the audit log records which provider was selected.
+
+### 3.4 Which provider handles Swahili better?
 
 **Z.ai (GLM-4.5-Flash + GLM-5.2)**: documented as multilingual with
 emphasis on Chinese + English; Swahili is not a primary supported
@@ -287,14 +338,28 @@ Keep `minimax` (M3) as fallback — it has the 1M context for long
 briefs, native multimodal for the future screenshot-in-brief use
 case, and stronger reasoning for the `reasoning` and `code` tasks.
 
-### 3.4 Which provider for the realtime voice bridge?
+### 3.5 Which provider for the realtime voice bridge?
 
 Neither z.ai nor minimax offers the bidirectional WebSocket mulaw
 audio path that ArdaLink's `/api/browser-voice-stream` needs. That
 path uses **Azure OpenAI Realtime** (`gpt-4o-realtime-preview`)
 directly via WebSocket — not in the LLM registry. See §5.
 
-### 3.5 MiniMax Speech 2.8 (TTS) — the "sound API" question
+The GPT-5 family (the chat primary above) does **not** support the
+Realtime API — that's why the Realtime deployment name is a separate
+env var (`AZURE_OPENAI_REALTIME_DEPLOYMENT`) and typically points to
+`gpt-4o-realtime-preview` on the same Foundry resource.
+
+**Realtime is no longer the herder-facing production path.** Since
+2026-07-07, herder phone calls default to the deterministic pipeline
+(§5.1 below), which uses the same Azure GPT-5 Mini registry entry that
+serves every other text task. Realtime stays wired for browser demos
+and is on the roadmap as a Phase-3 upgrade once (a) Kenyan 3G/4G
+coverage in the wards makes sub-second turn-taking viable, and (b) our
+prompt suite handles code-switched Borana / Turkana / Samburu / Somali
+in the same session — see `STATUS.md §5` for the Realtime uplift plan.
+
+### 3.6 MiniMax Speech 2.8 (TTS) — the "sound API" question
 
 If we want to **replace Azure OpenAI Realtime** for the voice bridge,
 the candidate is **MiniMax Speech 2.8 HD** (40 languages, 7 emotions,
@@ -366,33 +431,200 @@ Web Speech API for read-aloud.
 
 ---
 
-## 5. The voice bridge (Azure OpenAI Realtime) — separate
+## 5. The voice pipeline — two modes, chosen per call
 
-The voice bridge in `voiceStream.ts` (and `voiceStreamBrowser.ts`)
-uses **Azure OpenAI Realtime** over a raw WebSocket — not in the LLM
-registry. This is intentional and documented in `openai.ts:99-103`:
+Since 2026-07-07 the voice call path has **two modes** selected by the
+`CALL_PIPELINE_MODE` env (default `deterministic`) or a per-request
+`?mode=` query on the AT webhook:
 
-> Realtime WebSocket audio (voiceStream.ts) is unchanged — that path
-> is not text generation, it's bidirectional mulaw streaming that z.ai
-> and minimax don't offer. Azure OpenAI Realtime (gpt-4o-realtime) stays
-> the only option for that path until Phase 3 (ARCHITECTURE-V2 §5.3).
+### 5.1 Deterministic mode (herder production path)
 
-The ReST call-sites for the voice bridge are:
+**Default. What every real herder call runs today.** Lives in
+`src/lib/voiceDeterministicPipeline.ts` and the dual-mode route
+`src/routes/voice.ts`. The AT call is entirely scripted; the LLM only
+runs *after* the call, on the recorded transcript.
 
-- `voiceStream.ts:23-25` — `gpt-4o-realtime-preview` deployment
-- `voiceStream.ts:227-228` — opens the Azure Realtime WebSocket
-- `voiceStream.ts:245` — configures the session (voice, language,
-  tools, voice activity detection, turn detection)
-- `voiceStream.ts:312` — handles `session.updated`
-- `voiceStream.ts:327` — relays audio deltas to the herder's AT
-  WebSocket
-- `voiceStream.ts:373` — sends the next audio chunk
-- `voiceStream.ts:440` — native Azure Realtime transcription
+```
+POST /api/voice-callback?stage=opener
+  → <Say> value-first opener  (real ward NDVI + risk level from
+                               getLastResult(); no LLM in the loop)
+  → <GetDigits>                 (DTMF menu: 1=BCS, 2=water, 3=mortality,
+                                 4=feeding, 5=milk, 6=trek, 7=other)
 
-`/api/llm/status` does **not** include the voice bridge in its
+POST /api/voice-callback?stage=dtmf
+  → <Say> "You selected <category>. Speak after the beep."
+  → <Record maxLength=20 finishOnKey=#>
+
+POST /api/voice-callback?stage=recorded&category=<id>
+  → <Say> "Asante, kwaheri."   (call ends)
+  → fire-and-forget processDeterministicVoiceRecording():
+      1. download AT recording
+      2. Azure Speech transcription
+         (fastTranscribe → auto-falls back to short-audio REST
+          when the resource's region doesn't host Fast, e.g.
+          southafricanorth)
+      3. LLM registry: extractIndicators (Azure GPT-5 Mini)
+                     + generateActionTag (same registry entry)
+      4. computeTrustScore (server-derived, not model-reported)
+      5. withTenantContext('bula-pesa', tx => tx.insert(...))
+         inserts ground_truth_reports row with tenant_id set so
+         the RLS `tenant_isolation` policy accepts the write
+      6. touchPastoralistLastContact(phone)  — dashboard freshness
+```
+
+**Why deterministic wins for the herder path:**
+
+- Works with any chat model — no Realtime deployment needed. Our
+  Foundry resource ships with `gpt-5-mini` only; that's enough.
+- Robust on 2G — no WS latency budget, just plain HTTP callbacks.
+- Guaranteed data capture — every completed call writes exactly one
+  `ground_truth_reports` row. No "the LLM forgot to ask BCS" failure
+  mode.
+- Cheap — one short LLM call (~250 tokens) vs. Realtime per-minute.
+- Debuggable — the AT recording URL is stored on the row; replay any
+  call by re-running the pipeline against the same URL.
+
+**Verified 2026-07-07:** row #39 landed with BCS=2, species=goats,
+mortality=1-3, action_tag="Dry Season Stress", trust_score=60 —
+extracted from a 9-second WAV recording via the exact production path.
+
+### 5.2 Realtime mode (optional; demo + future upgrade)
+
+Kept wired but no longer the default. Lives in `voiceStream.ts` and
+`voiceStreamBrowser.ts`. Uses **Azure OpenAI Realtime** over a raw
+WebSocket — not in the LLM registry, because the WS bridge is
+bidirectional audio, not chat completions.
+
+Enable per-call with `?mode=realtime` on the AT webhook or globally
+with `CALL_PIPELINE_MODE=realtime`. Requires a
+`gpt-4o-realtime-preview` deployment on the same Foundry resource
+(`AZURE_OPENAI_REALTIME_DEPLOYMENT`); GPT-5 models do not support the
+Realtime API.
+
+Call-sites:
+- `voiceStream.ts:23-27` — deployment + API version, both env-tunable
+- `voiceStream.ts:232` — opens the Azure Realtime WebSocket
+- `voiceStream.ts:249` — configures the session (voice, language,
+  tools, VAD, turn detection)
+- `voiceStream.ts:329` — relays audio deltas back to AT
+- `voiceStream.ts:263+` — TTS fallback via Azure Speech if the
+  Realtime WS fails to open (caller hears the pre-generated Swahili
+  script instead of silence)
+
+**When Realtime becomes the herder default (roadmap):**
+
+- Herder-side 3G/4G coverage in Bula Pesa, Garbatulla, Merti wards
+  reliably supports sub-second round-trip latency (target: p95
+  < 1.5 s end-to-end)
+- Prompt suite handles Borana / Turkana / Samburu / Somali
+  code-switching in the same session without dropping quality
+- Per-minute Realtime pricing drops below the deterministic total
+  cost (STT + one chat call), OR we can run a self-hosted
+  VITS + Whisper equivalent in the Africa region
+- All three are Phase-3 items in `STATUS.md §5`.
+
+`/api/llm/status` does **not** include the Realtime bridge in its
 health probe. To monitor it, use the Azure portal or add a separate
-`/api/voice/status` route that pings the Azure Realtime deployment
+`/api/voice/status` route that pings the Realtime deployment
 endpoint. **Owner: backend. Phase 12.**
+
+### 5.3 Supabase as data plane (source of truth since 2026-07-08)
+
+Reference data — wards, satellite indices, weather, and the thin
+`ground_truth_calls` audit trail — now lives on **Supabase**. Local
+Postgres is a **backup mirror**: it holds the rich per-call schema
+(`ground_truth_reports`, 50 cols), pastoralist species breakdown,
+`admin_users`, `tenants`, `gis_engine.*`, and takes over when Supabase
+is unreachable.
+
+**What's on Supabase** (verified populated 2026-07-08):
+
+- `wards` — 5 active + 5 dormant
+- `ward_neighbors` — 28 rows
+- `ward_cells` — 26,975 rows
+- `satellite_indices` — 1,082 ward-day rows
+- `satellite_cell_indices` — 2.24 M cell-day rows
+- `weather_data` — 20 rows
+- Views `api_latest_satellite_indices`, `api_latest_weather_data`,
+  `api_call_context`
+- PostGIS 3.4 (`spatial_ref_sys`, `geography_columns`)
+- `pastoralists` (uuid PK, upsert-on-first-call — shape differs from
+  local, so we mirror only the identity + herd_size fields)
+- `ground_truth_calls` (thin, 15 cols)
+
+Two views return HTTP 500 today and are skipped by the client:
+`api_latest_cell_satellite_indices`, `api_ward_cell_latest_rollup`.
+Flagged to the project owner; not blocking.
+
+**Client** — `ardalink-api/src/lib/supabase.ts` (PostgREST over
+`SUPABASE_URL` + `SUPABASE_SECRET_KEY`, server-side only). Typed
+helpers: `listWards`, `listActiveWards`, `listWardNeighbors`,
+`latestSatelliteFor(wardId)`, `latestWeatherFor(wardId)`,
+`callContextByPhone(phone)`, `pastoralistByPhone`, `upsertPastoralist`,
+`insertGroundTruthCall`. Reference-table reads are cached
+(`SUPABASE_CACHE_TTL_MS`, default 60 s). Every helper returns `null`
+on failure so callers can fall back to the local mirror without a
+try/catch dance.
+
+**Ward-id mapping** — `src/lib/wardMapping.ts` maps tenant slugs to
+Supabase `ward_id` text values. `bula-pesa → 242`. Other tenants
+(`garbatulla`, `merti`) default to `242` until confirmed with the
+Supabase project owner.
+
+**Supabase-first herder context** — `resolveHerderContext(phone)` in
+`src/lib/herderContext.ts` is now:
+
+1. Try Supabase `api_call_context` view (or the `pastoralists`
+   table) by canonical phone.
+2. Overlay latest ward reference data from `api_latest_satellite_indices`
+   + `api_latest_weather_data`.
+3. Enrich from the local mirror (species breakdown cattle/goats/camels,
+   extraction detail from `ground_truth_reports`).
+4. If Supabase unreachable, drop to local-only.
+
+Returns a `HerderContext` tagged with `source: "supabase" | "local" |
+"none"` plus `pastoralistId`, `wardId`, `wardName`, `wardNdviMean`,
+`wardVci`, `wardRainfall30dMm`, `wardTemperatureC`, `wardHumidityPct`,
+`wardEt0Mm`, `preferredLanguage`, `herdSize`. All voice / USSD / SMS
+paths already read this shape.
+
+**Dual-write on every call** — after the local `ground_truth_reports`
+insert (preserved rich schema), `writeSupabaseMirror()` runs in the
+deterministic pipeline and in `POST /api/talk/record`:
+
+1. Upsert the pastoralist to Supabase if not present (id + phone +
+   ward_id + preferred_language + herd_size).
+2. Insert a thin `ground_truth_calls` row.
+
+Rate/proportion conversions the Supabase schema requires:
+
+- `mortality_rate`, `offtake_rate` → `[0, 1]` proportions (buckets
+  mapped to representative values before insert).
+- `trust_score` → `[0, 1]` (local `0–100` divided by 100).
+
+**Env** (added to `docs/local-dev/.env` + `.env.example` + forwarded
+by `start-local.sh`):
+
+```
+SUPABASE_URL=https://<ref>.supabase.co
+SUPABASE_SECRET_KEY=sb_secret_...       # service-role / secret key, server-side only
+SUPABASE_ANON_KEY=                       # optional; reserved for future client-side reads
+SUPABASE_CACHE_TTL_MS=60000
+```
+
+**Verified live 2026-07-08:**
+
+- Herder context pulls NDVI 0.25272, temp 29.5 °C, rain 2.5 mm,
+  humidity 30 % from Supabase for ward 242.
+- Pastoralist upsert — Mohamed Ali on `+254712000004` synced from
+  local to Supabase ward 242 with `herd_size=100`.
+- Dual-write — `ground_truth_calls` has 2 real rows on Supabase,
+  matching rich `ground_truth_reports` rows locally.
+- Fallback — with Supabase env absent, `resolveHerderContext` returns
+  `source: "local"`.
+
+Schema discovery: `ardalink-api/scripts/explore-supabase.py` dumps a
+full table / column / row-count report to `/tmp/supabase-report.json`.
 
 ---
 
@@ -405,6 +637,19 @@ endpoint. **Owner: backend. Phase 12.**
 - `ardalink-api/src/lib/llm/providers/zai.ts` — ZaiClient (OpenAI-compatible)
 - `ardalink-api/src/lib/llm/providers/minimax.ts` — MinimaxClient
 - `ardalink-api/src/lib/llm/providers/mock.ts` — MockClient for tests
+- `ardalink-api/src/lib/llm/providers/azure.ts` — AzureOpenAIClient (GPT-5 Mini primary)
+- `ardalink-api/src/lib/speech.ts` — Azure Speech STT + TTS + STS token; `fastTranscribe()` with region-aware fallback
+- `ardalink-api/src/lib/voiceDeterministicPipeline.ts` — post-call worker (herder production path)
+- `ardalink-api/src/lib/pastoralistContact.ts` — `touchPastoralistLastContact` helper
+- `ardalink-api/src/routes/voice.ts` — dual-mode `/api/voice-callback`
+- `ardalink-api/src/routes/speech.ts` — `/api/speech/*` public surface
+- `ardalink-api/src/lib/herderContext.ts` — Supabase-first `resolveHerderContext(phone)` with local fallback + `buildLocalizedBrief` + `buildLocalizedVoiceOpener` (used by all three deterministic sims)
+- `ardalink-api/src/lib/supabase.ts` — PostgREST client (source-of-truth reference data + `ground_truth_calls` mirror), 60 s cache, null-on-failure semantics
+- `ardalink-api/src/lib/wardMapping.ts` — tenant-slug ↔ Supabase `ward_id` map
+- `ardalink-api/scripts/explore-supabase.py` — schema discovery script (dumps `/tmp/supabase-report.json`)
+- `ardalink-api/src/routes/demo/voice.ts` — `/simulator` is now the deterministic phone-call sim; `/deterministic` alias kept; `/simulator-realtime` is the Phase-3 preview
+- `ardalink-api/src/routes/demo/ussd.ts` — deterministic USSD (fixed menus, no LLM in-loop; personalized brief + "my last report" screens)
+- `ardalink-api/src/routes/demo/sms.ts` — deterministic SMS keyword responses (BULA/MALISHO/ONGEA/RIPOTI/STOP) personalized by phone
 - `ardalink-api/src/lib/llm/prompts/tenant-brief.ts` — brief prompt
 - `ardalink-api/src/lib/llm/index.ts` — public surface
 - `ardalink-api/src/lib/openai.ts` — 3 consumers (generateScript,

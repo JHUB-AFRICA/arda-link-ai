@@ -288,7 +288,7 @@ async function readLastBrief(): Promise<{
  * Persist a call request from USSD into the in-memory call queue.
  * For the Tuesday demo we just call initiateCall() immediately on "now";
  * "tomorrow" is logged but not scheduled (no scheduler is wired for
- * future-dated calls yet — that's a Phase 4 deliverable per ARCHITECTURE-V2).
+ * future-dated calls yet — that's a Phase 4 deliverable per STATUS.md §8.4).
  */
 async function scheduleCall(phone: string, when: "now" | "tomorrow"): Promise<void> {
   if (when !== "now") {

@@ -20,18 +20,19 @@ Source of truth: ``gis_engine.baseline_aggregate`` (and optionally
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
+from ...tenancy import set_tenant
 from ..db.client import db_client
 from ..logging_config import get_logger
+from .tenancy_middleware import resolve_tenant_id
 
 logger = get_logger("ardalink.api.baseline")
 
 router = APIRouter(prefix="/api/v1/baseline", tags=["baseline"])
 
 VALID_BANDS = ("ndvi", "ndre", "red_edge")
-VALID_TENANTS = ("isiolo",)  # single tenant for now
 
 
 class BaselineAggregateRow(BaseModel):
@@ -75,13 +76,19 @@ class BaselinePixelResponse(BaseModel):
     cells: list[BaselinePixelCell]
 
 
-def _validate_tenant(tenant_id: str) -> str:
-    if tenant_id not in VALID_TENANTS:
+def _require_tenant(tenant_id: str | None) -> str:
+    """Return a non-empty tenant id, or raise 400.
+
+    We no longer whitelist tenants — the source of trust is the middleware
+    attestation. If someone slips a bogus tenant id past the header check,
+    RLS returns zero rows (fail-closed) so no cross-tenant leak is possible.
+    """
+    if not tenant_id:
         raise HTTPException(
             status_code=400,
             detail={
-                "error": "invalid_tenant",
-                "valid_tenants": list(VALID_TENANTS),
+                "error": "missing_tenant",
+                "message": "Provide tenant_id via X-Tenant-ID header or query param.",
             },
         )
     return tenant_id
@@ -126,7 +133,11 @@ def _resolve_ward_id(ward_id: str) -> str:
 
 @router.get("/aggregate", response_model=BaselineAggregateResponse)
 def get_baseline_aggregate(
-    tenant_id: str = Query("isiolo", description="Tenant id (only 'isiolo' supported today)"),
+    request: Request,
+    tenant_id: str | None = Query(
+        None,
+        description="Tenant id. Prefer the X-Tenant-ID header; this query param is a dev fallback.",
+    ),
     ward_id: str | None = Query(None, description="Ward id (IEBC wardcode). Optional if ward_name is given."),
     ward_name: str | None = Query(None, description="Ward display name (e.g. 'Bulla Pesa'); resolves to wardcode"),
     month: int = Query(..., description="Calendar month 1..12"),
@@ -135,8 +146,13 @@ def get_baseline_aggregate(
 
     HTTP 200 with ``{"available": false, ...}`` when no row exists.
     HTTP 4xx only for malformed input (bad tenant / month / no ward identifier).
+
+    Tenancy: the effective ``tenant_id`` comes from the ``X-Tenant-ID``
+    header (verified by :class:`TenantAttestationMiddleware`) or, in dev
+    mode, from the query parameter. The DB query runs inside a
+    ``set_tenant`` block so Postgres RLS enforces isolation.
     """
-    _validate_tenant(tenant_id)
+    effective_tenant = _require_tenant(resolve_tenant_id(request, tenant_id))
     _validate_month(month)
 
     if not ward_id and not ward_name:
@@ -150,7 +166,7 @@ def get_baseline_aggregate(
         from ..geo.wards import NAME_TO_WARDCODE
         resolved_ward_id = NAME_TO_WARDCODE.get(ward_name, ward_id or "")
 
-    with db_client.connection() as conn, conn.cursor() as cur:
+    with db_client.connection() as conn, set_tenant(conn, effective_tenant), conn.cursor() as cur:
         cur.execute(
             f"""
             SELECT tenant_id, ward_id, ward_name, month,
@@ -161,14 +177,14 @@ def get_baseline_aggregate(
               FROM "{db_client.schema}".baseline_aggregate
              WHERE tenant_id = %s AND ward_id = %s AND month = %s
             """,
-            (tenant_id, resolved_ward_id, month),
+            (effective_tenant, resolved_ward_id, month),
         )
         row = cur.fetchone()
 
     if row is None:
         return BaselineAggregateResponse(
             available=False,
-            tenant_id=tenant_id,
+            tenant_id=effective_tenant,
             ward_id=resolved_ward_id,
             month=month,
             row=None,
@@ -200,7 +216,11 @@ def get_baseline_aggregate(
 
 @router.get("/pixel", response_model=BaselinePixelResponse)
 def get_baseline_pixel(
-    tenant_id: str = Query("isiolo"),
+    request: Request,
+    tenant_id: str | None = Query(
+        None,
+        description="Tenant id. Prefer the X-Tenant-ID header; this query param is a dev fallback.",
+    ),
     ward_id: str | None = Query(None, description="Ward id (IEBC wardcode). Optional if ward_name is given."),
     ward_name: str | None = Query(None, description="Ward display name; resolves to wardcode"),
     month: int = Query(..., description="Calendar month 1..12"),
@@ -209,9 +229,10 @@ def get_baseline_pixel(
     """Return the per-pixel, per-band baseline grid for one (ward, month).
 
     Sparse representation: only cells that have a stored value appear in
-    the response. Empty grid returns ``available=false``.
+    the response. Empty grid returns ``available=false``. Tenancy is
+    enforced by ``set_tenant`` + Postgres RLS.
     """
-    _validate_tenant(tenant_id)
+    effective_tenant = _require_tenant(resolve_tenant_id(request, tenant_id))
     _validate_month(month)
     band = _validate_band(band)
 
@@ -226,7 +247,7 @@ def get_baseline_pixel(
         from ..geo.wards import NAME_TO_WARDCODE
         resolved_ward_id = NAME_TO_WARDCODE.get(ward_name, ward_id or "")
 
-    with db_client.connection() as conn, conn.cursor() as cur:
+    with db_client.connection() as conn, set_tenant(conn, effective_tenant), conn.cursor() as cur:
         cur.execute(
             f"""
             SELECT row_idx, col_idx, value
@@ -234,14 +255,14 @@ def get_baseline_pixel(
              WHERE tenant_id = %s AND ward_id = %s AND month = %s AND band = %s
              ORDER BY row_idx, col_idx
             """,
-            (tenant_id, resolved_ward_id, month, band),
+            (effective_tenant, resolved_ward_id, month, band),
         )
         cells = cur.fetchall()
 
     if not cells:
         return BaselinePixelResponse(
             available=False,
-            tenant_id=tenant_id,
+            tenant_id=effective_tenant,
             ward_id=resolved_ward_id,
             month=month,
             band=band,
@@ -251,7 +272,7 @@ def get_baseline_pixel(
 
     return BaselinePixelResponse(
         available=True,
-        tenant_id=tenant_id,
+        tenant_id=effective_tenant,
         ward_id=resolved_ward_id,
         month=month,
         band=band,

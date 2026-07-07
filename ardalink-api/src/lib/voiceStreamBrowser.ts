@@ -1,6 +1,9 @@
 import WebSocket from "ws";
 import { logger } from "./logger.js";
-import { db, groundTruthReportsTable } from "@workspace/db";
+import { groundTruthReportsTable } from "@workspace/db";
+import { withTenantContext } from "./tenancy-context.js";
+
+const BROWSER_TENANT_ID = process.env.DETERMINISTIC_TENANT_ID ?? "bula-pesa";
 import { getLastResult } from "./intelligence.js";
 import { formatWaterPointsBlock } from "./data/bulaPesaWaterPoints.js";
 import { formatLandmarksBlock } from "./data/bulaPesaLandmarks.js";
@@ -40,7 +43,8 @@ const NO_SPEECH_TIMEOUT_MS = 25_000;
 
 const REALTIME_DEPLOYMENT =
   process.env.AZURE_OPENAI_REALTIME_DEPLOYMENT ?? "gpt-4o-realtime-preview";
-const REALTIME_API_VERSION = "2025-04-01-preview";
+const REALTIME_API_VERSION =
+  process.env.AZURE_OPENAI_REALTIME_API_VERSION ?? "2025-04-01-preview";
 
 function realtimeUrl(): string {
   const base = process.env
@@ -879,9 +883,10 @@ async function endBrowserCall(
       endReason,
     });
 
-    const [report] = await db
+    const [report] = await withTenantContext(BROWSER_TENANT_ID, (tx) => tx
       .insert(groundTruthReportsTable)
       .values({
+        tenantId: BROWSER_TENANT_ID,
         phone: phone ?? "browser-webrtc",
         month,
         timestamp: new Date(),
@@ -923,7 +928,7 @@ async function endBrowserCall(
         trustScore: trust.score,
         trustFlags: trust.flags,
       })
-      .returning();
+      .returning());
     logTrustScore(phone, report?.id ?? null, trust);
     logger.info(
       {

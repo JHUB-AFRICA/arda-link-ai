@@ -121,13 +121,28 @@ class TestBaselineAggregate:
         assert res.status_code == 400
         assert "missing_ward" in res.json()["detail"]["error"]
 
-    def test_returns_400_on_invalid_tenant(self, client, fake_db_empty):
+    def test_returns_400_when_tenant_missing(self, client, fake_db_empty):
+        """Tenant whitelist removed — attestation + RLS handle isolation now.
+
+        The route only requires *some* tenant id (from header or query param).
+        Bogus tenants are safe: RLS returns zero rows because the mocked
+        session has no matching `app.current_tenant_id`.
+        """
+        res = client.get(
+            "/api/v1/baseline/aggregate",
+            params={"ward_id": "242", "month": "6"},
+        )
+        assert res.status_code == 400
+        assert "missing_tenant" in res.json()["detail"]["error"]
+
+    def test_accepts_arbitrary_tenant_and_defers_to_rls(self, client, fake_db_empty):
+        """Non-whitelisted tenant is accepted; RLS decides visibility."""
         res = client.get(
             "/api/v1/baseline/aggregate",
             params={"tenant_id": "garfield", "ward_id": "242", "month": "6"},
         )
-        assert res.status_code == 400
-        assert "invalid_tenant" in res.json()["detail"]["error"]
+        assert res.status_code == 200
+        assert res.json()["available"] is False
 
     def test_returns_400_on_invalid_month(self, client, fake_db_empty):
         for bad in (0, 13, -1):

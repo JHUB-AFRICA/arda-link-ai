@@ -208,8 +208,43 @@ When you have a real AT account, you only need to:
    REPLIT_DEV_DOMAIN=your-public-host       # public-facing domain for WS URL
    ```
 
+2b. **Set Azure env vars** (required for the deterministic voice
+    pipeline that real herder calls now use; without them the STT + LLM
+    stack falls back to z.ai and the deterministic pipeline can't
+    transcribe):
+   ```bash
+   # Chat (deterministic pipeline uses gpt-5-mini for indicator extract)
+   AZURE_OPENAI_FOUNDRY_ENDPOINT=https://<resource>.services.ai.azure.com/api/projects/<project>
+   AZURE_OPENAI_ENDPOINT=https://<resource>.services.ai.azure.com/
+   AZURE_OPENAI_API_KEY=<foundry-api-key>
+   AZURE_OPENAI_CHAT_DEPLOYMENT=gpt-5-mini
+   LLM_PRIMARY_PROVIDER=azure
+
+   # Realtime — OPTIONAL. Only needed if you flip CALL_PIPELINE_MODE
+   # back to `realtime` or run the browser realtime demo. Deterministic
+   # herder calls work without this deployment.
+   AZURE_OPENAI_REALTIME_DEPLOYMENT=gpt-4o-realtime-preview
+
+   # Speech — sw-KE + en-KE STT/TTS. Fast Transcription auto-falls back
+   # to the short-audio REST endpoint in regions like southafricanorth.
+   AZURE_SPEECH_KEY=<speech-key>
+   AZURE_SPEECH_REGION=southafricanorth
+
+   # Voice call flow
+   CALL_PIPELINE_MODE=deterministic   # deterministic (default) | realtime
+   DETERMINISTIC_TENANT_ID=bula-pesa   # RLS tenant for demo/sandbox rows
+
+   # Supabase — recommended for herder personalization (source of truth
+   # for wards / satellite_indices / weather_data / ground_truth_calls
+   # since 2026-07-08). Without these the herder context resolver
+   # returns source="local" and uses seed data instead of live Supabase.
+   SUPABASE_URL=https://<ref>.supabase.co
+   SUPABASE_SECRET_KEY=sb_secret_...
+   SUPABASE_CACHE_TTL_MS=60000
+   ```
+
 3. **Get a short code** (USSD) and register it with Safaricom — 3 weeks
-   lead time per ARCHITECTURE-V2 §6.1.
+   lead time per STATUS.md §6.1.
 
 Nothing else changes. The webhooks return the exact same XML/text
 shapes the simulator drives, so the production flow is byte-identical
@@ -254,11 +289,40 @@ These will work the moment you provide real credentials — no code changes:
 | Capability | Needs | Source |
 |---|---|---|
 | Live outbound calls | `AFRICASTALKING_API_KEY` (paid) | AT dashboard |
-| Real Azure Realtime audio bridge | `AZURE_OPENAI_ENDPOINT` + `AZURE_OPENAI_API_KEY` + Realtime deployment | Azure portal |
-| Voice biometric enrollment | Custom Whisper fine-tune + Resemblyzer | Phase 3, ARCHITECTURE-V2 §5 |
-| Dialect STT/TTS | Recorded corpus + fine-tune | Phase 3 |
+| Deterministic voice pipeline (herder default) | `AZURE_OPENAI_*` (chat) + `AZURE_SPEECH_KEY` + `CALL_PIPELINE_MODE=deterministic` (default) | Azure portal |
+| Real Azure chat LLM (`gpt-5-mini`) — now the default primary | Same Foundry resource + `AZURE_OPENAI_CHAT_DEPLOYMENT=gpt-5-mini` + `LLM_PRIMARY_PROVIDER=azure` | Azure portal |
+| Real Azure Speech (STT/TTS `sw-KE` + `en-KE`) | `AZURE_SPEECH_KEY` + `AZURE_SPEECH_REGION=southafricanorth` | Azure portal |
+| Realtime audio bridge (browser demo + Phase-3 herder upgrade) | Same Foundry resource + `AZURE_OPENAI_REALTIME_DEPLOYMENT=gpt-4o-realtime-preview` + `CALL_PIPELINE_MODE=realtime` if you want it for phone calls too | Azure portal |
+| Supabase reference-data plane (source of truth for wards, satellite_indices, weather_data, ground_truth_calls, pastoralists — since 2026-07-08) | `SUPABASE_URL` + `SUPABASE_SECRET_KEY` (`SUPABASE_ANON_KEY` optional, `SUPABASE_CACHE_TTL_MS` optional, default 60000) | Supabase dashboard — see `ardalink-api/docs/llm-integration.md §5.3` |
+| Voice biometric enrollment | Custom Whisper fine-tune + Resemblyzer | Phase 3, STATUS.md §5 |
+| Dialect STT/TTS (Borana/Turkana/Samburu/Somali) | Recorded corpus + fine-tune | Phase 3 |
 | USSD short-code registration | Safaricom | 3-week lead time |
 | SMS sender ID | AT KYB + sender-id registration | 1 week |
 
 The webhook contract above is stable across all phases — adding the
 real Azure/AT keys lights up the live flow without touching this code.
+
+**Live-in-dev even without AT** — two browser paths:
+
+1. **Deterministic voice** — `/api/demo/voice/deterministic` runs the
+   exact production pipeline: 20-second browser MediaRecorder capture →
+   POST `/api/demo/voice/record` → Azure Speech → GPT-5 Mini extract →
+   `ground_truth_reports` row with BCS / mortality / water / trust
+   score. This is what every real herder phone call ends up doing —
+   proven without a phone.
+2. **Realtime voice** (optional, requires Realtime deployment) —
+   `/api/demo/voice/simulator` mints a demo token, opens the same
+   `/api/browser-voice-stream` bridge production calls use, does
+   full-duplex WS audio, and shows the extracted ground truth after
+   hang-up.
+
+Both endpoints write to `ground_truth_reports` under
+`DETERMINISTIC_TENANT_ID` (default `bula-pesa`) so RLS accepts the
+insert.
+
+**Phase-3 realtime plan:** the roadmap to make Realtime the herder
+default is captured in `ardalink-api/docs/llm-integration.md §5.2` —
+gate on herder-side 3G/4G coverage, prompt-suite dialect coverage, and
+per-minute pricing or a self-hosted alternative. Until then,
+deterministic stays the herder default; realtime stays a demo and a
+staging ground for the upgrade.

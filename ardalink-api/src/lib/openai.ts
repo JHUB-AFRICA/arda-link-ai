@@ -108,7 +108,7 @@ function sanitizeJsonString(raw: string): string {
 // Realtime WebSocket audio (voiceStream.ts) is unchanged — that path
 // is not text generation, it's bidirectional mulaw streaming that z.ai
 // and minimax don't offer. Azure OpenAI Realtime (gpt-4o-realtime) stays
-// the only option for that path until Phase 3 (ARCHITECTURE-V2 §5.3).
+// the only option for that path until Phase 3 (see STATUS.md §5).
 
 // ── Exported types ──────────────────────────────────────────────────────────
 export interface GeneratedScript {

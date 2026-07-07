@@ -86,6 +86,6 @@ These match the dashboard tokens in `ardalink-web/dashboard/src/index.css`.
 ## Source of truth
 
 All copy and figures are pulled from the canonical public docs in this
-monorepo: `README.md`, `ARCHITECTURE-V2.md`, `RUNBOOK.md`, and the
-long-form guides in `Arda-link-AI-Docs/`. Internal planning notes are
-not public and are not referenced from this README.
+monorepo: `README.md`, `STATUS.md`, `RUNBOOK.md`, and the long-form
+guides in `Arda-link-AI-Docs/`. Internal planning notes are not public
+and are not referenced from this README.

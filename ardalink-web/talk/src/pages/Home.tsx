@@ -12,6 +12,7 @@ import {
 } from "@/lib/consent";
 import ChatPanel from "@/components/ChatPanel";
 import EnvPanel from "@/components/EnvPanel";
+import DeterministicCall from "@/components/DeterministicCall";
 
 type ReadyTab = "call" | "chat" | "env";
 
@@ -604,56 +605,11 @@ export default function Home() {
               </div>
             </div>
 
-            {readyTab === "call" && (
-              <section className="bg-white rounded-2xl shadow-sm border border-stone-200 p-6 text-center">
-                <p className="text-base text-stone-800 leading-relaxed">
-                  Bonyeza ili kuzungumza na ArdaLink kuhusu malisho, maji, au
-                  mifugo yako.
-                </p>
-                <p className="mt-1 text-xs text-stone-500">
-                  Tap below to speak with ArdaLink about pasture, water, or your
-                  livestock.
-                </p>
-
-                {errorMsg && (
-                  <p className="mt-4 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3 text-left">
-                    {errorMsg}
-                  </p>
-                )}
-
-                <button
-                  onClick={handleStartCall}
-                  disabled={busy}
-                  className="mt-8 mx-auto w-28 h-28 rounded-full bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:bg-stone-300 text-white shadow-xl shadow-emerald-900/30 transition-all hover:scale-105 active:scale-95 flex items-center justify-center"
-                  aria-label="Call ArdaLink"
-                >
-                  <svg
-                    width="44"
-                    height="44"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
-                  </svg>
-                </button>
-                <p className="mt-3 text-base font-semibold text-stone-900">
-                  Piga simu · Tap to call
-                </p>
-                <p className="mt-1 text-xs text-stone-500">
-                  Zungumza na ArdaLink
-                </p>
-
-                <button
-                  onClick={handleChangePhone}
-                  className="mt-8 text-xs text-stone-500 hover:text-stone-700 underline"
-                >
-                  Badilisha namba / Change number
-                </button>
-              </section>
+            {readyTab === "call" && savedPhone && (
+              <DeterministicCall
+                phone={savedPhone}
+                onChangePhone={handleChangePhone}
+              />
             )}
 
             {readyTab === "chat" && <ChatPanel />}

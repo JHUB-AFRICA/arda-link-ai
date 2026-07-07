@@ -26,9 +26,12 @@ herder phone ──► Africa's Talking ──► ardalink-api (Express 5 + JWT 
                                                 │         │
                                                 │         └──► Postgres gis_engine schema (RLS)
                                                 │
-                                                ├──► Azure OpenAI (Realtime + Whisper + GPT-4o)
+                                                ├──► Azure AI Foundry — gpt-5-mini (chat + deterministic voice extract), gpt-4o-realtime-preview (realtime demo path, future herder upgrade)
+                                                ├──► Azure Speech (STT/TTS, sw-KE + en-KE, southafricanorth)
+                                                ├──► z.ai / MiniMax (LLM fallback providers)
+                                                ├──► Supabase (reference data primary — wards, satellite_indices, weather_data, ground_truth_calls; PostGIS)
                                                 ├──► Cosmos DB (baselines)
-                                                └──► browser ──► ardalink-web (dashboard + talk)
+                                                └──► browser ──► ardalink-web (dashboard + talk + /api/demo/voice/{deterministic,simulator})
 ```
 
 Tenant scoping is enforced at three layers:
@@ -53,7 +56,7 @@ Tenant scoping is enforced at three layers:
 |---|---|---|---|
 | 1 | Cloud target for first production deploy | GCP (native GEE, Cloud Run for containers) | Q3 2026 |
 | 2 | IdP strategy for tenant JWTs | HS256 with shared secret for pilot; OIDC (Auth0/Clerk/WorkOS) at scale | Pilot kickoff |
-| 3 | Pilot ward list (multi-ward per plan) | Bula Pesa, Garbatulla, Merti — already seeded | Pilot kickoff |
+| 3 | Pilot tenants (multi-ward per plan) | Bula Pesa, Garbatulla, Merti Sub-County operator — already seeded. Satellite VCI demo runs against Bula Pesa, Garbatulla, Kinna wards | Pilot kickoff |
 | 4 | Migration PR approval | Approve and merge 3 PRs (#7 engine, #7 web, #8 api) | This week |
 | 5 | Legacy repo disposition | Tag as `legacy-2026Q2` with redirect READMEs; do not delete | Cutover |
 
@@ -65,7 +68,7 @@ Tenant scoping is enforced at three layers:
 | Week 2 | Phase 6 test expansion (per-route unit tests) | Coverage ≥ 60% on each repo |
 | Week 3 | Compose-based staging on a single VM | 7-day soak, zero manual restarts |
 | Week 4 | Pilot kickoff (Bula Pesa) | 50 herders onboarded, call success ≥ 85% |
-| Week 6 | Garbatulla + Merti rollout | 500 households live across 3 wards |
+| Week 6 | Garbatulla + Merti Sub-County rollout | 500 households live across 3 tenants |
 | Week 8 | Phase 4: flip CI to gating (remove `\|\| true`) | Zero `\|\| true` in any workflow |
 | Week 10 | IaC module (Terraform, cloud-agnostic) | `make infra-plan` works against staging |
 | Week 12 | Q3 review | Pilot metrics vs. targets; Series A prep |

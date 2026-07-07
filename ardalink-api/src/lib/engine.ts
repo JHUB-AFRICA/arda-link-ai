@@ -6,11 +6,19 @@
  * `gis_engine.baseline_aggregate` and `gis_engine.baseline_pixel` (Postgres),
  * populated by `ardalink-engine/scripts/populate_baseline.py`.
  *
+ * Tenancy: every call attaches `X-Tenant-ID` + `X-Tenant-Sig` (HMAC-SHA256
+ * of the tenant id under `TENANT_ATTESTATION_SECRET`). The engine's
+ * TenantAttestationMiddleware verifies the signature and binds RLS via
+ * `SET LOCAL app.current_tenant_id`. When the secret is unset (dev), the
+ * signature is empty and the engine treats the request as pass-through.
+ *
  * No SDK dependency: a few `fetch` calls. Fails soft — when the engine is
  * unreachable or returns `available: false`, callers get `null` rather than
  * a thrown error. Callers decide how to render "no baseline yet" (the
  * dashboard already knows how to label wards with insufficient data).
  */
+
+import { tenantForwardHeaders } from "./tenancy.js";
 
 const DEFAULT_TIMEOUT_MS = 5_000;
 
@@ -26,12 +34,21 @@ function engineBase(): string {
   return `http://${host}:${port}`;
 }
 
-async function engineFetch<T>(path: string, init?: RequestInit): Promise<T | null> {
+async function engineFetch<T>(
+  path: string,
+  opts: { tenantId?: string; init?: RequestInit } = {},
+): Promise<T | null> {
   const url = `${engineBase()}${path}`;
   const ctrl = new AbortController();
   const timeout = setTimeout(() => ctrl.abort(), DEFAULT_TIMEOUT_MS);
   try {
-    const res = await fetch(url, { ...init, signal: ctrl.signal });
+    const tenantHeaders = opts.tenantId ? tenantForwardHeaders(opts.tenantId) : {};
+    const mergedHeaders = { ...tenantHeaders, ...(opts.init?.headers ?? {}) };
+    const res = await fetch(url, {
+      ...opts.init,
+      headers: mergedHeaders,
+      signal: ctrl.signal,
+    });
     if (!res.ok) return null;
     return (await res.json()) as T;
   } catch {
@@ -113,6 +130,7 @@ export async function fetchBaselineAggregate(
   }
   const res = await engineFetch<BaselineAggregateResponse>(
     `/api/v1/baseline/aggregate?${qs.toString()}`,
+    { tenantId },
   );
   return res?.available ? res.row : null;
 }
@@ -139,6 +157,7 @@ export async function fetchBaselinePixel(
   }
   const res = await engineFetch<BaselinePixelResponse>(
     `/api/v1/baseline/pixel?${qs.toString()}`,
+    { tenantId },
   );
   return res?.available ? res.cells : null;
 }
@@ -153,7 +172,8 @@ export async function probeBaselineReadiness(): Promise<{
   baseUrl: string;
 }> {
   const baseUrl = engineBase();
-  // Hit the engine's health endpoint as a reachability probe.
+  // Hit the engine's health endpoint as a reachability probe. No tenant
+  // needed — /health is public.
   const res = await engineFetch<{ status?: string }>(`/health`);
   return { reachable: res !== null, baseUrl };
 }
@@ -184,9 +204,19 @@ export interface SatelliteTriggerResponse {
 /**
  * Fetch live Vegetation Condition Index for a single ward from the engine.
  * Returns `null` when the engine is unreachable or GEE is not configured.
+ *
+ * The `tenantId` is used to sign the attestation header for the engine's
+ * middleware. Satellite routes don't touch the DB, but the header still
+ * proves this call came from a trusted upstream.
  */
-export async function fetchSatelliteVCI(wardId: string): Promise<VCISnapshot | null> {
-  const res = await engineFetch<VCISnapshot>(`/api/v1/satellite/vci?ward_id=${encodeURIComponent(wardId)}`);
+export async function fetchSatelliteVCI(
+  wardId: string,
+  tenantId: string = "isiolo",
+): Promise<VCISnapshot | null> {
+  const res = await engineFetch<VCISnapshot>(
+    `/api/v1/satellite/vci?ward_id=${encodeURIComponent(wardId)}`,
+    { tenantId },
+  );
   return res;
 }
 
@@ -194,10 +224,13 @@ export async function fetchSatelliteVCI(wardId: string): Promise<VCISnapshot | n
  * Trigger VCI fetch for all demo wards. Used by the satellite scheduler.
  * Returns `null` when the engine is unreachable.
  */
-export async function triggerSatelliteRefresh(dryRun = false): Promise<SatelliteTriggerResponse | null> {
+export async function triggerSatelliteRefresh(
+  dryRun = false,
+  tenantId: string = "isiolo",
+): Promise<SatelliteTriggerResponse | null> {
   const res = await engineFetch<SatelliteTriggerResponse>(
     `/api/v1/satellite/trigger?dry_run=${dryRun}`,
-    { method: "POST" },
+    { tenantId, init: { method: "POST" } },
   );
   return res;
 }
