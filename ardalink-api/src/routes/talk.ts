@@ -39,7 +39,6 @@ import {
   isSupabaseConfigured,
   pastoralistByPhone,
 } from "../lib/supabase.js";
-import { wardIdForTenant } from "../lib/wardMapping.js";
 
 const router: IRouter = Router();
 
@@ -284,9 +283,31 @@ router.post("/talk/record", async (req: Request, res: Response): Promise<void> =
     );
 
     // Supabase mirror — thin ground_truth_calls row. Non-blocking.
+    // Only mirrors when the pastoralist already exists on Supabase (i.e.
+    // has been enrolled out-of-band). We do NOT auto-upsert profiles —
+    // the pilot isn't live yet and pastoralists must not be auto-created.
     if (isSupabaseConfigured() && phone) {
       const past = await pastoralistByPhone(phone);
-      const wardId = past?.ward_id ?? wardIdForTenant(PUBLIC_TENANT_ID);
+      if (!past || !past.ward_id) {
+        // Skip the Supabase mirror silently. The local rich row is the
+        // source of truth until the pilot enrolls this herder.
+        res.json({
+          ok: true,
+          reportId: report?.id ?? null,
+          transcript: stt.transcript,
+          detectedLocale: stt.locale ?? null,
+          actionTag,
+          indicators,
+          trustScore: trust.score,
+          indicatorsCollected: indicators?.indicators_collected ?? 0,
+          dataCompletenessPercent: completenessPct,
+          herderContext: phone
+            ? await resolveHerderContext(phone, PUBLIC_TENANT_ID)
+            : null,
+        });
+        return;
+      }
+      const wardId = past.ward_id;
       const trekKm =
         indicators?.water_trekking_distance === "under_5km"
           ? 2.5
@@ -313,7 +334,7 @@ router.post("/talk/record", async (req: Request, res: Response): Promise<void> =
               ? 0
               : null;
       void insertGroundTruthCall({
-        pastoralist_id: past?.pastoralist_id ?? null,
+        pastoralist_id: past.pastoralist_id,
         ward_id: wardId,
         call_timestamp: new Date().toISOString(),
         bcs_score: indicators?.bcs_score ?? null,
