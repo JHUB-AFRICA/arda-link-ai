@@ -13,6 +13,7 @@
 
 import { Router, type IRouter, type Request, type Response } from "express";
 import { resolveHerderContext, buildLocalizedBrief } from "../../lib/herderContext";
+import { centroidForTenant, formatUssdLines } from "../../lib/wpdx";
 
 const router: IRouter = Router();
 
@@ -292,16 +293,22 @@ async function screenFor(
           ended: false,
         };
       case "2": {
-        // Deterministic water-point list — top 5 nearest OSM points.
-        const lines = [
-          "Bulla Pesa Borehole (SW, ~2km)",
-          "Ngare Mara Spring (NE, ~9km)",
-          "Kambi Garba Dam (SE, ~14km)",
-          "Wabera Shallow Well (NW, ~7km)",
-          "Burat Pan (NW, ~12km)",
-        ];
+        // Deterministic water-point list — pulled from the WPDx snapshot,
+        // ranked with working points first and truncated to fit a USSD
+        // screen. When the herder isn't in `pastoralists` yet we anchor
+        // to the demo tenant's ward centroid.
+        const ctx = await resolveHerderContext(phone, DEMO_TENANT_ID);
+        const origin =
+          centroidForTenant(DEMO_TENANT_ID) ?? { lat: 0.3453, lon: 37.5810 };
+        const lines = formatUssdLines(origin, 5, { workingFirst: true });
+        // Fallback: if WPDx has no rows for this county, still render
+        // something rather than an empty screen.
+        const body =
+          lines.length > 0
+            ? lines.map((l, i) => `${i + 1}. ${l}`).join("\n")
+            : "Hakuna data ya WPDx bado / no WPDx data yet";
         return {
-          text: "END Malisho / Water points:\n" + lines.map((l, i) => `${i + 1}. ${l}`).join("\n"),
+          text: `END Malisho karibu na ${ctx.wardName ?? "Bulla Pesa"}:\n${body}`,
           ended: true,
         };
       }
