@@ -101,18 +101,20 @@ brief:
 	  "http://localhost:3000/api/intelligence/brief?lang=$$LANG_VAL" \
 	  | python3 /tmp/ardalink-local/print-brief.py
 # Print demo login credentials (POST /api/auth/login)
-# Useful for the Tuesday demo. The 4 seeded admins are:
-#   bula-pesa@ardalink.test    / bula-pesa        (tenant=bula-pesa,  role=operator)
-#   garbatulla@ardalink.test   / garbatulla       (tenant=garbatulla, role=operator)
-#   merti@ardalink.test        / merti            (tenant=merti,      role=operator)
+# The 4 seeded admins (2026-07-08 onward, aligned with Supabase active_wards):
+#   bula-pesa@ardalink.test    / bula-pesa         (tenant=bula-pesa,  role=operator)
+#   ngare-mara@ardalink.test   / garbatulla        (tenant=ngare-mara, role=operator)
+#   burat@ardalink.test        / merti             (tenant=burat,      role=operator)
 #   admin@ardalink.test        / admin-secret-2024 (tenant=bula-pesa,  role=admin)
+# (The ngare-mara/burat passwords are legacy hashes reused from the
+#  retired garbatulla/merti operators — rotate before any non-dev deploy.)
 login:
 	@echo "Demo admin credentials (POST /api/auth/login):"
 	@echo
 	@printf "  %-30s %-25s %-15s %s\n" "EMAIL" "PASSWORD" "TENANT" "ROLE"
 	@printf "  %-30s %-25s %-15s %s\n" "bula-pesa@ardalink.test"  "bula-pesa"        "bula-pesa"  "operator"
-	@printf "  %-30s %-25s %-15s %s\n" "garbatulla@ardalink.test" "garbatulla"       "garbatulla" "operator"
-	@printf "  %-30s %-25s %-15s %s\n" "merti@ardalink.test"      "merti"            "merti"      "operator"
+	@printf "  %-30s %-25s %-15s %s\n" "ngare-mara@ardalink.test" "garbatulla"       "ngare-mara" "operator"
+	@printf "  %-30s %-25s %-15s %s\n" "burat@ardalink.test"      "merti"            "burat"      "operator"
 	@printf "  %-30s %-25s %-15s %s\n" "admin@ardalink.test"      "admin-secret-2024" "bula-pesa"  "admin"
 	@echo
 	@echo "Rotate these before any non-dev deploy (start-local.sh, .env.example)."

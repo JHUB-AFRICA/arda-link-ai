@@ -1,24 +1,22 @@
 /**
  * Tenant slug ↔ Supabase ward_id mapping.
  *
- * Supabase is the source of truth: it holds the 5 "active" wards of
- * Isiolo Sub-County as text ward_ids (241 Wabera, 242 Bulla Pesa,
- * 245 Ngare Mara, 246 Burat, 247 Oldonyiro). Our tenant model uses
- * lowercase slugs (bula-pesa, garbatulla, merti). Only Bulla Pesa
- * exists in both; garbatulla and merti fall back to Bulla Pesa (242)
- * as the default demo ward until their real coverage is clarified with
- * the Supabase owner.
+ * Since 2026-07-08 every tenant slug maps 1:1 to a real ward_id in
+ * Supabase's `active_wards`. Isiolo Sub-County has 5 finished wards
+ * (241 Wabera, 242 Bulla Pesa, 245 Ngare Mara, 246 Burat, 247
+ * Oldonyiro) — each is a valid tenant slug in `docs/local-dev/seed-data`.
+ * The retired demo tenants `garbatulla` and `merti` were dropped
+ * because they don't correspond to Supabase wards; use `ngare-mara`
+ * and `burat` instead.
  *
  * This module is the single place that knows the mapping so
  * herderContext, deterministic pipeline, USSD, SMS and voice all agree.
  */
 
 const TENANT_TO_WARD_ID: Record<string, string> = {
-  "bula-pesa": "242",
-  "bulla-pesa": "242", // some seed rows use the spelling with double-L
-  "garbatulla": "242", // TODO: confirm with Supabase owner
-  "merti": "242", // TODO: confirm with Supabase owner
   "wabera": "241",
+  "bula-pesa": "242",
+  "bulla-pesa": "242", // legacy alias with double-L
   "ngare-mara": "245",
   "burat": "246",
   "oldonyiro": "247",

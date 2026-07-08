@@ -102,10 +102,10 @@ describe("readToken — URL hash + query persistence", () => {
   });
 
   it("persists the companion tenant from the URL hash", () => {
-    setLocation("http://localhost/#token=hash.jwt&tenant=garbatulla");
+    setLocation("http://localhost/#token=hash.jwt&tenant=ngare-mara");
 
     expect(readToken()).toBe("hash.jwt");
-    expect(stub.getItem("ardalink.tenant")).toBe("garbatulla");
+    expect(stub.getItem("ardalink.tenant")).toBe("ngare-mara");
   });
 
   it("returns the empty string when no token source is present", () => {

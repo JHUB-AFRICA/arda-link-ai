@@ -526,7 +526,7 @@ EOF
 cat <<'DEMO'
 # Demo tokens (paste in your shell):
 DEMO
-for t in bula-pesa garbatulla merti; do
+for t in bula-pesa ngare-mara burat; do
   TOK=$(python3 -c "
 import base64,hmac,hashlib,json
 s=b'$JWT_SECRET'

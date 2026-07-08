@@ -256,8 +256,8 @@ function DemoCredentials({
   // snappy — click "Bula Pesa operator", land on the dashboard.
   const accounts = [
     { label: "Bula Pesa operator", email: "bula-pesa@ardalink.test", password: "bula-pesa" },
-    { label: "Garbatulla operator", email: "garbatulla@ardalink.test", password: "garbatulla" },
-    { label: "Merti operator", email: "merti@ardalink.test", password: "merti" },
+    { label: "Ngare Mara operator", email: "ngare-mara@ardalink.test", password: "garbatulla" },
+    { label: "Burat operator", email: "burat@ardalink.test", password: "merti" },
     { label: "Admin (all wards)", email: "admin@ardalink.test", password: "admin-secret-2024" },
   ];
   return (

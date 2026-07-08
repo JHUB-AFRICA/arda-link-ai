@@ -48,26 +48,27 @@ const PLACE_TABLE: Array<{
   { keys: ["kula pesa"], lat: 0.345, lon: 37.555, placeName: "Kula Pesa", ward: "Bulla Pesa" },
   { keys: ["gotu"], lat: 0.370, lon: 37.575, placeName: "Gotu Pan", ward: "Bulla Pesa" },
   { keys: ["kambi garba"], lat: 0.305, lon: 37.628, placeName: "Kambi Garba", ward: "Bulla Pesa" },
+  // ── Ngare Mara Ward — Ngare Mara tenant ──────────────────
   { keys: ["ngare mara", "ngaremara"], lat: 0.410, lon: 37.615, placeName: "Ngare Mara", ward: "Ngare Mara" },
+  // ── Wabera Ward — Wabera tenant ──────────────────────────
   { keys: ["wabera"], lat: 0.400, lon: 37.530, placeName: "Wabera", ward: "Wabera" },
-  // ── Garbatulla Ward — Garbatulla tenant ──────────────────
-  { keys: ["garba tulla", "garbatulla town"], lat: 0.450, lon: 38.420, placeName: "Garba Tulla (Garbatulla)", ward: "Garbatulla" }, // "Garba Tulla" is the town display; ward is "Garbatulla"
-  { keys: ["kinna"], lat: 0.555, lon: 38.495, placeName: "Kinna River", ward: "Kinna" },
-  // ── Sericho Ward — Merti tenant ──────────────────────────
-  { keys: ["merti"], lat: 0.650, lon: 38.450, placeName: "Merti Town", ward: "Sericho" },
-  { keys: ["sericho"], lat: 0.900, lon: 38.945, placeName: "Sericho", ward: "Sericho" },
+  // ── Burat Ward — Burat tenant ───────────────────────────
+  { keys: ["burat"], lat: 0.485, lon: 37.630, placeName: "Burat", ward: "Burat" },
+  // ── Oldonyiro Ward — Oldonyiro tenant ────────────────────
+  { keys: ["oldonyiro", "oldony iro"], lat: 0.575, lon: 37.190, placeName: "Oldonyiro", ward: "Oldonyiro" },
 ];
 
 // Centre of Isiolo County (used as the fallback pin location).
 const ISIOLO_CENTRE: [number, number] = [0.355, 37.583];
 
-// Demo tenant → "home" ward mapping. Used to attribute the ward
-// choropleth for tenants whose data sits in a different GADM ward
-// (e.g. the merti tenant lives in Sericho ward, not "Merti ward").
+// Demo tenant → "home" ward mapping. Aligned 1:1 with Supabase's
+// active_wards since 2026-07-08.
 export const TENANT_HOME_WARD: Record<string, string> = {
+  "wabera": "Wabera",
   "bula-pesa": "Bulla Pesa",
-  garbatulla: "Garbatulla",
-  merti: "Sericho",
+  "ngare-mara": "Ngare Mara",
+  "burat": "Burat",
+  "oldonyiro": "Oldonyiro",
 };
 
 /**
@@ -108,18 +109,18 @@ export function resolvePlaceName(
 export const ISILO_WARDS: Array<{
   name: string;
   displayName: string;
-  /** Whether this ward is one of the 3 demo tenants' "home" ward. */
+  /** Whether this ward is one of the demo tenants' "home" ward. */
   isDemoHome: boolean;
 }> = [
   { name: "Bulla Pesa", displayName: "Bulla Pesa", isDemoHome: true },
-  { name: "Burat", displayName: "Burat", isDemoHome: false },
+  { name: "Burat", displayName: "Burat", isDemoHome: true },
   { name: "Chari", displayName: "Chari", isDemoHome: false },
   { name: "Cherab", displayName: "Cherab", isDemoHome: false },
-  { name: "Garbatulla", displayName: "Garbatulla", isDemoHome: true },
+  { name: "Garbatulla", displayName: "Garbatulla", isDemoHome: false },
   { name: "Kinna", displayName: "Kinna", isDemoHome: false },
-  { name: "Ngare Mara", displayName: "Ngare Mara", isDemoHome: false },
+  { name: "Ngare Mara", displayName: "Ngare Mara", isDemoHome: true },
   { name: "Oldonyiro", displayName: "Oldonyiro", isDemoHome: false },
-  { name: "Sericho", displayName: "Sericho", isDemoHome: true },
+  { name: "Sericho", displayName: "Sericho", isDemoHome: false },
   { name: "Wabera", displayName: "Wabera", isDemoHome: false },
 ];
 
@@ -153,7 +154,7 @@ export async function computeWardAggregates(
 }> {
   const wantsAdmin = tenantId === "admin";
   const tenantIds = wantsAdmin
-    ? ["bula-pesa", "garbatulla", "merti"]
+    ? ["bula-pesa", "ngare-mara", "burat"]
     : [tenantId];
   const { timeSliceStart: tss } = await import("./openData.js");
   const since = tss(slice);

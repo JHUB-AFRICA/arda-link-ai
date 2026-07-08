@@ -566,10 +566,11 @@ helpers: `listWards`, `listActiveWards`, `listWardNeighbors`,
 on failure so callers can fall back to the local mirror without a
 try/catch dance.
 
-**Ward-id mapping** — `src/lib/wardMapping.ts` maps tenant slugs to
-Supabase `ward_id` text values. `bula-pesa → 242`. Other tenants
-(`garbatulla`, `merti`) default to `242` until confirmed with the
-Supabase project owner.
+**Ward-id mapping** — `src/lib/wardMapping.ts` maps tenant slugs 1:1
+to Supabase's active-ward text ids: `wabera→241`, `bula-pesa→242`,
+`ngare-mara→245`, `burat→246`, `oldonyiro→247`. The retired demo tenants
+`garbatulla` and `merti` were dropped 2026-07-08 because they had no
+Supabase equivalent — use `ngare-mara` and `burat` instead.
 
 **Supabase-first herder context** — `resolveHerderContext(phone)` in
 `src/lib/herderContext.ts` is now:
