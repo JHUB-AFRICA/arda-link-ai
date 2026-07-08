@@ -359,7 +359,31 @@ tail -f /tmp/ardalink-local/engine.log
 tail -f /tmp/ardalink-local/web.log
 ```
 
-### 5.7 Add a new tenant + seed data
+### 5.7 Refresh the WPDx water-point snapshot
+
+Water points shown to herders (USSD selection 2, SMS `MALISHO`, voice
+opener) are read from a static snapshot in
+`ardalink-api/src/lib/data/wpdxIsiolo.ts`, not fetched at request
+time — WPDx changes at survey pace (~annual) and the helpers are on
+the Africa's Talking ~10 s budget path.
+
+To refresh (safe to run any time):
+
+```bash
+cd ardalink-api
+node scripts/pull-wpdx.mjs
+```
+
+The script hits `https://data.waterpointdata.org/resource/eqje-vguj.json?clean_adm1=Isiolo`,
+prints a `byWard / byStatus / bySource` distribution banner, and
+rewrites `src/lib/data/wpdxIsiolo.ts` in place. Diff the file, run
+`pnpm test`, commit if the numbers moved.
+
+Reality as of the current snapshot: 10 rows, all Non-Functional per
+2012 surveys, no coverage in Bulla Pesa or Wabera — this gap is
+exactly what herder ground-truth reports are meant to close.
+
+### 5.8 Add a new tenant + seed data
 
 Edit `ardalink-api/docs/local-dev/seed-data/seed-demo.sql` and
 re-run:
