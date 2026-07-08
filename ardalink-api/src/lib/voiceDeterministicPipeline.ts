@@ -33,10 +33,7 @@ import {
   insertGroundTruthCall,
   isSupabaseConfigured,
   pastoralistByPhone,
-  upsertPastoralist,
 } from "./supabase.js";
-import { wardIdForTenant } from "./wardMapping.js";
-import { resolveHerderContext } from "./herderContext.js";
 
 // Demo/system tenant used for calls that don't have a JWT-derived tenant
 // (browser demos, sandbox AT flows). Real herder calls should propagate the
@@ -278,26 +275,26 @@ interface SupabaseMirrorArgs {
 
 async function writeSupabaseMirror(args: SupabaseMirrorArgs): Promise<void> {
   try {
-    // Ensure the pastoralist exists on Supabase before writing the call —
-    // ground_truth_calls has a NOT NULL constraint on pastoralist_id.
-    // Look them up first; if unknown, upsert a minimal row using local
-    // profile data + tenant-mapped ward_id so the FK is satisfied.
-    let past = await pastoralistByPhone(args.phone);
+    // Only mirror to Supabase when a pastoralist row already exists there.
+    // We do NOT auto-upsert pastoralists — that would create pilot-shaped
+    // profile data before the pilot is enrolled. Enrollment happens on
+    // Supabase side out-of-band; this path is a passive mirror.
+    const past = await pastoralistByPhone(args.phone);
     if (!past) {
-      const local = await resolveHerderContext(args.phone, args.tenantId);
-      const wardId = local.wardId || wardIdForTenant(args.tenantId);
-      past = await upsertPastoralist({
-        phone_number: args.phone,
-        full_name: local.name ?? null,
-        preferred_language: local.preferredLanguage ?? "sw",
-        ward_id: wardId,
-        location_text: local.location ?? null,
-        herd_size:
-          (local.cattle ?? 0) + (local.goats ?? 0) + (local.camels ?? 0) ||
-          null,
-      });
+      logger.info(
+        { phone: args.phone },
+        "[Deterministic] Skipping Supabase mirror — pastoralist not yet enrolled",
+      );
+      return;
     }
-    const wardId = past?.ward_id ?? wardIdForTenant(args.tenantId);
+    const wardId = past.ward_id ?? null;
+    if (!wardId) {
+      logger.warn(
+        { phone: args.phone, pastoralist_id: past.pastoralist_id },
+        "[Deterministic] Skipping Supabase mirror — enrolled pastoralist has no ward_id",
+      );
+      return;
+    }
     const trekDistanceKm =
       args.indicators?.water_trekking_distance === "under_5km"
         ? 2.5
@@ -329,7 +326,7 @@ async function writeSupabaseMirror(args: SupabaseMirrorArgs): Promise<void> {
     const trustScoreNorm =
       args.trustScore != null ? Math.max(0, Math.min(1, args.trustScore / 100)) : null;
     const result = await insertGroundTruthCall({
-      pastoralist_id: past?.pastoralist_id ?? null,
+      pastoralist_id: past.pastoralist_id,
       ward_id: wardId,
       call_timestamp: new Date().toISOString(),
       bcs_score: args.indicators?.bcs_score ?? null,

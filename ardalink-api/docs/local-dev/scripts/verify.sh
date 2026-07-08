@@ -147,7 +147,7 @@ if need psql; then
     fi
 
     tenant_count=$(psql -h 127.0.0.1 -p $POSTGRES_PORT -U ardalink -d ardalink -tAc \
-      "SELECT COUNT(*) FROM public.tenants WHERE tenant_id IN ('bula-pesa','garbatulla','merti')" 2>/dev/null | tr -d ' ')
+      "SELECT COUNT(*) FROM public.tenants WHERE tenant_id IN ('bula-pesa','ngare-mara','burat')" 2>/dev/null | tr -d ' ')
     if [ "$tenant_count" = "3" ]; then
       pass "3 demo tenants seeded"
     else
@@ -197,13 +197,13 @@ PY
 import base64, hmac, hashlib, json
 secret = "$JWT_SECRET".encode()
 header = base64.urlsafe_b64encode(json.dumps({"alg":"HS256","typ":"JWT"}).encode()).rstrip(b'=').decode()
-payload = base64.urlsafe_b64encode(json.dumps({"sub":"verify","tenant_id":"garbatulla","exp":9999999999}).encode()).rstrip(b'=').decode()
+payload = base64.urlsafe_b64encode(json.dumps({"sub":"verify","tenant_id":"ngare-mara","exp":9999999999}).encode()).rstrip(b'=').decode()
 sig = base64.urlsafe_b64encode(hmac.new(secret, f"{header}.{payload}".encode(), hashlib.sha256).digest()).rstrip(b'=').decode()
 print(f"{header}.{payload}.{sig}")
 PY
 )
     out2=$(curl -s --max-time 3 -H "Authorization: Bearer $TOKEN2" http://localhost:3000/api/whoami)
-    if echo "$out2" | grep -q '"tenant_id":"garbatulla"'; then
+    if echo "$out2" | grep -q '"tenant_id":"ngare-mara"'; then
       pass "JWT claim is honored per-request (no upstream tampering)"
     else
       fail "JWT claim not honored: $out2"
@@ -217,9 +217,9 @@ PY
       'http://localhost:3000/api/ground-truth/recent?limit=100' \
       | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d) if isinstance(d,list) else 0)' 2>/dev/null)
     if [ "$bp_rows" -gt 0 ] && [ "$bp_rows" -eq "$gb_rows" ]; then
-      pass "RLS isolation: bula-pesa=$bp_rows rows == garbatulla=$gb_rows rows (no cross-tenant leak)"
+      pass "RLS isolation: bula-pesa=$bp_rows rows == ngare-mara=$gb_rows rows (no cross-tenant leak)"
     else
-      fail "RLS isolation broken: bula-pesa=$bp_rows, garbatulla=$gb_rows"
+      fail "RLS isolation broken: bula-pesa=$bp_rows, ngare-mara=$gb_rows"
     fi
   else
     warn "JWT_SECRET not set — skipping token tests"

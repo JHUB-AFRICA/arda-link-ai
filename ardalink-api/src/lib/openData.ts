@@ -513,7 +513,7 @@ export async function computePerCountyAggregates(
 ): Promise<PerCountyAggregate> {
   const wantsAdmin = tenantId === "admin"; // sentinel — see auth.ts
   const tenantIds = wantsAdmin
-    ? ["bula-pesa", "garbatulla", "merti"]
+    ? ["bula-pesa", "ngare-mara", "burat"]
     : [tenantId];
   const since = timeSliceStart(slice);
 
@@ -861,7 +861,7 @@ export async function computeAlertMarkers(
 > {
   const wantsAdmin = tenantId === "admin";
   const tenantIds = wantsAdmin
-    ? ["bula-pesa", "garbatulla", "merti"]
+    ? ["bula-pesa", "ngare-mara", "burat"]
     : [tenantId];
   const since = timeSliceStart(slice);
   const out: Array<{
