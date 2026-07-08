@@ -17,6 +17,7 @@ import llmRouter from "./llm.js";
 import satelliteRouter from "./satellite.js";
 import speechRouter from "./speech.js";
 import talkRouter from "./talk.js";
+import wardsRouter from "./wards.js";
 import demoRouter from "./demo/index.js";
 
 const router: IRouter = Router();
@@ -40,6 +41,7 @@ router.use(llmRouter);
 router.use(satelliteRouter);
 router.use(speechRouter);
 router.use(talkRouter);
+router.use(wardsRouter);
 
 // Demo routes (for local testing without Africa's Talking)
 router.use("/demo", demoRouter);

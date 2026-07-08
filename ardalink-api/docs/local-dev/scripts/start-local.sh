@@ -488,8 +488,10 @@ or use the API directly for now.</p>
     def log_message(self, *args, **kwargs):
         pass
 
+# allow_reuse_address must be set BEFORE server_bind runs, so patch the
+# class attribute rather than the bound instance.
+socketserver.ThreadingTCPServer.allow_reuse_address = True
 with socketserver.ThreadingTCPServer(("127.0.0.1", PORT), H) as s:
-    s.allow_reuse_address = True
     s.serve_forever()
 PYEOF
 

@@ -167,6 +167,15 @@ export interface SbWard {
   created_at: string;
 }
 
+export interface SbWardWithGeometry extends SbWard {
+  geometry:
+    | {
+        type: "MultiPolygon";
+        coordinates: number[][][][];
+      }
+    | null;
+}
+
 export interface SbWardNeighbor {
   ward_id: string;
   neighbor_ward_id: string;
@@ -230,6 +239,37 @@ export interface SbCallContext {
   satellite_period_end: string | null;
 }
 
+/**
+ * Read shape of Supabase `ground_truth_calls`. Nullable everywhere except
+ * the columns Supabase's schema requires (call_id, pastoralist_id,
+ * ward_id, call_timestamp). We pull pastoralist phone + name via
+ * PostgREST's embedded-select syntax on public helpers below.
+ */
+export interface SbGroundTruthCallRead {
+  call_id: string;
+  pastoralist_id: string;
+  ward_id: string;
+  call_timestamp: string;
+  bcs_score: number | null;
+  mortality_rate: number | null;
+  offtake_rate: number | null;
+  water_point_status: string | null;
+  milk_production_liters: number | null;
+  water_trek_distance_km: number | null;
+  supplementary_feeding: boolean | null;
+  trust_score: number | null;
+  source_language: string | null;
+  transcript: string | null;
+  created_at: string;
+  // Embedded pastoralist (via `pastoralists(...)` select in PostgREST)
+  pastoralists?: {
+    phone_number: string | null;
+    full_name: string | null;
+    preferred_language: string | null;
+    ward_id: string | null;
+  } | null;
+}
+
 export interface SbGroundTruthCallInsert {
   pastoralist_id?: string | null;
   ward_id?: string | null;
@@ -262,6 +302,19 @@ export const listActiveWards = (mode: SupabaseMode = "interactive") =>
     { cache: true, mode },
   );
 
+/**
+ * Active wards WITH the full MultiPolygon geometry — 5 rows total, each
+ * with hundreds of coordinate pairs. Cached because ward boundaries
+ * don't change. Batch mode by default (dashboard, not USSD).
+ */
+export const listActiveWardsWithGeometry = (
+  mode: SupabaseMode = "batch",
+) =>
+  sbGet<SbWardWithGeometry>(
+    "active_wards?select=ward_id,name,county,centroid,geometry,created_at&order=ward_id.asc",
+    { cache: true, mode },
+  );
+
 /** Neighbors of a ward. Cached. */
 export const listWardNeighbors = (
   wardId: string,
@@ -271,6 +324,77 @@ export const listWardNeighbors = (
     `ward_neighbors?ward_id=eq.${encodeURIComponent(wardId)}&select=ward_id,neighbor_ward_id,shared_boundary_km&order=shared_boundary_km.desc`,
     { cache: true, mode },
   );
+
+/**
+ * Best-scoring neighboring ward for cross-ward advice.
+ *
+ * Combines `ward_neighbors` (adjacency) with `api_latest_satellite_indices`
+ * (NDVI) so the deterministic voice opener can say "in your neighbor
+ * Wabera, NDVI is higher — consider moving that way". Returns null if
+ * we can't beat the caller's own ward by `minNdviDelta` (default +0.1).
+ *
+ * All queries are cached and use interactive mode so the herder-facing
+ * opener stays under AT's timeout budget.
+ */
+export interface SbNeighborAdvice {
+  wardId: string;
+  wardName: string | null;
+  ndviMean: number;
+  ndviDelta: number;
+  sharedBoundaryKm: number;
+}
+
+export async function bestNeighborForAdvice(
+  callerWardId: string,
+  callerNdvi: number | null,
+  minNdviDelta = 0.1,
+): Promise<SbNeighborAdvice | null> {
+  if (callerNdvi == null) return null;
+  const neighbors = await listWardNeighbors(callerWardId);
+  if (!neighbors || neighbors.length === 0) return null;
+
+  // Pull neighbor NDVI + ward name in parallel. Each of these is
+  // individually cached so back-to-back calls for the same ward
+  // don't re-hit Supabase.
+  const results = await Promise.all(
+    neighbors.map(async (n) => {
+      const [sat, ward] = await Promise.all([
+        latestSatelliteFor(n.neighbor_ward_id),
+        sbGet<SbWard>(
+          `wards?ward_id=eq.${encodeURIComponent(n.neighbor_ward_id)}&select=ward_id,name,county,centroid,created_at&limit=1`,
+          { cache: true },
+        ),
+      ]);
+      const ndvi = sat?.ndvi_mean ?? null;
+      const delta = ndvi != null ? ndvi - callerNdvi : null;
+      return {
+        wardId: n.neighbor_ward_id,
+        wardName: ward?.[0]?.name ?? null,
+        ndviMean: ndvi,
+        ndviDelta: delta,
+        sharedBoundaryKm: n.shared_boundary_km,
+      };
+    }),
+  );
+
+  // Only surface a neighbor when NDVI is meaningfully higher — otherwise
+  // the "consider moving" line is noise. Pick the biggest improvement.
+  let best: SbNeighborAdvice | null = null;
+  for (const r of results) {
+    if (r.ndviDelta == null || r.ndviMean == null) continue;
+    if (r.ndviDelta < minNdviDelta) continue;
+    if (best == null || r.ndviDelta > best.ndviDelta) {
+      best = {
+        wardId: r.wardId,
+        wardName: r.wardName,
+        ndviMean: r.ndviMean,
+        ndviDelta: r.ndviDelta,
+        sharedBoundaryKm: r.sharedBoundaryKm,
+      };
+    }
+  }
+  return best;
+}
 
 /** Latest ward-level satellite indices. Cached. */
 export const latestSatelliteFor = async (
@@ -377,6 +501,22 @@ export const upsertPastoralist = async (
     logger.warn({ err }, "[Supabase] pastoralist upsert crashed");
     return null;
   }
+};
+
+/**
+ * Recent ground_truth_calls with pastoralist name + phone joined in.
+ * Not cached — the operator dashboard needs fresh data every reload.
+ * `batch` mode by default because this powers the dashboard, not USSD.
+ */
+export const recentGroundTruthCalls = (
+  limit = 20,
+  mode: SupabaseMode = "batch",
+) => {
+  const safeLimit = Math.min(Math.max(limit, 1), 100);
+  return sbGet<SbGroundTruthCallRead>(
+    `ground_truth_calls?select=call_id,pastoralist_id,ward_id,call_timestamp,bcs_score,mortality_rate,offtake_rate,water_point_status,milk_production_liters,water_trek_distance_km,supplementary_feeding,trust_score,source_language,transcript,created_at,pastoralists(phone_number,full_name,preferred_language,ward_id)&order=call_timestamp.desc&limit=${safeLimit}`,
+    { mode },
+  );
 };
 
 export function clearSupabaseCache(): void {

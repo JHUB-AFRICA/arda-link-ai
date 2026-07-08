@@ -48,3 +48,65 @@ export function tenantForWardId(wardId: string): string {
 export function knownWardIds(): string[] {
   return Object.keys(WARD_ID_TO_TENANT);
 }
+
+/**
+ * Free-text location → ward_id.
+ *
+ * Herders name places in USSD ("uko wapi?" — "Kambi Garba" / "Ngare Mara" /
+ * "burat...") that don't cleanly match a ward_id. This alias table maps
+ * every place name we've seen in seeded pastoralists + the deterministic
+ * pipeline's transcripts back to the parent ward, so we can attach a
+ * ward_id even when the phone isn't in `pastoralists` yet.
+ *
+ * Modelled on the fork's `liveWardContext.ts::LOCATION_TO_WARD`.
+ * Returns `null` when nothing matches, so callers can decide whether to
+ * fall back to a tenant-derived default or ask a clarifying question.
+ */
+const LOCATION_ALIASES: Array<{ aliases: string[]; wardId: string }> = [
+  {
+    aliases: ["wabera"],
+    wardId: "241",
+  },
+  {
+    aliases: [
+      "bula pesa",
+      "bulla pesa",
+      "bula-pesa",
+      "bulla-pesa",
+      "kula pesa",
+      "gotu",
+    ],
+    wardId: "242",
+  },
+  {
+    aliases: [
+      "ngare mara",
+      "ngaremara",
+      "ngare-mara",
+      "kambi garba",
+      "kambi-garba",
+    ],
+    wardId: "245",
+  },
+  {
+    aliases: ["burat"],
+    wardId: "246",
+  },
+  {
+    aliases: ["oldonyiro", "oldony iro", "oldonyro"],
+    wardId: "247",
+  },
+];
+
+export function wardIdFromLocationText(
+  raw: string | null | undefined,
+): string | null {
+  if (!raw) return null;
+  const needle = raw.toLowerCase();
+  for (const entry of LOCATION_ALIASES) {
+    if (entry.aliases.some((alias) => needle.includes(alias))) {
+      return entry.wardId;
+    }
+  }
+  return null;
+}

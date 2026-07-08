@@ -18,11 +18,13 @@ import {
   Label,
   ReferenceLine,
 } from "recharts";
+import { useQuery } from "@tanstack/react-query";
 import {
   useGetGroundTruthSummary,
   useListGroundTruthRecent,
   getGetGroundTruthSummaryQueryKey,
   getListGroundTruthRecentQueryKey,
+  readToken,
 } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CostRailsCard } from "@/components/CostRailsCard";
@@ -37,6 +39,7 @@ import {
 } from "@/components/ui/table";
 import { bcsBarColor } from "@/lib/dashboard-colors";
 import { KpiCard } from "./KpiCard";
+import { WardMap } from "./WardMap";
 
 const QUADRANT_LABEL: Record<string, string> = {
   NW: "NW · Wabera",
@@ -44,6 +47,50 @@ const QUADRANT_LABEL: Record<string, string> = {
   SW: "SW · Bulla Pesa",
   SE: "SE · Kambi Garba",
 };
+
+/** Row shape returned by GET /api/ground-truth/merged. Kept local so we
+ * don't have to regenerate the openapi client for a single new endpoint. */
+interface MergedRow {
+  source: "local" | "supabase";
+  localId: number | null;
+  callId: string | null;
+  createdAt: string;
+  phone: string | null;
+  fullName: string | null;
+  wardId: string | null;
+  actionTag: string | null;
+  bcsScore: number | null;
+  bcsSpecies: string | null;
+  bcsConfidence: string | null;
+  mortalityRate: string | null;
+  waterPointStatus: string | null;
+  waterPointName: string | null;
+  supplementaryFeeding: string | null;
+  trustScore: number | null;
+  indicatorsCollected: number | null;
+  dataCompletenessPercent: number | null;
+  transcript: string | null;
+  // Convenience aliases so the existing table rendering (which was
+  // written against the api-client-react shape) doesn't need a large
+  // rewrite. Reserved for future rich-schema fields.
+  id?: number;
+  reportedLocation?: string | null;
+  reportedQuadrant?: string | null;
+  bcsFlagFollowup?: boolean | null;
+  offtakeRate?: string | null;
+  milkProduction?: string | null;
+  waterTrekkingDistance?: string | null;
+  ndviVsBaselinePercent?: number | null;
+  rainfall30dayMm?: number | null;
+  trustFlags?: string[] | null;
+  userFeedback?: string | null;
+}
+
+interface MergedResponse {
+  rows: MergedRow[];
+  counts: { local: number; supabase: number };
+  supabase: { configured: boolean; reachable: boolean };
+}
 
 /** Ground Truth Intelligence section with BCS charts, alerts, and reports table */
 export function GroundTruthSection() {
@@ -63,8 +110,30 @@ export function GroundTruthSection() {
     },
   );
 
+  // Supabase-aware merged view — hits the new /api/ground-truth/merged
+  // route added 2026-07-08. Loads in parallel with the legacy recent
+  // list; if the API returns an error or times out we transparently fall
+  // back to the local rows the openapi-generated hook already provides.
+  const mergedQ = useQuery<MergedResponse>({
+    queryKey: ["ground-truth-merged", 20],
+    queryFn: async () => {
+      const tok = readToken();
+      const res = await fetch("/api/ground-truth/merged?limit=20", {
+        headers: tok ? { authorization: `Bearer ${tok}` } : {},
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return (await res.json()) as MergedResponse;
+    },
+    refetchInterval: 60_000,
+    retry: 1,
+  });
+
   const summary = summaryQ.data;
-  const reports = recentQ.data ?? [];
+  const merged = mergedQ.data;
+  // Prefer the merged rows (with source badges); fall through to the
+  // legacy typed hook when Supabase is unreachable or the merged fetch
+  // itself is still pending.
+  const reports = merged?.rows ?? (recentQ.data ?? []);
 
   const bcsChartData: { name: string; bcs: number | null; samples: number }[] = (
     summary?.byQuadrant ?? []
@@ -123,6 +192,9 @@ export function GroundTruthSection() {
           accent={reports.length > 0 ? "text-orange-400" : "text-gray-300"}
         />
       </div>
+
+      {/* Isiolo ward map — Supabase PostGIS geometry, NDVI-coloured */}
+      <WardMap />
 
       {/* Cost rails (kill switch + daily budget) */}
       <CostRailsCard />
@@ -378,11 +450,37 @@ export function GroundTruthSection() {
 
       {/* Recent indicator table */}
       <div className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between">
+        <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-white">
             Recent ground-truth reports
           </h3>
-          <span className="text-xs text-gray-500">{reports.length} shown</span>
+          <div className="flex items-center gap-2">
+            {merged && (
+              <div className="flex items-center gap-1 text-[10px] font-medium">
+                <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                  local {merged.counts.local}
+                </span>
+                <span
+                  className={
+                    "px-1.5 py-0.5 rounded border " +
+                    (merged.supabase.reachable
+                      ? "bg-sky-500/15 text-sky-400 border-sky-500/30"
+                      : "bg-gray-700/40 text-gray-400 border-gray-700")
+                  }
+                  title={
+                    merged.supabase.configured
+                      ? merged.supabase.reachable
+                        ? "Supabase reachable"
+                        : "Supabase configured but not reachable — showing local only"
+                      : "Supabase not configured — showing local only"
+                  }
+                >
+                  supabase {merged.counts.supabase}
+                </span>
+              </div>
+            )}
+            <span className="text-xs text-gray-500">{reports.length} shown</span>
+          </div>
         </div>
         {reports.length === 0 ? (
           <div className="text-sm text-gray-500 italic px-4 py-10 text-center">
@@ -394,6 +492,7 @@ export function GroundTruthSection() {
             <Table>
               <TableHeader>
                 <TableRow className="border-gray-800 hover:bg-transparent">
+                  <TableHead className="text-gray-400 w-14">Src</TableHead>
                   <TableHead className="text-gray-400">When</TableHead>
                   <TableHead className="text-gray-400">Where</TableHead>
                   <TableHead className="text-gray-400">BCS</TableHead>
@@ -408,13 +507,32 @@ export function GroundTruthSection() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {reports.map(
-                  (r: import("@workspace/api-client-react").GroundTruthReport) => (
+                {(reports as MergedRow[]).map((r) => {
+                  const rowKey = r.callId ?? r.localId ?? r.id ?? r.createdAt;
+                  const source = r.source ?? "local";
+                  return (
                     <TableRow
-                      key={r.id}
+                      key={rowKey}
                       className="border-gray-800"
-                      data-testid={`row-report-${r.id}`}
+                      data-testid={`row-report-${rowKey}`}
                     >
+                      <TableCell>
+                        <span
+                          className={
+                            "inline-block px-1.5 py-0.5 rounded text-[10px] font-medium border " +
+                            (source === "supabase"
+                              ? "bg-sky-500/15 text-sky-400 border-sky-500/30"
+                              : "bg-emerald-500/15 text-emerald-400 border-emerald-500/30")
+                          }
+                          title={
+                            source === "supabase"
+                              ? "Sourced from Supabase ground_truth_calls"
+                              : "Sourced from local ground_truth_reports"
+                          }
+                        >
+                          {source === "supabase" ? "sb" : "loc"}
+                        </span>
+                      </TableCell>
                       <TableCell className="text-xs text-gray-400 whitespace-nowrap">
                         {new Date(r.createdAt).toLocaleDateString()}
                         <div className="text-[10px] text-gray-600">
@@ -425,9 +543,10 @@ export function GroundTruthSection() {
                         </div>
                       </TableCell>
                       <TableCell className="text-xs text-gray-300">
-                        {r.reportedLocation ?? "—"}
+                        {r.reportedLocation ?? r.fullName ?? r.wardId ?? "—"}
                         <div className="text-[10px] text-gray-600">
-                          {r.reportedQuadrant ?? "unmapped"}
+                          {r.reportedQuadrant ??
+                            (r.wardId ? `ward ${r.wardId}` : "unmapped")}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -491,8 +610,8 @@ export function GroundTruthSection() {
                         {r.indicatorsCollected ?? 0}/7
                       </TableCell>
                     </TableRow>
-                  ),
-                )}
+                  );
+                })}
               </TableBody>
             </Table>
           </div>

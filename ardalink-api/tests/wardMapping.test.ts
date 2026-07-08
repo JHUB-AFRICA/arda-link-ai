@@ -4,6 +4,7 @@ import {
   knownWardIds,
   tenantForWardId,
   wardIdForTenant,
+  wardIdFromLocationText,
 } from "../src/lib/wardMapping.js";
 
 describe("wardMapping", () => {
@@ -57,5 +58,44 @@ describe("wardMapping", () => {
     const ids = knownWardIds();
     expect(ids).toHaveLength(5);
     expect(new Set(ids)).toEqual(new Set(["241", "242", "245", "246", "247"]));
+  });
+
+  describe("wardIdFromLocationText", () => {
+    it("returns null on empty / null input", () => {
+      expect(wardIdFromLocationText("")).toBeNull();
+      expect(wardIdFromLocationText(null)).toBeNull();
+      expect(wardIdFromLocationText(undefined)).toBeNull();
+    });
+
+    it("maps Bulla Pesa spellings and its neighborhoods to ward 242", () => {
+      expect(wardIdFromLocationText("Bulla Pesa")).toBe("242");
+      expect(wardIdFromLocationText("Bula Pesa town")).toBe("242");
+      expect(wardIdFromLocationText("kula pesa")).toBe("242");
+      expect(wardIdFromLocationText("I am near Gotu today")).toBe("242");
+    });
+
+    it("maps Ngare Mara + Kambi Garba to ward 245", () => {
+      // Kambi Garba is a landmark inside Ngare Mara ward that herders
+      // frequently name instead of the ward itself. The fork's alias
+      // table includes this specifically.
+      expect(wardIdFromLocationText("Ngare Mara")).toBe("245");
+      expect(wardIdFromLocationText("ngaremara")).toBe("245");
+      expect(wardIdFromLocationText("we are grazing at Kambi Garba")).toBe(
+        "245",
+      );
+    });
+
+    it("maps Wabera, Burat and Oldonyiro variants", () => {
+      expect(wardIdFromLocationText("Wabera")).toBe("241");
+      expect(wardIdFromLocationText("BURAT")).toBe("246");
+      expect(wardIdFromLocationText("Oldonyiro market")).toBe("247");
+      // 'oldony iro' handles the spelling seen in one seeded pastoralist row.
+      expect(wardIdFromLocationText("oldony iro")).toBe("247");
+    });
+
+    it("returns null when the location has no known alias", () => {
+      expect(wardIdFromLocationText("Nairobi")).toBeNull();
+      expect(wardIdFromLocationText("some random place")).toBeNull();
+    });
   });
 });
