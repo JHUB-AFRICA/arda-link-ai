@@ -24,6 +24,24 @@ const CACHE_TTL_MS = parseInt(
   10,
 );
 
+// Two-tier timeouts. USSD sessions have a ~10 s AT budget end-to-end
+// and voice openers must return before AT plays the "no key received"
+// fallback, so herder-facing paths use a tight `interactive` timeout
+// and fall through to the local mirror without blocking the response.
+// Backend jobs (dashboards, schedulers, sync workers) use the longer
+// `batch` timeout since a few extra seconds don't hurt them.
+const TIMEOUT_INTERACTIVE_MS = parseInt(
+  process.env.SUPABASE_TIMEOUT_INTERACTIVE_MS ?? "2500",
+  10,
+);
+const TIMEOUT_BATCH_MS = parseInt(
+  process.env.SUPABASE_TIMEOUT_BATCH_MS ?? "8000",
+  10,
+);
+
+export type SupabaseMode = "interactive" | "batch";
+const DEFAULT_MODE: SupabaseMode = "interactive";
+
 interface SupabaseCfg {
   base: string;
   key: string;
@@ -52,10 +70,13 @@ const cache = new Map<string, CacheEntry>();
 
 async function sbFetch(
   path: string,
-  init: RequestInit = {},
+  init: RequestInit & { sbMode?: SupabaseMode } = {},
 ): Promise<Response> {
   const { base, key } = cfg();
   const url = `${base}/rest/v1/${path.replace(/^\/+/, "")}`;
+  const mode = init.sbMode ?? DEFAULT_MODE;
+  const timeoutMs =
+    mode === "batch" ? TIMEOUT_BATCH_MS : TIMEOUT_INTERACTIVE_MS;
   return fetch(url, {
     ...init,
     headers: {
@@ -65,7 +86,7 @@ async function sbFetch(
       "Content-Type": "application/json",
       ...(init.headers as Record<string, string> | undefined),
     },
-    signal: init.signal ?? AbortSignal.timeout(8000),
+    signal: init.signal ?? AbortSignal.timeout(timeoutMs),
   });
 }
 
@@ -76,14 +97,14 @@ async function sbFetch(
  */
 async function sbGet<T>(
   path: string,
-  opts: { cache?: boolean } = {},
+  opts: { cache?: boolean; mode?: SupabaseMode } = {},
 ): Promise<T[] | null> {
   if (opts.cache) {
     const hit = cache.get(path);
     if (hit && hit.expiresAt > Date.now()) return hit.value as T[];
   }
   try {
-    const res = await sbFetch(path);
+    const res = await sbFetch(path, { sbMode: opts.mode });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
       logger.warn(
@@ -111,12 +132,14 @@ async function sbGet<T>(
 async function sbInsert<T>(
   table: string,
   row: Record<string, unknown>,
+  opts: { mode?: SupabaseMode } = {},
 ): Promise<T | null> {
   try {
     const res = await sbFetch(table, {
       method: "POST",
       body: JSON.stringify(row),
       headers: { Prefer: "return=representation" },
+      sbMode: opts.mode,
     });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
@@ -226,33 +249,37 @@ export interface SbGroundTruthCallInsert {
 // ── Public typed helpers ──────────────────────────────────────────────────
 
 /** All wards, cached. Reference data. */
-export const listWards = () =>
+export const listWards = (mode: SupabaseMode = "interactive") =>
   sbGet<SbWard>(
     "wards?select=ward_id,name,county,centroid,created_at&order=ward_id.asc",
-    { cache: true },
+    { cache: true, mode },
   );
 
 /** Active/finished wards only (view). Cached. */
-export const listActiveWards = () =>
+export const listActiveWards = (mode: SupabaseMode = "interactive") =>
   sbGet<SbWard>(
     "active_wards?select=ward_id,name,county,centroid,created_at&order=ward_id.asc",
-    { cache: true },
+    { cache: true, mode },
   );
 
 /** Neighbors of a ward. Cached. */
-export const listWardNeighbors = (wardId: string) =>
+export const listWardNeighbors = (
+  wardId: string,
+  mode: SupabaseMode = "interactive",
+) =>
   sbGet<SbWardNeighbor>(
     `ward_neighbors?ward_id=eq.${encodeURIComponent(wardId)}&select=ward_id,neighbor_ward_id,shared_boundary_km&order=shared_boundary_km.desc`,
-    { cache: true },
+    { cache: true, mode },
   );
 
 /** Latest ward-level satellite indices. Cached. */
 export const latestSatelliteFor = async (
   wardId: string,
+  mode: SupabaseMode = "interactive",
 ): Promise<SbLatestSatelliteIndex | null> => {
   const rows = await sbGet<SbLatestSatelliteIndex>(
     `api_latest_satellite_indices?ward_id=eq.${encodeURIComponent(wardId)}&limit=1`,
-    { cache: true },
+    { cache: true, mode },
   );
   return rows?.[0] ?? null;
 };
@@ -260,10 +287,11 @@ export const latestSatelliteFor = async (
 /** Latest weather snapshot. Cached. */
 export const latestWeatherFor = async (
   wardId: string,
+  mode: SupabaseMode = "interactive",
 ): Promise<SbLatestWeather | null> => {
   const rows = await sbGet<SbLatestWeather>(
     `api_latest_weather_data?ward_id=eq.${encodeURIComponent(wardId)}&limit=1`,
-    { cache: true },
+    { cache: true, mode },
   );
   return rows?.[0] ?? null;
 };
@@ -274,9 +302,11 @@ export const latestWeatherFor = async (
  */
 export const pastoralistByPhone = async (
   phone: string,
+  mode: SupabaseMode = "interactive",
 ): Promise<SbPastoralist | null> => {
   const rows = await sbGet<SbPastoralist>(
     `pastoralists?phone_number=eq.${encodeURIComponent(phone)}&select=*&limit=1`,
+    { mode },
   );
   return rows?.[0] ?? null;
 };
@@ -288,9 +318,11 @@ export const pastoralistByPhone = async (
  */
 export const callContextByPhone = async (
   phone: string,
+  mode: SupabaseMode = "interactive",
 ): Promise<SbCallContext | null> => {
   const rows = await sbGet<SbCallContext>(
     `api_call_context?phone_number=eq.${encodeURIComponent(phone)}&select=*&limit=1`,
+    { mode },
   );
   return rows?.[0] ?? null;
 };
@@ -301,10 +333,17 @@ export const callContextByPhone = async (
  * after every completed call. Returns the inserted row (or null on
  * failure — the local backup insert should always succeed).
  */
-export const insertGroundTruthCall = (row: SbGroundTruthCallInsert) =>
+export const insertGroundTruthCall = (
+  row: SbGroundTruthCallInsert,
+  mode: SupabaseMode = "batch",
+) =>
+  // Ground truth writes happen in the deterministic pipeline's
+  // fire-and-forget worker AFTER the AT XML response has already been
+  // sent. Slower `batch` timeout is fine — the herder isn't waiting.
   sbInsert<{ call_id: string; call_timestamp: string }>(
     "ground_truth_calls",
     row as unknown as Record<string, unknown>,
+    { mode },
   );
 
 /** Insert or upsert a pastoralist. Used when a call comes in from an
@@ -313,6 +352,7 @@ export const insertGroundTruthCall = (row: SbGroundTruthCallInsert) =>
  * repeat call harmlessly no-ops. */
 export const upsertPastoralist = async (
   row: Partial<SbPastoralist> & { phone_number: string },
+  mode: SupabaseMode = "batch",
 ): Promise<SbPastoralist | null> => {
   try {
     const res = await sbFetch("pastoralists", {
@@ -321,6 +361,7 @@ export const upsertPastoralist = async (
       headers: {
         Prefer: "return=representation,resolution=merge-duplicates",
       },
+      sbMode: mode,
     });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
