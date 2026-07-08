@@ -18,6 +18,7 @@ import satelliteRouter from "./satellite.js";
 import speechRouter from "./speech.js";
 import talkRouter from "./talk.js";
 import wardsRouter from "./wards.js";
+import waterPointsRouter from "./waterPoints.js";
 import demoRouter from "./demo/index.js";
 
 const router: IRouter = Router();
@@ -42,6 +43,7 @@ router.use(satelliteRouter);
 router.use(speechRouter);
 router.use(talkRouter);
 router.use(wardsRouter);
+router.use(waterPointsRouter);
 
 // Demo routes (for local testing without Africa's Talking)
 router.use("/demo", demoRouter);

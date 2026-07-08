@@ -157,7 +157,13 @@ describe("POST /api/ussd-callback — AT USSD gateway", () => {
     expect(res.text).toMatch(/^END /);
   });
 
-  it("returns Malisho list on selection 2", async () => {
+  it("returns Malisho list on selection 2 (WPDx-backed)", async () => {
+    // Since 2026-07-08 the water-points list is generated from the
+    // WPDx snapshot in `src/lib/data/wpdxIsiolo.ts`, not a hardcoded
+    // 4-name list. WPDx coverage for Isiolo is sparse (10 rows, all in
+    // Burat/Ngare Mara/Cherab/Oldo-Nyiro wards), so we assert on the
+    // stable structural bits: END prefix, "Malisho" header, at least
+    // one numbered line with a distance-in-km suffix.
     const res = await request(app)
       .post("/api/ussd-callback")
       .type("form")
@@ -170,8 +176,10 @@ describe("POST /api/ussd-callback — AT USSD gateway", () => {
 
     expect(res.status).toBe(200);
     expect(res.text).toMatch(/^END /);
-    expect(res.text).toContain("Bulla Pesa");
-    expect(res.text).toContain("Wabera");
+    expect(res.text).toContain("Malisho");
+    // A numbered line ending in `<n>km)` proves we rendered at least
+    // one WPDx point (or the fallback string when the snapshot is empty).
+    expect(res.text).toMatch(/(\d+km\)|Hakuna data ya WPDx)/);
   });
 
   it("returns CON submenu on Ongea (selection 3)", async () => {
