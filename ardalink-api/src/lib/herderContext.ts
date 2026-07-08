@@ -31,6 +31,7 @@ import {
   latestSatelliteFor,
   latestWeatherFor,
   pastoralistByPhone,
+  bestNeighborForAdvice,
   type SbCallContext,
   type SbPastoralist,
 } from "./supabase.js";
@@ -83,6 +84,14 @@ export interface HerderContext {
   wardDroughtSeverity: string | null;
   wardRiskLevel: string | null;
   wardRecommendation: string | null;
+
+  // Neighbor-ward advice — populated when a neighboring ward has
+  // meaningfully higher NDVI so the deterministic opener can suggest
+  // moving. Null when no neighbor is better (the common case in a
+  // drought where everyone is suffering).
+  neighborWardName: string | null;
+  neighborNdviMean: number | null;
+  neighborNdviDelta: number | null;
 }
 
 function canonicalize(phone: string): string {
@@ -134,6 +143,9 @@ function baseContext(rawPhone: string, tenantId: string): HerderContext {
     wardDroughtSeverity: ward?.climate?.rolling30Day?.droughtSeverity ?? null,
     wardRiskLevel: ward?.forecast?.outlook.riskLevel ?? null,
     wardRecommendation: ward?.forecast?.outlook.recommendation ?? null,
+    neighborWardName: null,
+    neighborNdviMean: null,
+    neighborNdviDelta: null,
   };
 }
 
@@ -202,6 +214,25 @@ async function overlayWardReference(
     wardTemperatureC: wx?.temperature_c ?? ctx.wardTemperatureC,
     wardHumidityPct: wx?.humidity_pct ?? ctx.wardHumidityPct,
     wardEt0Mm: wx?.evapotranspiration_mm ?? ctx.wardEt0Mm,
+  };
+}
+
+/**
+ * Neighbor overlay — cheap when nothing beats the caller's own ward
+ * (the common drought case). Only populates fields when a real
+ * neighbor is meaningfully better.
+ */
+async function overlayNeighborAdvice(
+  ctx: HerderContext,
+): Promise<HerderContext> {
+  if (!isSupabaseConfigured() || ctx.wardNdviMean == null) return ctx;
+  const best = await bestNeighborForAdvice(ctx.wardId, ctx.wardNdviMean);
+  if (!best) return ctx;
+  return {
+    ...ctx,
+    neighborWardName: best.wardName,
+    neighborNdviMean: best.ndviMean,
+    neighborNdviDelta: best.ndviDelta,
   };
 }
 
@@ -345,6 +376,7 @@ export async function resolveHerderContext(
     if (ctx.source === "supabase") {
       ctx = await enrichFromLocalMirror(ctx, tenantId);
       ctx = await overlayWardReference(ctx);
+      ctx = await overlayNeighborAdvice(ctx);
       // Backfill tenant/ward correlation when Supabase gave us a ward_id.
       if (ctx.wardId && !tenantForWardId(ctx.wardId)) {
         ctx.wardId = wardIdForTenant(tenantId);
@@ -356,6 +388,7 @@ export async function resolveHerderContext(
   // ─── 2. Local mirror fallback ────────────────────────────────────────
   ctx = await resolveFromLocalOnly(ctx, tenantId);
   ctx = await overlayWardReference(ctx);
+  ctx = await overlayNeighborAdvice(ctx);
   return ctx;
 }
 
@@ -387,6 +420,14 @@ export function buildLocalizedBrief(ctx: HerderContext, lang: "sw" | "en"): stri
     ? `BCS ${ctx.lastBcsScore.toFixed(1)}`
     : null;
 
+  const neighborBit =
+    ctx.neighborWardName && ctx.neighborNdviMean != null
+      ? {
+          sw: `${ctx.neighborWardName} jirani NDVI ${ctx.neighborNdviMean.toFixed(2)} — fikiria kuhamisha huko.`,
+          en: `Neighbor ${ctx.neighborWardName} has better NDVI ${ctx.neighborNdviMean.toFixed(2)} — consider moving there.`,
+        }
+      : null;
+
   if (lang === "sw") {
     const parts: string[] = [];
     parts.push(`Habari ${namePart}kutoka ArdaLink${locPart}.`);
@@ -394,6 +435,7 @@ export function buildLocalizedBrief(ctx: HerderContext, lang: "sw" | "en"): stri
     else if (stressed) parts.push(`Malisho ya ward: ${stressed} yameathirika.`);
     if (rainBit) parts.push(`Mvua ya siku 30: ${rainBit}.`);
     if (risk) parts.push(`Hatari ya ukame: ${risk}.`);
+    if (neighborBit) parts.push(neighborBit.sw);
     if (lastBcs) parts.push(`Ripoti yako ya mwisho: ${lastBcs}.`);
     if (rec) parts.push(`Ushauri: ${rec}`);
     return parts.join(" ").slice(0, 300);
@@ -405,6 +447,7 @@ export function buildLocalizedBrief(ctx: HerderContext, lang: "sw" | "en"): stri
   else if (stressed) parts.push(`Ward pasture: ${stressed} is stressed.`);
   if (rainBit) parts.push(`30-day rain: ${rainBit}.`);
   if (risk) parts.push(`Drought risk: ${risk}.`);
+  if (neighborBit) parts.push(neighborBit.en);
   if (lastBcs) parts.push(`Your last report: ${lastBcs}.`);
   if (rec) parts.push(`Advice: ${rec}`);
   return parts.join(" ").slice(0, 300);
@@ -431,8 +474,12 @@ export function buildLocalizedVoiceOpener(ctx: HerderContext): string {
   const memoryBit = ctx.lastBcsScore != null
     ? ` We saw your last report of body condition ${ctx.lastBcsScore.toFixed(1)}.`
     : "";
+  const neighborBit =
+    ctx.neighborWardName && ctx.neighborNdviMean != null
+      ? ` In your neighbor ${ctx.neighborWardName}, pasture is stronger — consider moving that way.`
+      : "";
   return (
-    `Habari${nameBit}. This is ArdaLink${locBit}. ${stressedBit}${riskBit}.${memoryBit} ` +
+    `Habari${nameBit}. This is ArdaLink${locBit}. ${stressedBit}${riskBit}.${memoryBit}${neighborBit} ` +
     `We would like your report today.`
   );
 }

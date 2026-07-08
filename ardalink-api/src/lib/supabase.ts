@@ -272,6 +272,77 @@ export const listWardNeighbors = (
     { cache: true, mode },
   );
 
+/**
+ * Best-scoring neighboring ward for cross-ward advice.
+ *
+ * Combines `ward_neighbors` (adjacency) with `api_latest_satellite_indices`
+ * (NDVI) so the deterministic voice opener can say "in your neighbor
+ * Wabera, NDVI is higher — consider moving that way". Returns null if
+ * we can't beat the caller's own ward by `minNdviDelta` (default +0.1).
+ *
+ * All queries are cached and use interactive mode so the herder-facing
+ * opener stays under AT's timeout budget.
+ */
+export interface SbNeighborAdvice {
+  wardId: string;
+  wardName: string | null;
+  ndviMean: number;
+  ndviDelta: number;
+  sharedBoundaryKm: number;
+}
+
+export async function bestNeighborForAdvice(
+  callerWardId: string,
+  callerNdvi: number | null,
+  minNdviDelta = 0.1,
+): Promise<SbNeighborAdvice | null> {
+  if (callerNdvi == null) return null;
+  const neighbors = await listWardNeighbors(callerWardId);
+  if (!neighbors || neighbors.length === 0) return null;
+
+  // Pull neighbor NDVI + ward name in parallel. Each of these is
+  // individually cached so back-to-back calls for the same ward
+  // don't re-hit Supabase.
+  const results = await Promise.all(
+    neighbors.map(async (n) => {
+      const [sat, ward] = await Promise.all([
+        latestSatelliteFor(n.neighbor_ward_id),
+        sbGet<SbWard>(
+          `wards?ward_id=eq.${encodeURIComponent(n.neighbor_ward_id)}&select=ward_id,name,county,centroid,created_at&limit=1`,
+          { cache: true },
+        ),
+      ]);
+      const ndvi = sat?.ndvi_mean ?? null;
+      const delta = ndvi != null ? ndvi - callerNdvi : null;
+      return {
+        wardId: n.neighbor_ward_id,
+        wardName: ward?.[0]?.name ?? null,
+        ndviMean: ndvi,
+        ndviDelta: delta,
+        sharedBoundaryKm: n.shared_boundary_km,
+      };
+    }),
+  );
+
+  // Only surface a neighbor when NDVI is meaningfully higher — otherwise
+  // the "consider moving" line is noise. Pick the biggest improvement.
+  let best: SbNeighborAdvice | null = null;
+  for (const r of results) {
+    if (r.ndviDelta == null || r.ndviMean == null) continue;
+    if (r.ndviDelta < minNdviDelta) continue;
+    if (best == null || r.ndviDelta > best.ndviDelta) {
+      best = {
+        wardId: r.wardId,
+        wardName: r.wardName,
+        ndviMean: r.ndviMean,
+        ndviDelta: r.ndviDelta,
+        sharedBoundaryKm: r.sharedBoundaryKm,
+      };
+    }
+  }
+  return best;
+}
+
 /** Latest ward-level satellite indices. Cached. */
 export const latestSatelliteFor = async (
   wardId: string,
