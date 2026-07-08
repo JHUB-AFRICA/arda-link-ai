@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/table";
 import { bcsBarColor } from "@/lib/dashboard-colors";
 import { KpiCard } from "./KpiCard";
+import { WardMap } from "./WardMap";
 
 const QUADRANT_LABEL: Record<string, string> = {
   NW: "NW · Wabera",
@@ -191,6 +192,9 @@ export function GroundTruthSection() {
           accent={reports.length > 0 ? "text-orange-400" : "text-gray-300"}
         />
       </div>
+
+      {/* Isiolo ward map — Supabase PostGIS geometry, NDVI-coloured */}
+      <WardMap />
 
       {/* Cost rails (kill switch + daily budget) */}
       <CostRailsCard />

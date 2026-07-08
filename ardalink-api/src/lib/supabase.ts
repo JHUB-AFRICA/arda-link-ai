@@ -167,6 +167,15 @@ export interface SbWard {
   created_at: string;
 }
 
+export interface SbWardWithGeometry extends SbWard {
+  geometry:
+    | {
+        type: "MultiPolygon";
+        coordinates: number[][][][];
+      }
+    | null;
+}
+
 export interface SbWardNeighbor {
   ward_id: string;
   neighbor_ward_id: string;
@@ -290,6 +299,19 @@ export const listWards = (mode: SupabaseMode = "interactive") =>
 export const listActiveWards = (mode: SupabaseMode = "interactive") =>
   sbGet<SbWard>(
     "active_wards?select=ward_id,name,county,centroid,created_at&order=ward_id.asc",
+    { cache: true, mode },
+  );
+
+/**
+ * Active wards WITH the full MultiPolygon geometry — 5 rows total, each
+ * with hundreds of coordinate pairs. Cached because ward boundaries
+ * don't change. Batch mode by default (dashboard, not USSD).
+ */
+export const listActiveWardsWithGeometry = (
+  mode: SupabaseMode = "batch",
+) =>
+  sbGet<SbWardWithGeometry>(
+    "active_wards?select=ward_id,name,county,centroid,geometry,created_at&order=ward_id.asc",
     { cache: true, mode },
   );
 
