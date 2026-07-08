@@ -41,6 +41,15 @@ export function tenantMiddleware(
   if (req.method === "GET" && /^\/api\/call-tokens\/[^/]+$/.test(req.path)) {
     return next();
   }
+  // /api/water-points/* — WPDx-backed open-data endpoints. All GETs are
+  // read-only aggregates, no per-herder rows. Kept public so /talk and
+  // the dashboard's ward-map component can consume without a bearer.
+  if (
+    req.method === "GET" &&
+    req.path.startsWith("/api/water-points/")
+  ) {
+    return next();
+  }
   const secret = jwtSecret();
   if (!secret) {
     res.status(500).json({ error: "JWT_SECRET not configured" });
@@ -111,6 +120,9 @@ const PUBLIC_PATHS = new Set<string>([
   // Ward geometry — read-only, aggregated across the 5 Isiolo wards.
   // No per-herder data. Kept public so the /talk app can show the map.
   "/api/wards/map",
+  // WPDx-backed water points — aggregate open data (CC-BY), no
+  // per-herder rows. Public so /talk and the dashboard can consume.
+  "/api/water-points/status",
   // /api/talk/* — the public /talk React app calls these to look up herder
   // context and post recordings. No JWT (public users); in-process rate
   // limit + Speech configuration guard prevent abuse.
