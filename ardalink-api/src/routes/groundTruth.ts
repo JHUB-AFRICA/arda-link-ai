@@ -5,6 +5,11 @@ import {
   type GroundTruthReport,
 } from "@workspace/db";
 import { withTenantContext } from "../lib/tenancy-context.js";
+import {
+  isSupabaseConfigured,
+  recentGroundTruthCalls,
+  type SbGroundTruthCallRead,
+} from "../lib/supabase.js";
 
 function requireTenant(req: Request): string {
   const tenantId = req.tenant?.tenant_id;
@@ -77,6 +82,154 @@ function toApiReport(r: GroundTruthReport): ApiReport {
     userFeedback: r.userFeedback,
   };
 }
+
+/**
+ * Shape of the dashboard's "merged" ground-truth row — the union of what
+ * we can render from either the local rich schema or Supabase's thin one.
+ */
+interface MergedReport {
+  /** Where the row came from — badge in the dashboard. */
+  source: "local" | "supabase";
+  /** Present when source='local' — the local Postgres serial ID. */
+  localId: number | null;
+  /** Present when source='supabase' — the ground_truth_calls uuid. */
+  callId: string | null;
+  createdAt: string;
+  phone: string | null;
+  fullName: string | null;
+  wardId: string | null;
+  actionTag: string | null;
+  bcsScore: number | null;
+  bcsSpecies: string | null;
+  bcsConfidence: string | null;
+  mortalityRate: string | null;
+  waterPointStatus: string | null;
+  waterPointName: string | null;
+  supplementaryFeeding: string | null;
+  trustScore: number | null;
+  indicatorsCollected: number | null;
+  dataCompletenessPercent: number | null;
+  transcript: string | null;
+}
+
+function localToMerged(r: GroundTruthReport): MergedReport {
+  return {
+    source: "local",
+    localId: r.id,
+    callId: null,
+    createdAt: r.createdAt.toISOString(),
+    phone: r.phone,
+    fullName: null,
+    wardId: null,
+    actionTag: r.actionTag,
+    bcsScore: r.bcsScore,
+    bcsSpecies: r.bcsSpecies,
+    bcsConfidence: r.bcsConfidence,
+    mortalityRate: r.mortalityRate,
+    waterPointStatus: r.waterPointStatus,
+    waterPointName: r.waterPointName,
+    supplementaryFeeding: r.supplementaryFeeding,
+    trustScore: r.trustScore,
+    indicatorsCollected: r.indicatorsCollected,
+    dataCompletenessPercent: r.dataCompletenessPercent,
+    transcript: r.userFeedback,
+  };
+}
+
+function supabaseToMerged(r: SbGroundTruthCallRead): MergedReport {
+  // Reverse the proportion → categorical mapping the pipeline applied
+  // on write, so the dashboard renders a familiar label instead of a
+  // fraction. Buckets match the extractor: none / 1-3 / 4-plus.
+  const mortalityLabel =
+    r.mortality_rate == null
+      ? null
+      : r.mortality_rate < 0.02
+        ? "none"
+        : r.mortality_rate < 0.1
+          ? "1-3"
+          : "4-plus";
+  return {
+    source: "supabase",
+    localId: null,
+    callId: r.call_id,
+    createdAt: r.created_at,
+    phone: r.pastoralists?.phone_number ?? null,
+    fullName: r.pastoralists?.full_name ?? null,
+    wardId: r.ward_id,
+    actionTag: null,
+    bcsScore: r.bcs_score,
+    bcsSpecies: null,
+    bcsConfidence: null,
+    mortalityRate: mortalityLabel,
+    waterPointStatus: r.water_point_status,
+    waterPointName: null,
+    supplementaryFeeding:
+      r.supplementary_feeding === true
+        ? "yes"
+        : r.supplementary_feeding === false
+          ? "no"
+          : null,
+    trustScore: r.trust_score != null ? Math.round(r.trust_score * 100) : null,
+    indicatorsCollected: null,
+    dataCompletenessPercent: null,
+    transcript: r.transcript,
+  };
+}
+
+/**
+ * GET /api/ground-truth/merged?limit=20
+ *
+ * Union view of local `ground_truth_reports` + Supabase `ground_truth_calls`
+ * (via the joined pastoralist view). Each row carries a `source` badge so
+ * the dashboard can show provenance. Rows are ordered by createdAt DESC.
+ *
+ * When Supabase is unconfigured we transparently fall back to local-only.
+ * When Supabase times out or returns an error we still return the local
+ * rows; the operator dashboard never has to wait on Supabase to load.
+ */
+router.get("/ground-truth/merged", async (req, res): Promise<void> => {
+  const rawLimit = parseInt(String(req.query.limit ?? "20"), 10);
+  const limit = Math.min(
+    Math.max(Number.isFinite(rawLimit) ? rawLimit : 20, 1),
+    100,
+  );
+  try {
+    const tenantId = requireTenant(req);
+    const localP = withTenantContext(tenantId, (tx) =>
+      tx
+        .select()
+        .from(groundTruthReportsTable)
+        .orderBy(desc(groundTruthReportsTable.createdAt))
+        .limit(limit),
+    );
+    const supabaseP = isSupabaseConfigured()
+      ? recentGroundTruthCalls(limit)
+      : Promise.resolve(null);
+
+    const [locals, supabaseRows] = await Promise.all([localP, supabaseP]);
+
+    const rows: MergedReport[] = [
+      ...locals.map(localToMerged),
+      ...(supabaseRows ?? []).map(supabaseToMerged),
+    ];
+    rows.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+
+    res.json({
+      rows: rows.slice(0, limit),
+      counts: {
+        local: locals.length,
+        supabase: supabaseRows?.length ?? 0,
+      },
+      supabase: {
+        configured: isSupabaseConfigured(),
+        reachable: supabaseRows !== null,
+      },
+    });
+  } catch (err) {
+    req.log.error({ err }, "Failed to load merged ground-truth");
+    res.status(500).json({ error: "Failed to load ground truth" });
+  }
+});
 
 /**
  * GET /api/ground-truth/recent?limit=20

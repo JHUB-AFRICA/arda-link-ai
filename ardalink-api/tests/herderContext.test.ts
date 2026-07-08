@@ -9,6 +9,7 @@ interface Fixture {
     pastoralist: unknown;
     latestSatellite: unknown;
     latestWeather: unknown;
+    neighborAdvice: unknown;
   };
   local: {
     pastoralist: unknown;
@@ -25,6 +26,7 @@ const fx: Fixture = {
     pastoralist: null,
     latestSatellite: null,
     latestWeather: null,
+    neighborAdvice: null,
   },
   local: {
     pastoralist: null,
@@ -40,6 +42,7 @@ vi.mock("../src/lib/supabase.js", () => ({
   pastoralistByPhone: async () => fx.supabase.pastoralist,
   latestSatelliteFor: async () => fx.supabase.latestSatellite,
   latestWeatherFor: async () => fx.supabase.latestWeather,
+  bestNeighborForAdvice: async () => fx.supabase.neighborAdvice,
 }));
 
 vi.mock("../src/lib/intelligence.js", () => ({
@@ -106,6 +109,7 @@ beforeEach(() => {
   fx.supabase.pastoralist = null;
   fx.supabase.latestSatellite = null;
   fx.supabase.latestWeather = null;
+  fx.supabase.neighborAdvice = null;
   fx.local.pastoralist = null;
   fx.local.lastReport = null;
   fx.local.throwOnRead = false;
@@ -308,5 +312,40 @@ describe("resolveHerderContext", () => {
     expect(ctx.known).toBe(false);
     expect(ctx.source).toBe("none");
     expect(ctx.canonicalPhone).toBe("");
+  });
+
+  it("overlays best-neighbor advice when a neighbor NDVI is meaningfully higher", async () => {
+    // Local herder resolution; overlay populates NDVI; neighbor
+    // overlay adds the best-beating adjacent ward.
+    fx.local.pastoralist = {
+      name: "Yusuf Omar",
+      location: "Bulla Pesa",
+      cattle: 30,
+      goats: 25,
+      camels: 0,
+      waterSource: "Bula Pesa borehole",
+      lastContactAt: null,
+    };
+    fx.supabase.latestSatellite = { ward_id: "242", ndvi_mean: 0.19 };
+    fx.supabase.neighborAdvice = {
+      wardId: "241",
+      wardName: "Wabera",
+      ndviMean: 0.32,
+      ndviDelta: 0.13,
+      sharedBoundaryKm: 8,
+    };
+
+    const { resolveHerderContext, buildLocalizedVoiceOpener } = await import(
+      "../src/lib/herderContext.js"
+    );
+    const ctx = await resolveHerderContext("+254712000001", "bula-pesa");
+
+    expect(ctx.neighborWardName).toBe("Wabera");
+    expect(ctx.neighborNdviMean).toBeCloseTo(0.32);
+    expect(ctx.neighborNdviDelta).toBeCloseTo(0.13);
+
+    const opener = buildLocalizedVoiceOpener(ctx);
+    expect(opener).toContain("Wabera");
+    expect(opener).toContain("consider moving");
   });
 });
