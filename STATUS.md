@@ -446,6 +446,43 @@ The dashboard is **substantially complete** for the Tuesday demo. Gaps for produ
 | 5 | Bilingual EN/SW prompt suite (50 real calls, iterate) | $100 in call costs | ⏳ Pending |
 | 6 | Buffer for surprise integrations | $4k reserve | ⏳ Reserved |
 
+### 8.2b Phase 2b — Fork alignment + Supabase depth (planned 2026-07-08, ~2 weeks)
+
+**Reference**: MUNENE1212/ardalink-ai fork is treated as the canonical
+architecture. The gaps below are what separates our current merge
+(`4a8509c`) from the fork's design.
+
+**Ordering** — 0 → 1 → 2, one branch per phase, PRs against `dev`.
+
+#### Phase 0 — Correctness blockers (½ day, blocks nothing else)
+| # | Gap | Fix | Owner |
+|---|---|---|---|
+| 0.1 | `sbFetch` 8 s timeout blocks USSD's ~10 s budget | Two envs: `SUPABASE_TIMEOUT_INTERACTIVE_MS=2500`, `SUPABASE_TIMEOUT_BATCH_MS=8000`. Helper takes `mode: 'interactive'|'batch'`. | Backend |
+| 0.2 | Ward model mismatch: `garbatulla` + `merti` default to ward 242 (silent bug) | **Retire both** as tenants. Adopt the fork's 5 Isiolo Sub-County wards as canonical tenants: `wabera` (241), `bula-pesa` (242), `ngare-mara` (245), `burat` (246), `oldonyiro` (247). Reseed local DB. Update `admin_users`, seed data, operator login. Purge from `wardMapping.ts` TODOs. | Backend + dashboard |
+| 0.3 | Supabase view 500s (`api_ward_cell_latest_rollup`, `api_latest_cell_satellite_indices`) | Not our bug — flag to Supabase project owner. Meanwhile our client skips them silently. | Supabase owner |
+| 0.4 | `mortality_rate`/`offtake_rate`/`trust_score` normalisation is guesswork ([0,1] proportions chosen only to pass CHECK) | Confirm semantics with Supabase project owner. Either change to categorical text columns, or document the real interpretation. | Supabase owner |
+
+#### Phase 1 — Test coverage (1–2 days, blocks nothing but stops regressions)
+| # | Target file | Coverage goal |
+|---|---|---|
+| 1.1 | `src/lib/wardMapping.ts`, `src/lib/pastoralistContact.ts` | Table-driven mapping + no-op on `browser-*` phones |
+| 1.2 | `src/lib/supabase.ts` | Cache TTL, non-2xx → null, interactive vs batch timeout, upsert idempotency |
+| 1.3 | `src/lib/herderContext.ts` | Supabase-first, local-fallback, merge (name from Supabase + species from local), unknown-phone default |
+| 1.4 | `src/lib/voiceDeterministicPipeline.ts` — **priority** | Happy path, region-unsupported fallback, Supabase-down fallback, upsert idempotency, value normalisation |
+| 1.5 | `src/lib/speech.ts` fastTranscribe | 400 region-unsupported → short-audio fallback; both fail → null |
+
+#### Phase 2 — Fork feature parity + Supabase depth (3–5 days)
+| # | Fork feature we're missing | Our fix |
+|---|---|---|
+| 2.1 | Fork's `LOCATION_TO_WARD` alias mapping (case-insensitive location → ward_id) | New `wardMapping.ts::wardIdFromLocationText(text)` — used by USSD "where are you?" and voice pipeline extraction to attach a ward_id even when the herder isn't in `pastoralists` yet |
+| 2.2 | Fork's ward_neighbors consumption for cross-ward advice | Extend `buildLocalizedVoiceOpener` and the USSD brief: "in your neighbor Wabera, NDVI is higher — consider moving that way" |
+| 2.3 | Dashboard consumes Supabase (fork's assumption) | New route `/api/ground-truth/supabase` merges Supabase `ground_truth_calls` with local rich rows; `GroundTruthSection.tsx` renders both with source badge (supabase / local / both) |
+| 2.4 | Ward map (Supabase's PostGIS geometry) | New `/api/wards/geometry` returns wards GeoJSON + ward_cells summary + adjacency. Dashboard adds a small choropleth coloured by ward-level NDVI |
+| 2.5 | Fork's `voiceFunctionTools.ts` (LLM function calling for realtime) | Import + wire into the (still-optional) realtime path so operators using the demo get the same tools the fork uses |
+| 2.6 | Fork's per-ward WPDx water points (`bulaPesaWaterPointsWpdx.ts` already exists locally, unused) | Wire into deterministic voice USSD water-point list; today's list is hard-coded 5 entries |
+
+**Deferred to later** (Phase 3+): Redis-backed rate limits/cache, Supabase Auth for `admin_users`, `ward_cells` per-pixel queries, bidirectional sync worker, SMS `STOP` → pastoralist `alertsEnabled=false` propagation.
+
 ### 8.3 Phase 3 — Dialect coverage (3 months, $50k–120k)
 
 | Week | Work | Cost |
