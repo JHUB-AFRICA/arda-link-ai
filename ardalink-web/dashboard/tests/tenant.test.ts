@@ -49,7 +49,7 @@ describe('tenant context', () => {
   });
 
   it('handles each pilot ward', () => {
-    for (const tenantId of ['bula-pesa', 'garbatulla', 'merti']) {
+    for (const tenantId of ['bula-pesa', 'ngare-mara', 'burat']) {
       setTenantContext(makeCtx({ tenantId }));
       expect(getTenantContext()?.tenantId).toBe(tenantId);
       expect(tenantHeaders()['X-Client-Tenant-ID']).toBe(tenantId);

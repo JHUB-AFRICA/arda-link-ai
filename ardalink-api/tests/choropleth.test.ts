@@ -225,6 +225,10 @@ describe("GET /api/open-data/geo/isiolo-wards", () => {
 
 describe("GET /api/open-data/geo/ward-presets", () => {
   it("is public and lists all 10 Isiolo wards with the 3 demo homes flagged", async () => {
+    // Since 2026-07-08 the 3 demo tenants are the 3 Isiolo Sub-County
+    // wards seeded by seed-demo.sql: bula-pesa (242), ngare-mara (245),
+    // burat (246). Wabera and Oldonyiro are also valid tenants per
+    // wardMapping.ts but aren't seeded by default.
     const res = await request(createApp()).get(
       "/api/open-data/geo/ward-presets",
     );
@@ -234,10 +238,10 @@ describe("GET /api/open-data/geo/ward-presets", () => {
       .filter((w: { isDemoHome: boolean }) => w.isDemoHome)
       .map((w: { name: string }) => w.name);
     expect(homeWards).toContain("Bulla Pesa");
-    expect(homeWards).toContain("Garbatulla");
-    expect(homeWards).toContain("Sericho");
+    expect(homeWards).toContain("Ngare Mara");
+    expect(homeWards).toContain("Burat");
     expect(res.body.tenant_home_ward["bula-pesa"]).toBe("Bulla Pesa");
-    expect(res.body.tenant_home_ward["merti"]).toBe("Sericho");
+    expect(res.body.tenant_home_ward["burat"]).toBe("Burat");
   });
 });
 

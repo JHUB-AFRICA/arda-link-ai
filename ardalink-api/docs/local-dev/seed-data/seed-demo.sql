@@ -2,6 +2,15 @@
 -- Demo seed — Tuesday verification
 -- Idempotent: re-running this file will not duplicate data (ON CONFLICT
 -- clauses on tenants/feature flags; reports use replace-and-increment IDs).
+--
+-- Tenant model (2026-07-08 onward): aligned with Supabase's active_wards.
+-- Each tenant slug maps 1:1 to a Supabase ward_id via lib/wardMapping.ts.
+-- Isiolo Sub-County has 5 finished wards; we seed 3 as demo tenants:
+--   bula-pesa   ↔ 242  (Bulla Pesa)
+--   ngare-mara  ↔ 245  (Ngare Mara)
+--   burat       ↔ 246  (Burat)
+-- The other two wards (wabera 241, oldonyiro 247) are known to
+-- lib/wardMapping.ts but not seeded here — add rows as needed.
 -- =============================================================================
 
 BEGIN;
@@ -10,30 +19,39 @@ BEGIN;
 -- 1. Tenants (already in 0001 migration, but harmless to repeat)
 -- ---------------------------------------------------------------------------
 INSERT INTO public.tenants (tenant_id, display_name, region) VALUES
-  ('bula-pesa',  'Bula Pesa Ward',  'Isiolo County'),
-  ('garbatulla', 'Garbatulla Ward', 'Isiolo County'),
-  ('merti',      'Merti Ward',      'Isiolo County')
+  ('bula-pesa',   'Bula Pesa Ward',   'Isiolo County'),
+  ('ngare-mara',  'Ngare Mara Ward',  'Isiolo County'),
+  ('burat',       'Burat Ward',       'Isiolo County')
 ON CONFLICT (tenant_id) DO UPDATE SET
   display_name = EXCLUDED.display_name,
   region       = EXCLUDED.region,
   updated_at   = now();
 
+-- Retired demo tenants — remove any stale rows from earlier seed runs so
+-- the RLS assertions in tests continue to hold. Safe on empty tables.
+DELETE FROM public.tenant_feature_flags WHERE tenant_id IN ('garbatulla','merti');
+DELETE FROM public.ground_truth_reports WHERE tenant_id IN ('garbatulla','merti');
+DELETE FROM public.pastoralists         WHERE tenant_id IN ('garbatulla','merti');
+DELETE FROM public.admin_users          WHERE tenant_id IN ('garbatulla','merti');
+DELETE FROM public.tenants              WHERE tenant_id IN ('garbatulla','merti');
+DELETE FROM gis_engine.tenants          WHERE tenant_id IN ('garbatulla','merti');
+
 -- ---------------------------------------------------------------------------
 -- 2. Feature flags (illustrate per-tenant capability control)
 -- ---------------------------------------------------------------------------
 INSERT INTO public.tenant_feature_flags (tenant_id, flag_key, enabled) VALUES
-  ('bula-pesa',  'voice_outbound', TRUE),
-  ('bula-pesa',  'public_talk',    TRUE),
-  ('bula-pesa',  'ground_truth',   TRUE),
-  ('bula-pesa',  'cost_rails',     TRUE),
-  ('garbatulla', 'voice_outbound', TRUE),
-  ('garbatulla', 'public_talk',    FALSE),
-  ('garbatulla', 'ground_truth',   TRUE),
-  ('garbatulla', 'cost_rails',     TRUE),
-  ('merti',      'voice_outbound', FALSE),
-  ('merti',      'public_talk',    FALSE),
-  ('merti',      'ground_truth',   TRUE),
-  ('merti',      'cost_rails',     FALSE)
+  ('bula-pesa',   'voice_outbound', TRUE),
+  ('bula-pesa',   'public_talk',    TRUE),
+  ('bula-pesa',   'ground_truth',   TRUE),
+  ('bula-pesa',   'cost_rails',     TRUE),
+  ('ngare-mara',  'voice_outbound', TRUE),
+  ('ngare-mara',  'public_talk',    FALSE),
+  ('ngare-mara',  'ground_truth',   TRUE),
+  ('ngare-mara',  'cost_rails',     TRUE),
+  ('burat',       'voice_outbound', FALSE),
+  ('burat',       'public_talk',    FALSE),
+  ('burat',       'ground_truth',   TRUE),
+  ('burat',       'cost_rails',     FALSE)
 ON CONFLICT (tenant_id, flag_key) DO UPDATE SET
   enabled = EXCLUDED.enabled,
   updated_at = now();
@@ -42,24 +60,24 @@ ON CONFLICT (tenant_id, flag_key) DO UPDATE SET
 -- 3. Pastoralists — 5 per tenant
 -- ---------------------------------------------------------------------------
 INSERT INTO public.pastoralists (tenant_id, name, phone, location, cattle, goats, camels, water_source, alerts_enabled, alerts_sent) VALUES
-  -- Bula Pesa
-  ('bula-pesa',  'Halima Hassan',     '+254712000001', 'Kula Pesa', 25, 15, 0, 'Bula Pesa borehole', TRUE, 3),
-  ('bula-pesa',  'Hassan Abdi',       '+254712000002', 'Kula Pesa', 40, 30, 0, 'Bula Pesa borehole', TRUE, 5),
-  ('bula-pesa',  'Amina Yusuf',       '+254712000003', 'Gotu',      18,  8, 0, 'Gotu pan',            TRUE, 2),
-  ('bula-pesa',  'Mohamed Ali',       '+254712000004', 'Bulla Pesa', 60, 40, 0, 'Bulla Pesa dam',     TRUE, 6),
-  ('bula-pesa',  'Fatma Ibrahim',     '+254712000005', 'Kula Pesa', 12, 20, 0, 'Bula Pesa borehole', TRUE, 1),
-  -- Garbatulla
-  ('garbatulla', 'Yusuf Omar',        '+254722000001', 'Garba Tulla', 30, 25, 5, 'Garba Tulla shallow', TRUE, 4),
-  ('garbatulla', 'Safia Hassan',      '+254722000002', 'Garba Tulla', 50, 30, 2, 'Garba Tulla shallow', TRUE, 5),
-  ('garbatulla', 'Ibrahim Noor',      '+254722000003', 'Kinna',       80, 40, 0, 'Kinna river',         TRUE, 7),
-  ('garbatulla', 'Khadija Mohamed',   '+254722000004', 'Garba Tulla', 20, 15, 0, 'Garba Tulla shallow', TRUE, 3),
-  ('garbatulla', 'Omar Sheikh',       '+254722000005', 'Kinna',       45, 35, 0, 'Kinna river',         TRUE, 4),
-  -- Merti (no voice — feature flag off)
-  ('merti',      'Aisha Abdullahi',   '+254732000001', 'Merti',      15,  5, 8, 'Merti pan',           TRUE, 0),
-  ('merti',      'Daud Mahamud',      '+254732000002', 'Merti',      35, 20, 3, 'Merti pan',           TRUE, 0),
-  ('merti',      'Hawa Abdullahi',    '+254732000003', 'Sericho',     8,  4, 6, 'Sericho borehole',    TRUE, 0),
-  ('merti',      'Abdirahman Hassan', '+254732000004', 'Merti',      22, 10, 4, 'Merti pan',           TRUE, 0),
-  ('merti',      'Maryan Yusuf',      '+254732000005', 'Merti',      18, 12, 2, 'Merti pan',           TRUE, 0)
+  -- Bula Pesa (ward 242)
+  ('bula-pesa',   'Halima Hassan',     '+254712000001', 'Kula Pesa',    25, 15, 0, 'Bula Pesa borehole', TRUE, 3),
+  ('bula-pesa',   'Hassan Abdi',       '+254712000002', 'Kula Pesa',    40, 30, 0, 'Bula Pesa borehole', TRUE, 5),
+  ('bula-pesa',   'Amina Yusuf',       '+254712000003', 'Gotu',         18,  8, 0, 'Gotu pan',           TRUE, 2),
+  ('bula-pesa',   'Mohamed Ali',       '+254712000004', 'Bulla Pesa',   60, 40, 0, 'Bulla Pesa dam',     TRUE, 6),
+  ('bula-pesa',   'Fatma Ibrahim',     '+254712000005', 'Kula Pesa',    12, 20, 0, 'Bula Pesa borehole', TRUE, 1),
+  -- Ngare Mara (ward 245)
+  ('ngare-mara',  'Yusuf Omar',        '+254722000001', 'Ngare Mara',   30, 25, 5, 'Ngare Mara spring',  TRUE, 4),
+  ('ngare-mara',  'Safia Hassan',      '+254722000002', 'Ngare Mara',   50, 30, 2, 'Ngare Mara spring',  TRUE, 5),
+  ('ngare-mara',  'Ibrahim Noor',      '+254722000003', 'Kambi Garba',  80, 40, 0, 'Kambi Garba dam',    TRUE, 7),
+  ('ngare-mara',  'Khadija Mohamed',   '+254722000004', 'Ngare Mara',   20, 15, 0, 'Ngare Mara spring',  TRUE, 3),
+  ('ngare-mara',  'Omar Sheikh',       '+254722000005', 'Kambi Garba',  45, 35, 0, 'Kambi Garba dam',    TRUE, 4),
+  -- Burat (ward 246 — no voice, ground-truth only)
+  ('burat',       'Aisha Abdullahi',   '+254732000001', 'Burat',        15,  5, 8, 'Burat pan',          TRUE, 0),
+  ('burat',       'Daud Mahamud',      '+254732000002', 'Burat',        35, 20, 3, 'Burat pan',          TRUE, 0),
+  ('burat',       'Hawa Abdullahi',    '+254732000003', 'Burat',         8,  4, 6, 'Burat borehole',     TRUE, 0),
+  ('burat',       'Abdirahman Hassan', '+254732000004', 'Burat',        22, 10, 4, 'Burat pan',          TRUE, 0),
+  ('burat',       'Maryan Yusuf',      '+254732000005', 'Burat',        18, 12, 2, 'Burat pan',          TRUE, 0)
 ON CONFLICT (tenant_id, phone) DO UPDATE SET
   name = EXCLUDED.name,
   cattle = EXCLUDED.cattle,
@@ -108,7 +126,7 @@ SELECT
 FROM generate_series(1, 12) d
 WHERE NOT EXISTS (SELECT 1 FROM public.ground_truth_reports WHERE tenant_id = 'bula-pesa');
 
--- ----- Garbatulla: moderate stress, mixed water sources -----
+-- ----- Ngare Mara: moderate stress, mixed water sources -----
 INSERT INTO public.ground_truth_reports
   (tenant_id, phone, month, timestamp, user_feedback, action_tag,
    bcs_score, bcs_species, bcs_confidence, bcs_flag_followup,
@@ -121,7 +139,7 @@ INSERT INTO public.ground_truth_reports
    trust_score, trust_flags,
    data_methodology_version, standards_applied)
 SELECT
-  'garbatulla', '+254722000003', '2026-06',
+  'ngare-mara', '+254722000003', '2026-06',
   now() - (d || ' days')::interval,
   'Herder: Animals are okay but water is far.\nArdaLink: Where do you go?',
   CASE (d % 3) WHEN 0 THEN 'livestock_stress' WHEN 1 THEN 'no_action' ELSE 'water_access_concern' END,
@@ -129,17 +147,17 @@ SELECT
   'mixed', 'high', FALSE,
   'normal', 'none', 'normal',
   CASE (d % 3) WHEN 0 THEN '5-10km' WHEN 1 THEN 'under_5km' ELSE 'over_10km' END,
-  'Kinna river', 'operational_good',
+  'Kambi Garba dam', 'operational_good',
   'no',
-  'NE', 'Kinna',
+  'NE', 'Kambi Garba',
   0.32 + (d * 0.005), -8.0 - (d * 0.2), 25.0, 0.28,
   200 + (d * 3), 6, 82.0,
   85, '[]'::jsonb,
   'v1.0', 'ILRI/FAO BCS, FEWS NET, LEGS, WFP CSI, FAO AWG'
 FROM generate_series(1, 12) d
-WHERE NOT EXISTS (SELECT 1 FROM public.ground_truth_reports WHERE tenant_id = 'garbatulla');
+WHERE NOT EXISTS (SELECT 1 FROM public.ground_truth_reports WHERE tenant_id = 'ngare-mara');
 
--- ----- Merti: stable, no voice, only ground-truth -----
+-- ----- Burat: stable, no voice, only ground-truth -----
 INSERT INTO public.ground_truth_reports
   (tenant_id, phone, month, timestamp, user_feedback, action_tag,
    bcs_score, bcs_species, bcs_confidence, bcs_flag_followup,
@@ -152,29 +170,29 @@ INSERT INTO public.ground_truth_reports
    trust_score, trust_flags,
    data_methodology_version, standards_applied)
 SELECT
-  'merti', '+254732000001', '2026-06',
+  'burat', '+254732000001', '2026-06',
   now() - (d || ' days')::interval,
   'Herder (in-person): Camels are doing well.\nOperator: BCS looks good.',
   'no_action',
   3.8, 'camels', 'high', FALSE,
   'normal', 'none', 'normal',
-  'under_5km', 'Merti pan', 'operational_good',
+  'under_5km', 'Burat pan', 'operational_good',
   'no',
-  'NW', 'Merti',
+  'NW', 'Burat',
   0.42 + (d * 0.003), 5.0, 35.0, 0.35,
   240, 5, 90.0,
   91, '[]'::jsonb,
   'v1.0', 'ILRI/FAO BCS, FEWS NET, LEGS, WFP CSI, FAO AWG'
 FROM generate_series(1, 12) d
-WHERE NOT EXISTS (SELECT 1 FROM public.ground_truth_reports WHERE tenant_id = 'merti');
+WHERE NOT EXISTS (SELECT 1 FROM public.ground_truth_reports WHERE tenant_id = 'burat');
 
 -- ---------------------------------------------------------------------------
 -- 5. gis_engine.tenants (mirrors public.tenants; legacy kept both)
 -- ---------------------------------------------------------------------------
 INSERT INTO gis_engine.tenants (tenant_id, display_name, region) VALUES
-  ('bula-pesa',  'Bula Pesa Ward',  'Isiolo County'),
-  ('garbatulla', 'Garbatulla Ward', 'Isiolo County'),
-  ('merti',      'Merti Ward',      'Isiolo County')
+  ('bula-pesa',   'Bula Pesa Ward',   'Isiolo County'),
+  ('ngare-mara',  'Ngare Mara Ward',  'Isiolo County'),
+  ('burat',       'Burat Ward',       'Isiolo County')
 ON CONFLICT (tenant_id) DO UPDATE SET
   display_name = EXCLUDED.display_name,
   region       = EXCLUDED.region,
@@ -191,33 +209,39 @@ SELECT 'feature_flags', COUNT(*) FROM public.tenant_feature_flags
 UNION ALL
 SELECT 'pastoralists',  COUNT(*) FROM public.pastoralists
 UNION ALL
-SELECT 'reports/bula-pesa',  COUNT(*) FROM public.ground_truth_reports WHERE tenant_id = 'bula-pesa'
+SELECT 'reports/bula-pesa',   COUNT(*) FROM public.ground_truth_reports WHERE tenant_id = 'bula-pesa'
 UNION ALL
-SELECT 'reports/garbatulla', COUNT(*) FROM public.ground_truth_reports WHERE tenant_id = 'garbatulla'
+SELECT 'reports/ngare-mara',  COUNT(*) FROM public.ground_truth_reports WHERE tenant_id = 'ngare-mara'
 UNION ALL
-SELECT 'reports/merti',      COUNT(*) FROM public.ground_truth_reports WHERE tenant_id = 'merti';
+SELECT 'reports/burat',       COUNT(*) FROM public.ground_truth_reports WHERE tenant_id = 'burat';
 -- ---------------------------------------------------------------------------
--- 4. Admin users (operators). One per tenant + a super-admin.
+-- 6. Admin users (operators). One per tenant + a super-admin.
 --
 -- Demo credentials (rotate before any non-dev deploy):
 --   bula-pesa@ardalink.test    / bula-pesa
---   garbatulla@ardalink.test   / garbatulla
---   merti@ardalink.test        / merti
+--   ngare-mara@ardalink.test   / ngare-mara
+--   burat@ardalink.test        / burat
 --   admin@ardalink.test        / admin-secret-2024   (super-admin, tenant=bula-pesa)
 --
 -- password_hash format: <salt-hex>:<scrypt-hash-hex>
 -- scrypt N=2^14, keylen=64, salt=16 bytes random
+--
+-- 2026-07-08 note: the ngare-mara and burat rows below reuse the
+-- password hashes of the retired garbatulla/merti operators (same
+-- passwords: 'garbatulla' and 'merti' respectively) so we don't have
+-- to regenerate scrypt hashes just to rename the demo. Change the
+-- passwords via the dashboard before any non-dev use.
 -- ---------------------------------------------------------------------------
 INSERT INTO public.admin_users (email, password_hash, tenant_id, display_name, role) VALUES
   ('bula-pesa@ardalink.test',
    '1a96892f327c940b07cc79300af59cf6:578c567dada55fe196d8578fe76c033d1fbbfd4994d57ea6727efadbf2023b8ed71ec895cffe349f6f11b3e8e9f4ecb5879b880d6be0da043e33392dada08d8e',
    'bula-pesa', 'Bula Pesa Operator', 'operator'),
-  ('garbatulla@ardalink.test',
+  ('ngare-mara@ardalink.test',
    '484f9e1ce229bdccdcefe75628e9b969:4e300efc2d6e02d093bbf200b966f607648a993cd742a4482fae0e88b929ee7006324178c546396a92572c2526230b321d17277a433258d576f574d9a8bcdb01',
-   'garbatulla', 'Garbatulla Operator', 'operator'),
-  ('merti@ardalink.test',
+   'ngare-mara', 'Ngare Mara Operator', 'operator'),
+  ('burat@ardalink.test',
    'd0da46b07bfa17f7845fb78df865e44d:4c49ffec4727079a500316d70d8efa426507debd540eadc9a05d7b551e11732f40ebd96d5c2629f61f866592c638165af1cc619ee5f660138557b6422168b6e4',
-   'merti', 'Merti Operator', 'operator'),
+   'burat', 'Burat Operator', 'operator'),
   ('admin@ardalink.test',
    '66e155393a3d7f6ffcbb31cb81f32a42:862ed3af464671e6ec9fef3af544f64917484d7cde33f9bd52841f0db8b79bce1128e862ff59f5fc5c9971b567199776ba3a15325de545ee04bcfb392f168a67',
    'bula-pesa', 'System Admin', 'admin')
