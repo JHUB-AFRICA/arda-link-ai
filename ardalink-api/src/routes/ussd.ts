@@ -1,5 +1,9 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { logger } from "../lib/logger.js";
+import { centroidForTenant, formatUssdLines } from "../lib/wpdx.js";
+
+const DEFAULT_TENANT_ID =
+  process.env.DETERMINISTIC_TENANT_ID ?? "bula-pesa";
 
 // Optional: Use the new intelligenceCore if ENABLE_INTELLIGENCE_CORE is set
 const useIntelligenceCore = process.env.ENABLE_INTELLIGENCE_CORE === "true";
@@ -116,20 +120,19 @@ function buildBulaPesaReply(
   return `END Bula Pesa today: ${brief.stressedPct.toFixed(0)}% of the ward is vegetation-stressed. Risk: ${brief.riskLevel ?? "?"}. For the full brief, call ArdaLink.`;
 }
 
-const WATER_POINTS = [
-  { name: "Bulla Pesa Borehole", quadrant: "SW", distanceKm: 2 },
-  { name: "Ngare Mara Spring", quadrant: "NE", distanceKm: 9 },
-  { name: "Kambi Garba Dam", quadrant: "SE", distanceKm: 14 },
-  { name: "Wabera Shallow Well", quadrant: "NW", distanceKm: 7 },
-  { name: "Burat Pan", quadrant: "NW", distanceKm: 12 },
-];
-
 function buildWaterPointsReply(): string {
-  const lines = WATER_POINTS.slice(0, 5)
-    .map((w, i) => `${i + 1}. ${w.name} (${w.quadrant}, ~${w.distanceKm}km)`)
-    .join("\n");
-  // USSD screens are ~160 chars; cap at 5 to stay readable on a 2G phone.
-  return `END Malisho / Water points:\n${lines}\n0. Rudi / Back`;
+  // Pulls the nearest 5 water points from the WPDx snapshot, anchored
+  // to the default demo tenant's ward centroid. Working points are
+  // ranked first so the herder sees usable infrastructure before broken.
+  // AT USSD screens cap around 160 chars, so we're deliberately terse.
+  const origin =
+    centroidForTenant(DEFAULT_TENANT_ID) ?? { lat: 0.3453, lon: 37.5810 };
+  const lines = formatUssdLines(origin, 5, { workingFirst: true });
+  const body =
+    lines.length > 0
+      ? lines.map((l, i) => `${i + 1}. ${l}`).join("\n")
+      : "Hakuna data ya WPDx / no WPDx data";
+  return `END Malisho / Water points:\n${body}\n0. Rudi / Back`;
 }
 
 router.post("/ussd-callback", async (req, res): Promise<void> => {

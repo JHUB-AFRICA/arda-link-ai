@@ -13,6 +13,7 @@
 
 import { Router, type IRouter, type Request, type Response } from "express";
 import { resolveHerderContext, buildLocalizedBrief } from "../../lib/herderContext";
+import { centroidForTenant, formatUssdLines } from "../../lib/wpdx";
 
 const router: IRouter = Router();
 
@@ -43,17 +44,19 @@ async function replyFor(from: string, text: string): Promise<{ intent: string; r
     };
   }
   if (intent === "malisho") {
-    // Fixed list of top-5 nearest water points (matches USSD deterministic list).
-    const lines = [
-      "Bulla Pesa Borehole (SW ~2km)",
-      "Ngare Mara Spring (NE ~9km)",
-      "Kambi Garba Dam (SE ~14km)",
-      "Wabera Well (NW ~7km)",
-      "Burat Pan (NW ~12km)",
-    ];
+    // Nearest 5 water points from the WPDx snapshot, ranked with
+    // working infrastructure first. SMS body caps around 160 chars so
+    // the lines are already truncated by the helper.
+    const origin =
+      centroidForTenant(DEMO_TENANT_ID) ?? { lat: 0.3453, lon: 37.5810 };
+    const lines = formatUssdLines(origin, 5, { workingFirst: true });
+    const body =
+      lines.length > 0
+        ? lines.join("; ")
+        : "Hakuna data ya WPDx bado / no WPDx data yet";
     return {
       intent,
-      reply: "Malisho karibu nawe: " + lines.join("; "),
+      reply: "Malisho karibu nawe: " + body,
       ended: false,
     };
   }

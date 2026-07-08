@@ -36,6 +36,11 @@ import {
   type SbPastoralist,
 } from "./supabase.js";
 import { wardIdForTenant, tenantForWardId, DEFAULT_WARD_ID } from "./wardMapping.js";
+import {
+  centroidForTenant,
+  nearestPoints,
+  type WpdxStatus,
+} from "./wpdx.js";
 
 const DEFAULT_TENANT_ID =
   process.env.DETERMINISTIC_TENANT_ID ?? "bula-pesa";
@@ -92,6 +97,13 @@ export interface HerderContext {
   neighborWardName: string | null;
   neighborNdviMean: number | null;
   neighborNdviDelta: number | null;
+
+  // Nearest WPDx water point — pulled from a static snapshot so the
+  // opener can say "your nearest water point is X, N km away". Falls
+  // back to null when the WPDx dataset has no rows for the ward.
+  nearestWaterPointName: string | null;
+  nearestWaterPointDistanceKm: number | null;
+  nearestWaterPointStatus: WpdxStatus | null;
 }
 
 function canonicalize(phone: string): string {
@@ -146,6 +158,31 @@ function baseContext(rawPhone: string, tenantId: string): HerderContext {
     neighborWardName: null,
     neighborNdviMean: null,
     neighborNdviDelta: null,
+    nearestWaterPointName: null,
+    nearestWaterPointDistanceKm: null,
+    nearestWaterPointStatus: null,
+  };
+}
+
+/**
+ * Overlay: nearest WPDx water point + status. Anchor point is the
+ * herder's tenant ward centroid (we don't have GPS from the phone).
+ * Deterministic + static — the WPDx snapshot lives in code.
+ */
+function overlayNearestWaterPoint(ctx: HerderContext): HerderContext {
+  const origin =
+    centroidForTenant(tenantForWardId(ctx.wardId)) ??
+    centroidForTenant("bula-pesa");
+  if (!origin) return ctx;
+  const nearest = nearestPoints(origin, 1);
+  const top = nearest[0];
+  if (!top) return ctx;
+  return {
+    ...ctx,
+    nearestWaterPointName: top.displayName,
+    nearestWaterPointDistanceKm:
+      Math.round(top.distanceKm * 10) / 10,
+    nearestWaterPointStatus: top.status,
   };
 }
 
@@ -377,6 +414,7 @@ export async function resolveHerderContext(
       ctx = await enrichFromLocalMirror(ctx, tenantId);
       ctx = await overlayWardReference(ctx);
       ctx = await overlayNeighborAdvice(ctx);
+      ctx = overlayNearestWaterPoint(ctx);
       // Backfill tenant/ward correlation when Supabase gave us a ward_id.
       if (ctx.wardId && !tenantForWardId(ctx.wardId)) {
         ctx.wardId = wardIdForTenant(tenantId);
@@ -389,6 +427,7 @@ export async function resolveHerderContext(
   ctx = await resolveFromLocalOnly(ctx, tenantId);
   ctx = await overlayWardReference(ctx);
   ctx = await overlayNeighborAdvice(ctx);
+  ctx = overlayNearestWaterPoint(ctx);
   return ctx;
 }
 
@@ -478,8 +517,20 @@ export function buildLocalizedVoiceOpener(ctx: HerderContext): string {
     ctx.neighborWardName && ctx.neighborNdviMean != null
       ? ` In your neighbor ${ctx.neighborWardName}, pasture is stronger — consider moving that way.`
       : "";
+  // Water-point reference is only helpful when we can tell the herder
+  // something they can act on: skip when the nearest is >30 km away
+  // (probably not the point they use) or when status is unknown.
+  const waterBit =
+    ctx.nearestWaterPointName &&
+    ctx.nearestWaterPointDistanceKm != null &&
+    ctx.nearestWaterPointDistanceKm < 30 &&
+    ctx.nearestWaterPointStatus !== "unknown"
+      ? ctx.nearestWaterPointStatus === "working"
+        ? ` Your nearest known water point is ${ctx.nearestWaterPointName}, about ${ctx.nearestWaterPointDistanceKm} km away, last recorded working.`
+        : ` The nearest WPDx-recorded water point ${ctx.nearestWaterPointName} was last surveyed broken — please confirm.`
+      : "";
   return (
-    `Habari${nameBit}. This is ArdaLink${locBit}. ${stressedBit}${riskBit}.${memoryBit}${neighborBit} ` +
+    `Habari${nameBit}. This is ArdaLink${locBit}. ${stressedBit}${riskBit}.${memoryBit}${neighborBit}${waterBit} ` +
     `We would like your report today.`
   );
 }
