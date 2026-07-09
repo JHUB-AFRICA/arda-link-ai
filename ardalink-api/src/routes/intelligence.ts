@@ -101,10 +101,25 @@ router.get("/forecast", async (req, res): Promise<void> => {
     return;
   }
 
+  // The intelligence cycle populates `last.live.anomaly` only when the
+  // engine baseline has enough rows to compute a per-pixel comparison.
+  // In a fresh engine (or when Supabase satellite_indices lags) the
+  // anomaly block can be missing entirely — reading .anomaly then
+  // 500s. Fall back to the same 200-with-note posture as `!last`.
+  const anomaly = last.live?.anomaly;
+  if (!anomaly) {
+    res.json({
+      forecast: null,
+      note: "Satellite baseline not yet available for this ward. The intelligence cycle is running — check back after the next trigger.",
+      basedOnSatelliteRunAt: last.timestamp ?? null,
+    });
+    return;
+  }
+
   try {
     const forecast = await computeForecast({
-      stressedPixelPct: last.live.anomaly.wardStressedPixelPct,
-      worstQuadrant: last.live.anomaly.worstQuadrant,
+      stressedPixelPct: anomaly.wardStressedPixelPct,
+      worstQuadrant: anomaly.worstQuadrant,
       currentMAI: last.climate?.rolling30Day.moistureAdequacyIndex ?? 0.5,
       month: last.month,
     });
@@ -121,8 +136,8 @@ router.get("/forecast", async (req, res): Promise<void> => {
 
     res.json({
       basedOnSatelliteRunAt: last.timestamp,
-      stressedPixelPct: last.live.anomaly.wardStressedPixelPct,
-      worstQuadrant: last.live.anomaly.worstQuadrant,
+      stressedPixelPct: anomaly.wardStressedPixelPct,
+      worstQuadrant: anomaly.worstQuadrant,
       currentMAI: last.climate?.rolling30Day.moistureAdequacyIndex,
       forecast,
     });
