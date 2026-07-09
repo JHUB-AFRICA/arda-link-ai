@@ -28,8 +28,31 @@ logger = get_logger("ardalink.api.satellite")
 
 router = APIRouter(prefix="/api/v1/satellite", tags=["satellite"])
 
-# Demo wards that are actively supported (slugs that map to WARDS keys)
-DEMO_WARDS = ["bula-pesa", "garbatulla", "kinna"]
+# The 5 active Isiolo Sub-County wards (canonical since 2026-07 tenant
+# retirement of Garbatulla + Merti). Slugs map to WARDS display-name keys
+# via `_SLUG_TO_NAME` below — the resolver was previously falling back
+# to title-case conversion, which produced "Bula Pesa" instead of the
+# canonical "Bulla Pesa" (double-L) and 404'd every trigger.
+DEMO_WARDS = ["bulla-pesa", "wabera", "ngare-mara", "burat", "oldonyiro"]
+
+# Canonical slug → WARDS display-name lookup. Covers the 5 active
+# tenants plus the two retired ones (garbatulla, merti) as aliases so
+# in-flight callers don't fail cold.
+_SLUG_TO_NAME: dict[str, str] = {
+    "bulla-pesa": "Bulla Pesa",
+    "bula-pesa": "Bulla Pesa",  # legacy single-L spelling
+    "wabera": "Wabera",
+    "ngare-mara": "Ngare Mara",
+    "burat": "Burat",
+    "oldonyiro": "Oldonyiro",
+    "oldo-nyiro": "Oldonyiro",
+    "garbatulla": "Garbatulla",
+    "merti": "Merti",
+    "kinna": "Kinna",
+    "chari": "Chari",
+    "cherab": "Cherab",
+    "sericho": "Sericho",
+}
 
 
 class VCISnapshot(BaseModel):
@@ -67,18 +90,25 @@ def _resolve_ward(ward_id: str) -> str:
     if ward_id in WARDS:
         return ward_id
 
-    # Try case-insensitive match
-    lower = ward_id.lower()
+    # Curated slug alias table — handles the double-L "Bulla" vs
+    # slug "bula-pesa" mismatch and any legacy renames.
+    slug = ward_id.lower().strip()
+    if slug in _SLUG_TO_NAME:
+        name = _SLUG_TO_NAME[slug]
+        if name in WARDS:
+            return name
+
+    # Case-insensitive display-name match
     for key in WARDS:
-        if key.lower() == lower:
+        if key.lower() == slug:
             return key
 
-    # Try slug-to-display-name conversion (hyphens to spaces, title case)
+    # Fallback: hyphen→space title-case (only correct for wards whose
+    # slug and display name are trivially related — kept for safety net).
     if "-" in ward_id:
         converted = ward_id.replace("-", " ").title()
         if converted in WARDS:
             return converted
-        # Try case-insensitive after conversion
         for key in WARDS:
             if key.lower() == converted.lower():
                 return key
