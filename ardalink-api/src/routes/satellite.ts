@@ -24,9 +24,11 @@ const router: IRouter = Router();
  * Proxies to the engine and returns 503 when GEE is not configured.
  */
 router.get("/satellite/vci", async (req: Request, res: Response): Promise<void> => {
-  const wardId = req.query.ward as string;
+  // Accept both ?ward= (api convention) and ?ward_id= (engine convention)
+  // so callers don't have to remember which endpoint they're on.
+  const wardId = (req.query.ward ?? req.query.ward_id) as string | undefined;
   if (!wardId) {
-    res.status(400).json({ error: "missing_ward", message: "ward query parameter is required" });
+    res.status(400).json({ error: "missing_ward", message: "ward or ward_id query parameter is required" });
     return;
   }
 
@@ -82,7 +84,13 @@ router.get("/satellite/vci", async (req: Request, res: Response): Promise<void> 
  * Used by the satellite scheduler and manual trigger from the dashboard.
  */
 router.post("/satellite/trigger", async (req: Request, res: Response): Promise<void> => {
-  const dryRun = req.query.dryRun === "true" || req.body?.dryRun === true;
+  // Accept dryRun (camelCase) OR dry_run (snake_case, engine convention)
+  // in either the query string or the JSON body.
+  const dryRun =
+    req.query.dryRun === "true" ||
+    req.query.dry_run === "true" ||
+    req.body?.dryRun === true ||
+    req.body?.dry_run === true;
 
   try {
     const tenantId = req.tenant?.tenant_id ?? "isiolo";

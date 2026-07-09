@@ -20,7 +20,12 @@
 
 import { tenantForwardHeaders } from "./tenancy.js";
 
+// Baseline lookups return in ~50–200 ms so the default is tight, but a
+// live GEE composite fetch for a single ward takes 15–30 s and the
+// 5-ward /trigger endpoint compounds that. Callers pass an explicit
+// override for slow paths via `engineFetch(..., { timeoutMs: 90_000 })`.
 const DEFAULT_TIMEOUT_MS = 5_000;
+const LIVE_GEE_TIMEOUT_MS = 90_000;
 
 function engineBase(): string {
   // ARDALINK_ENGINE_BASE is the canonical hook. The Node side already
@@ -36,11 +41,18 @@ function engineBase(): string {
 
 async function engineFetch<T>(
   path: string,
-  opts: { tenantId?: string; init?: RequestInit } = {},
+  opts: {
+    tenantId?: string;
+    init?: RequestInit;
+    timeoutMs?: number;
+  } = {},
 ): Promise<T | null> {
   const url = `${engineBase()}${path}`;
   const ctrl = new AbortController();
-  const timeout = setTimeout(() => ctrl.abort(), DEFAULT_TIMEOUT_MS);
+  const timeout = setTimeout(
+    () => ctrl.abort(),
+    opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+  );
   try {
     const tenantHeaders = opts.tenantId ? tenantForwardHeaders(opts.tenantId) : {};
     const mergedHeaders = { ...tenantHeaders, ...(opts.init?.headers ?? {}) };
@@ -213,9 +225,11 @@ export async function fetchSatelliteVCI(
   wardId: string,
   tenantId: string = "isiolo",
 ): Promise<VCISnapshot | null> {
+  // Live GEE composite fetch — takes 15–30 s. Use the long timeout so
+  // the api doesn't cut off before the engine responds.
   const res = await engineFetch<VCISnapshot>(
     `/api/v1/satellite/vci?ward_id=${encodeURIComponent(wardId)}`,
-    { tenantId },
+    { tenantId, timeoutMs: LIVE_GEE_TIMEOUT_MS },
   );
   return res;
 }
@@ -228,9 +242,16 @@ export async function triggerSatelliteRefresh(
   dryRun = false,
   tenantId: string = "isiolo",
 ): Promise<SatelliteTriggerResponse | null> {
+  // Non-dry-run iterates all 5 active wards and pays the GEE cost for
+  // each; ~90 s ceiling is a soft budget that still catches genuine
+  // hangs. Dry-runs are near-instant so the tight default is fine.
   const res = await engineFetch<SatelliteTriggerResponse>(
     `/api/v1/satellite/trigger?dry_run=${dryRun}`,
-    { tenantId, init: { method: "POST" } },
+    {
+      tenantId,
+      init: { method: "POST" },
+      timeoutMs: dryRun ? DEFAULT_TIMEOUT_MS : LIVE_GEE_TIMEOUT_MS,
+    },
   );
   return res;
 }
