@@ -32,8 +32,12 @@ import {
   latestWeatherFor,
   pastoralistByPhone,
   bestNeighborForAdvice,
+  fetchWardMonthlyBaseline,
+  computeVci,
+  countWorseThanYears,
   type SbCallContext,
   type SbPastoralist,
+  type WardMonthlyBaseline,
 } from "./supabase.js";
 import { wardIdForTenant, tenantForWardId, DEFAULT_WARD_ID } from "./wardMapping.js";
 import {
@@ -104,6 +108,29 @@ export interface HerderContext {
   nearestWaterPointName: string | null;
   nearestWaterPointDistanceKm: number | null;
   nearestWaterPointStatus: WpdxStatus | null;
+
+  // Real-anomaly signals derived from Supabase's 11-year
+  // satellite_indices history for this ward + calendar month. These
+  // replace the fixed-threshold "97 % stressed" line with sentences
+  // the caller can act on ("driest June since 2017").
+  //   baselineMonth   — the calendar month we're comparing against
+  //   baselineYears   — how many historical years the envelope covers
+  //   ndviBaselineP50 — median NDVI for this month across history
+  //   ndviBaselineP5  — 5th-percentile NDVI (drought threshold)
+  //   ndviBaselineP95 — 95th-percentile (green-flush threshold)
+  //   vciDerived      — 0..100, worst-ever = 0, best-ever = 100
+  //   worseThanYears  — of the last N years, how many had a better NDVI
+  //                     for this month than we're seeing now
+  //   driestYearOnRecord — the historical year with the lowest NDVI
+  //                     for this month (for "since YYYY" phrasing)
+  baselineMonth: number | null;
+  baselineYears: number | null;
+  ndviBaselineP50: number | null;
+  ndviBaselineP5: number | null;
+  ndviBaselineP95: number | null;
+  vciDerived: number | null;
+  worseThanYears: number | null;
+  driestYearOnRecord: number | null;
 }
 
 function canonicalize(phone: string): string {
@@ -161,6 +188,14 @@ function baseContext(rawPhone: string, tenantId: string): HerderContext {
     nearestWaterPointName: null,
     nearestWaterPointDistanceKm: null,
     nearestWaterPointStatus: null,
+    baselineMonth: null,
+    baselineYears: null,
+    ndviBaselineP50: null,
+    ndviBaselineP5: null,
+    ndviBaselineP95: null,
+    vciDerived: null,
+    worseThanYears: null,
+    driestYearOnRecord: null,
   };
 }
 
@@ -251,6 +286,66 @@ async function overlayWardReference(
     wardTemperatureC: wx?.temperature_c ?? ctx.wardTemperatureC,
     wardHumidityPct: wx?.humidity_pct ?? ctx.wardHumidityPct,
     wardEt0Mm: wx?.evapotranspiration_mm ?? ctx.wardEt0Mm,
+  };
+}
+
+/**
+ * Overlay Supabase's 11-year satellite history to turn the current
+ * NDVI reading into a real anomaly claim ("driest June since 2017",
+ * "VCI 12/100", "worse than 8 of the last 10 Junes").
+ *
+ * Falls through unchanged when Supabase is unreachable, when there's
+ * no current NDVI to compare against, or when history has <3 years.
+ * This is deliberately silent-on-failure: the herder's opener still
+ * plays, we just skip the anomaly line rather than blocking on it.
+ *
+ * We anchor on the calendar month from `wardMonth` (view label like
+ * "June 2026") or, when that's absent, today's UTC month. Using the
+ * satellite period end would be more accurate but view-side rows use
+ * text month names, so we tolerate a small skew.
+ */
+function currentMonthFor(ctx: HerderContext): number {
+  const m = ctx.wardMonth?.trim().toLowerCase();
+  if (m) {
+    const idx = [
+      "january",
+      "february",
+      "march",
+      "april",
+      "may",
+      "june",
+      "july",
+      "august",
+      "september",
+      "october",
+      "november",
+      "december",
+    ].findIndex((n) => m.startsWith(n));
+    if (idx >= 0) return idx + 1;
+  }
+  return new Date().getUTCMonth() + 1;
+}
+
+async function overlayHistoricalAnomaly(
+  ctx: HerderContext,
+): Promise<HerderContext> {
+  if (!isSupabaseConfigured()) return ctx;
+  if (ctx.wardNdviMean == null) return ctx;
+  const month = currentMonthFor(ctx);
+  const baseline = await fetchWardMonthlyBaseline(ctx.wardId, month);
+  if (!baseline) return ctx;
+  const vci = computeVci(ctx.wardNdviMean, baseline);
+  const worse = countWorseThanYears(ctx.wardNdviMean, baseline);
+  return {
+    ...ctx,
+    baselineMonth: month,
+    baselineYears: baseline.years,
+    ndviBaselineP50: baseline.ndvi.p50,
+    ndviBaselineP5: baseline.ndvi.p5,
+    ndviBaselineP95: baseline.ndvi.p95,
+    vciDerived: vci,
+    worseThanYears: worse?.worseThan ?? null,
+    driestYearOnRecord: baseline.ndvi.minYear,
   };
 }
 
@@ -413,6 +508,7 @@ export async function resolveHerderContext(
     if (ctx.source === "supabase") {
       ctx = await enrichFromLocalMirror(ctx, tenantId);
       ctx = await overlayWardReference(ctx);
+      ctx = await overlayHistoricalAnomaly(ctx);
       ctx = await overlayNeighborAdvice(ctx);
       ctx = overlayNearestWaterPoint(ctx);
       // Backfill tenant/ward correlation when Supabase gave us a ward_id.
@@ -426,6 +522,7 @@ export async function resolveHerderContext(
   // ─── 2. Local mirror fallback ────────────────────────────────────────
   ctx = await resolveFromLocalOnly(ctx, tenantId);
   ctx = await overlayWardReference(ctx);
+  ctx = await overlayHistoricalAnomaly(ctx);
   ctx = await overlayNeighborAdvice(ctx);
   ctx = overlayNearestWaterPoint(ctx);
   return ctx;
@@ -458,6 +555,16 @@ export function buildLocalizedBrief(ctx: HerderContext, lang: "sw" | "en"): stri
   const lastBcs = ctx.lastBcsScore != null
     ? `BCS ${ctx.lastBcsScore.toFixed(1)}`
     : null;
+  // Anomaly line — from Supabase historical baseline, expressed as a
+  // VCI + "worse than X of last Y" pair. This is what makes the brief
+  // feel like an insight vs a data dump.
+  const vciBit =
+    ctx.vciDerived != null && ctx.baselineYears != null && ctx.baselineYears >= 5
+      ? {
+          sw: `VCI ${Math.round(ctx.vciDerived)}/100 (mbaya kuliko miaka ${ctx.worseThanYears ?? "?"}/${ctx.baselineYears})`,
+          en: `VCI ${Math.round(ctx.vciDerived)}/100 (worse than ${ctx.worseThanYears ?? "?"} of last ${ctx.baselineYears} years)`,
+        }
+      : null;
 
   const neighborBit =
     ctx.neighborWardName && ctx.neighborNdviMean != null
@@ -470,7 +577,8 @@ export function buildLocalizedBrief(ctx: HerderContext, lang: "sw" | "en"): stri
   if (lang === "sw") {
     const parts: string[] = [];
     parts.push(`Habari ${namePart}kutoka ArdaLink${locPart}.`);
-    if (ndviBit) parts.push(`${ndviBit} kwenye ward yako.`);
+    if (vciBit) parts.push(vciBit.sw + ".");
+    else if (ndviBit) parts.push(`${ndviBit} kwenye ward yako.`);
     else if (stressed) parts.push(`Malisho ya ward: ${stressed} yameathirika.`);
     if (rainBit) parts.push(`Mvua ya siku 30: ${rainBit}.`);
     if (risk) parts.push(`Hatari ya ukame: ${risk}.`);
@@ -482,7 +590,8 @@ export function buildLocalizedBrief(ctx: HerderContext, lang: "sw" | "en"): stri
 
   const parts: string[] = [];
   parts.push(`Hello ${namePart}from ArdaLink${locPart}.`);
-  if (ndviBit) parts.push(`${ndviBit} across your ward.`);
+  if (vciBit) parts.push(vciBit.en + ".");
+  else if (ndviBit) parts.push(`${ndviBit} across your ward.`);
   else if (stressed) parts.push(`Ward pasture: ${stressed} is stressed.`);
   if (rainBit) parts.push(`30-day rain: ${rainBit}.`);
   if (risk) parts.push(`Drought risk: ${risk}.`);
@@ -504,11 +613,31 @@ export function buildLocalizedVoiceOpener(ctx: HerderContext): string {
     : ctx.wardName
       ? ` in ${ctx.wardName}`
       : "";
-  const stressedBit = ctx.wardStressedPct != null
-    ? `About ${ctx.wardStressedPct.toFixed(0)} percent of grazing land is stressed`
-    : ctx.wardNdviMean != null
-      ? `Your ward NDVI is ${ctx.wardNdviMean.toFixed(2)}`
-      : "We have your ward's latest satellite reading";
+  // Prefer the real-anomaly line when we have a Supabase baseline —
+  // "VCI 12, driest June since 2017" beats "97 percent stressed"
+  // because it's grounded in actual history the herder can weigh
+  // against their memory of past droughts. Falls back cleanly when
+  // there's no baseline yet.
+  let stressedBit: string;
+  if (ctx.vciDerived != null && ctx.baselineYears != null && ctx.baselineYears >= 5) {
+    const vci = Math.round(ctx.vciDerived);
+    const monthName = ctx.wardMonth ? ctx.wardMonth.split(" ")[0] : "this month";
+    const worseLine =
+      ctx.worseThanYears != null && ctx.baselineYears != null
+        ? ` — worse than ${ctx.worseThanYears} of the last ${ctx.baselineYears} ${monthName}s`
+        : "";
+    const sinceLine =
+      ctx.driestYearOnRecord != null && ctx.vciDerived <= 20
+        ? `, driest since ${ctx.driestYearOnRecord}`
+        : "";
+    stressedBit = `Vegetation condition is ${vci} out of one hundred${worseLine}${sinceLine}`;
+  } else if (ctx.wardStressedPct != null) {
+    stressedBit = `About ${ctx.wardStressedPct.toFixed(0)} percent of grazing land is stressed`;
+  } else if (ctx.wardNdviMean != null) {
+    stressedBit = `Your ward NDVI is ${ctx.wardNdviMean.toFixed(2)}`;
+  } else {
+    stressedBit = "We have your ward's latest satellite reading";
+  }
   const riskBit = ctx.wardRiskLevel ? `, drought risk ${ctx.wardRiskLevel}` : "";
   const memoryBit = ctx.lastBcsScore != null
     ? ` We saw your last report of body condition ${ctx.lastBcsScore.toFixed(1)}.`

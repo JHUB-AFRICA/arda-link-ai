@@ -43,6 +43,13 @@ vi.mock("../src/lib/supabase.js", () => ({
   latestSatelliteFor: async () => fx.supabase.latestSatellite,
   latestWeatherFor: async () => fx.supabase.latestWeather,
   bestNeighborForAdvice: async () => fx.supabase.neighborAdvice,
+  // Baseline overlay is off-by-default in these fixtures — return null
+  // so the historical-anomaly overlay is a no-op and existing
+  // assertions don't need to reason about VCI. The baseline maths
+  // themselves are covered in tests/supabaseBaseline.test.ts.
+  fetchWardMonthlyBaseline: async () => null,
+  computeVci: () => null,
+  countWorseThanYears: () => null,
 }));
 
 vi.mock("../src/lib/intelligence.js", () => ({

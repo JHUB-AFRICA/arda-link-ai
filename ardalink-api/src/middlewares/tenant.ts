@@ -50,6 +50,15 @@ export function tenantMiddleware(
   ) {
     return next();
   }
+  // /api/wards/:id/baseline — read-only historical envelope aggregated
+  // across the ward's 11-year satellite history. No per-herder rows.
+  // Same posture as /api/wards/map (which is on the literal list above).
+  if (
+    req.method === "GET" &&
+    /^\/api\/wards\/[^/]+\/baseline$/.test(req.path)
+  ) {
+    return next();
+  }
   const secret = jwtSecret();
   if (!secret) {
     res.status(500).json({ error: "JWT_SECRET not configured" });

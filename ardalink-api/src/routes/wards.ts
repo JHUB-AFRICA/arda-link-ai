@@ -20,6 +20,9 @@ import {
   latestSatelliteFor,
   listActiveWardsWithGeometry,
   listWardNeighbors,
+  fetchWardMonthlyBaseline,
+  computeVci,
+  countWorseThanYears,
 } from "../lib/supabase.js";
 
 interface WardMapWard {
@@ -136,6 +139,95 @@ router.get("/wards/map", async (_req, res): Promise<void> => {
       supabase: { configured: true, reachable: false },
     };
     res.status(500).json(failed);
+  }
+});
+
+/**
+ * GET /api/wards/:ward_id/baseline?month=6
+ *
+ * Debug / dashboard endpoint — returns the historical NDVI envelope
+ * for one ward at one calendar month, plus the current reading and
+ * derived VCI. Ops team uses this to sanity-check what herder-facing
+ * surfaces are saying.
+ *
+ * If ?month is omitted, uses the current UTC month.
+ *
+ * Shape:
+ *   {
+ *     ready: true,
+ *     wardId, month,
+ *     baseline: { years, yearsSpan, ndvi: {min,max,p5,p50,p95,mean,stdev,minYear,maxYear}, ndre? },
+ *     current:  { ndviMean, periodEnd },
+ *     derived:  { vci, worseThanYears, driestYearOnRecord }
+ *   }
+ */
+router.get("/wards/:wardId/baseline", async (req, res): Promise<void> => {
+  const wardId = req.params.wardId;
+  const monthParam = Number(req.query.month);
+  const month =
+    Number.isFinite(monthParam) && monthParam >= 1 && monthParam <= 12
+      ? Math.floor(monthParam)
+      : new Date().getUTCMonth() + 1;
+
+  if (!isSupabaseConfigured()) {
+    res.json({
+      ready: false,
+      reason: "supabase_not_configured",
+      wardId,
+      month,
+    });
+    return;
+  }
+
+  try {
+    const [baseline, current] = await Promise.all([
+      fetchWardMonthlyBaseline(wardId, month),
+      latestSatelliteFor(wardId),
+    ]);
+
+    if (!baseline) {
+      res.json({
+        ready: false,
+        reason: "no_baseline",
+        wardId,
+        month,
+        current: current
+          ? { ndviMean: current.ndvi_mean, periodEnd: current.period_end }
+          : null,
+      });
+      return;
+    }
+
+    const vci = computeVci(current?.ndvi_mean ?? null, baseline);
+    const worse = countWorseThanYears(current?.ndvi_mean ?? null, baseline);
+
+    res.json({
+      ready: true,
+      wardId,
+      month,
+      baseline: {
+        years: baseline.years,
+        yearsSpan: baseline.yearsSpan,
+        ndvi: baseline.ndvi,
+        ndre: baseline.ndre,
+      },
+      current: current
+        ? {
+            ndviMean: current.ndvi_mean,
+            ndreMean: current.ndre_mean,
+            periodEnd: current.period_end,
+          }
+        : null,
+      derived: {
+        vci,
+        worseThanYears: worse?.worseThan ?? null,
+        totalYears: worse?.totalYears ?? null,
+        driestYearOnRecord: baseline.ndvi.minYear,
+      },
+    });
+  } catch (err) {
+    logger.error({ err, wardId, month }, "[Wards] baseline query failed");
+    res.status(500).json({ ready: false, reason: "query_failed" });
   }
 });
 
