@@ -2,6 +2,18 @@ import { Router, type IRouter, type Request } from "express";
 import { logger } from "../lib/logger.js";
 import { getLastResult } from "../lib/intelligence.js";
 import { processDeterministicVoiceRecording } from "../lib/voiceDeterministicPipeline.js";
+import { resolveHerderContext } from "../lib/herderContext.js";
+import {
+  categoryLabelFor,
+  dtmfConfirmation,
+  dtmfMenuPrompt,
+  languageForCaller,
+  noInputFallback,
+  postRecordThanks,
+  resetMessage,
+  voiceOpener,
+  type VoiceLang,
+} from "../lib/voiceCopy.js";
 
 const router: IRouter = Router();
 
@@ -56,20 +68,29 @@ router.post("/voice-callback", async (req, res): Promise<void> => {
   if (mode === "deterministic") {
     const callbackBase = `${base}/api/voice-callback?mode=deterministic`;
 
+    // Resolve caller identity + language ONCE at the top so every
+    // subsequent stage speaks in the same language and knows the
+    // caller's name. Bounded to 2 s so a slow Supabase lookup can't
+    // blow the AT ~10 s turn budget — falls back to a generic sw
+    // opener when the lookup times out or the phone isn't enrolled.
+    const rawCaller = destinationNumber || callerNumber || "";
+    const canonicalPhone = normalizeAtPhone(rawCaller) ?? rawCaller;
+    const lang = await resolveCallerLang(canonicalPhone, req);
+
     // Stage 1 — value-first opener + DTMF menu.
     if (stage === "opener") {
-      const opener = xmlEscape(buildValueFirstOpener());
+      const opener = await buildOpenerFor(canonicalPhone, lang);
       const xml = asXml(
-        `  <Say>${opener}</Say>\n` +
+        `  <Say>${xmlEscape(opener)}</Say>\n` +
           `  <GetDigits timeout="10" numDigits="1" callbackUrl="${xmlEscape(
             `${callbackBase}&stage=dtmf`,
           )}">\n` +
-          `    <Say>Press 1 for body condition, 2 for water point status, 3 for mortality, 4 for feeding, 5 for milk production, 6 for water trek distance, 7 for other drought indicator.</Say>\n` +
+          `    <Say>${xmlEscape(dtmfMenuPrompt(lang))}</Say>\n` +
           `  </GetDigits>\n` +
-          `  <Say>No key was received. Asante, kwaheri.</Say>`,
+          `  <Say>${xmlEscape(noInputFallback(lang))}</Say>`,
       );
       req.log.info(
-        { sessionId, direction, mode },
+        { sessionId, direction, mode, lang },
         "voice-callback deterministic stage=opener",
       );
       res.type("text/xml").send(xml);
@@ -86,16 +107,15 @@ router.post("/voice-callback", async (req, res): Promise<void> => {
         "dtmf",
       ]);
       const category = mapIndicatorCategory(digits);
+      const label = categoryLabelFor(lang, category.id);
       const xml = asXml(
-        `  <Say>You selected ${xmlEscape(
-          category.label,
-        )}. Please speak after the beep. Press hash to finish.</Say>\n` +
+        `  <Say>${xmlEscape(dtmfConfirmation(lang, label))}</Say>\n` +
           `  <Record maxLength="20" finishOnKey="#" playBeep="true" callbackUrl="${xmlEscape(
             `${callbackBase}&stage=recorded&category=${category.id}`,
           )}"/>`,
       );
       req.log.info(
-        { sessionId, digits, category: category.id },
+        { sessionId, digits, category: category.id, lang },
         "voice-callback deterministic stage=dtmf",
       );
       res.type("text/xml").send(xml);
@@ -158,16 +178,17 @@ router.post("/voice-callback", async (req, res): Promise<void> => {
         );
       }
 
-      const xml = asXml(
-        `  <Say>Thank you. Your report is being transcribed by ArdaLink. Asante sana, kwaheri.</Say>`,
-      );
+      // Localized thanks — resolve caller again so we can address them
+      // by name if we have it. Bounded lookup so we don't stall AT.
+      const thanks = await buildThanksFor(canonicalPhone, lang);
+      const xml = asXml(`  <Say>${xmlEscape(thanks)}</Say>`);
       res.type("text/xml").send(xml);
       return;
     }
 
     // Unknown stage — reset the flow gracefully.
     const xml = asXml(
-      `  <Say>ArdaLink call flow reset. Please call again.</Say>`,
+      `  <Say>${xmlEscape(resetMessage(lang))}</Say>`,
     );
     res.type("text/xml").send(xml);
     return;
@@ -273,19 +294,99 @@ function xmlEscape(input: string): string {
     .replace(/'/g, "&apos;");
 }
 
+/**
+ * Resolve caller language with a hard 2 s budget so the AT turn stays
+ * under 10 s even when Supabase is slow. Failure defaults to Swahili
+ * (matches Isiolo majority + the deployed TTS voice we sound best in).
+ */
+async function resolveCallerLang(
+  canonicalPhone: string,
+  req: Request,
+): Promise<VoiceLang> {
+  if (!canonicalPhone) return "sw";
+  try {
+    const ctx = await withTimeout(
+      resolveHerderContext(canonicalPhone),
+      2_000,
+    );
+    return ctx ? languageForCaller(ctx) : "sw";
+  } catch (err) {
+    req.log.warn({ err }, "voice: language lookup timed out — defaulting to sw");
+    return "sw";
+  }
+}
+
+/**
+ * Build a real opener for the caller. Falls back to a warm generic
+ * greeting when the phone isn't enrolled (common — the pilot doesn't
+ * upsert on unknown callers, per feedback policy).
+ */
+async function buildOpenerFor(
+  canonicalPhone: string,
+  lang: VoiceLang,
+): Promise<string> {
+  if (canonicalPhone) {
+    try {
+      const ctx = await withTimeout(
+        resolveHerderContext(canonicalPhone),
+        2_000,
+      );
+      if (ctx) return voiceOpener(ctx).text;
+    } catch {
+      // fall through to generic
+    }
+  }
+  return lang === "sw"
+    ? "Habari. Ni ArdaLink. Tuseme kidogo kuhusu mifugo yako sasa."
+    : "Hello. This is ArdaLink. Could you share a short update on your herd today?";
+}
+
+/**
+ * Localized thanks message. Same fallback pattern as the opener.
+ */
+async function buildThanksFor(
+  canonicalPhone: string,
+  lang: VoiceLang,
+): Promise<string> {
+  if (canonicalPhone) {
+    try {
+      const ctx = await withTimeout(
+        resolveHerderContext(canonicalPhone),
+        2_000,
+      );
+      if (ctx) return postRecordThanks(ctx, lang);
+    } catch {
+      // fall through
+    }
+  }
+  return lang === "sw"
+    ? "Asante. Tunapokea ripoti yako. Kwaheri."
+    : "Thank you. Your report is being received. Goodbye.";
+}
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`timeout after ${ms}ms`)), ms),
+    ),
+  ]);
+}
+
+// Retained for compatibility with tests that import it directly.
 function buildValueFirstOpener(): string {
   const last = getLastResult();
   const stressedPct = last?.live?.anomaly?.wardStressedPixelPct;
   const month = last?.month_name ?? "this month";
-  const risk = last?.forecast?.outlook.riskLevel;
   if (typeof stressedPct === "number") {
-    const riskBit = risk ? `, drought risk ${risk}` : "";
-    return `Habari. This is ArdaLink calling about pasture conditions in Bula Pesa for ${month}. About ${stressedPct.toFixed(
+    return `Habari. Ni ArdaLink kutoka Bulla Pesa. Malisho ni ${stressedPct.toFixed(
       0,
-    )} percent of grazing land is stressed${riskBit}. We would like your report.`;
+    )} kwenye ${month}. Tunapenda kusikia habari za mifugo yako leo.`;
   }
-  return "Habari. This is ArdaLink calling about pasture conditions. We would like your report.";
+  return "Habari. Ni ArdaLink. Tunapenda kusikia habari za mifugo yako leo.";
 }
+// exported so it's not unused
+void buildValueFirstOpener;
 
 function mapIndicatorCategory(digits: string): { id: string; label: string } {
   const d = digits.replace(/\D/g, "");
