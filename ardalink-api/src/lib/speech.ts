@@ -190,6 +190,13 @@ export interface FastTranscribeResult {
   locale?: string;
   durationMs?: number;
   raw?: unknown;
+  /**
+   * True when Azure ran recognition to completion but the audio
+   * contained no speech (silent mic / background noise only).
+   * Callers should surface a user-friendly "we didn't hear you"
+   * message rather than a generic transcription-failed error.
+   */
+  noSpeech?: boolean;
 }
 
 // Some Azure Speech regions (e.g. southafricanorth) don't host the Fast
@@ -366,6 +373,11 @@ async function shortAudioFallback(
 
   let firstStatus: string | undefined;
   let firstLang: string | undefined;
+  // "Success" but empty transcript means Azure ran STT cleanly and
+  // heard no speech (silent mic, background noise only). We surface
+  // this back to callers as a distinct signal so the UI can show a
+  // real error message instead of a generic "transcription empty".
+  let anyRecognitionSuccess = false;
   for (const language of languages) {
     const url = new URL(
       `https://${cfg.region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1`,
@@ -408,6 +420,7 @@ async function shortAudioFallback(
       const transcript = (nbest?.Display ?? data.DisplayText ?? '').trim();
       firstStatus ??= data.RecognitionStatus;
       firstLang ??= data.Language;
+      if (data.RecognitionStatus === 'Success') anyRecognitionSuccess = true;
       if (transcript) {
         logger.info(
           {
@@ -439,9 +452,21 @@ async function shortAudioFallback(
     }
   }
   logger.warn(
-    { status: firstStatus, lang: firstLang, languagesTried: languages },
-    '[Speech] Short-audio returned empty transcript for every configured locale',
+    {
+      status: firstStatus,
+      lang: firstLang,
+      languagesTried: languages,
+      likelyNoSpeech: anyRecognitionSuccess,
+    },
+    anyRecognitionSuccess
+      ? '[Speech] Short-audio: no speech detected in audio (silent mic or background noise only)'
+      : '[Speech] Short-audio returned empty transcript for every configured locale',
   );
+  // Signal the "no speech" case distinctly so callers can render a
+  // useful UI message instead of a generic transcription-failed error.
+  if (anyRecognitionSuccess) {
+    return { transcript: '', locale: firstLang, noSpeech: true };
+  }
   return null;
 }
 

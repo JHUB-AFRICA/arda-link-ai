@@ -318,10 +318,29 @@ router.post(
     const stt = await fastTranscribe(audio, contentType, {
       filename: "browser-demo.webm",
     });
+    // Distinguish "STT service failed" (null) from "STT ran but the
+    // audio had no discernible speech" (noSpeech=true). The latter is
+    // almost always a muted mic or someone tapping Stop without
+    // speaking — the UI should tell the user that, not "transcription
+    // failed".
+    if (stt?.noSpeech) {
+      res.status(422).json({
+        error: "no-speech-detected",
+        message:
+          "We recorded audio but did not hear you speaking. Check your microphone volume, get closer to the mic, and try again.",
+        contentType,
+        bytes: audio.length,
+      });
+      return;
+    }
     if (!stt || !stt.transcript) {
-      res
-        .status(422)
-        .json({ error: "transcription-empty", contentType, bytes: audio.length });
+      res.status(422).json({
+        error: "transcription-empty",
+        message:
+          "Transcription service returned nothing. Try again or check the api log for details.",
+        contentType,
+        bytes: audio.length,
+      });
       return;
     }
 
@@ -1906,7 +1925,14 @@ function deterministicDemoHtml(): string {
       const data = await r.json();
       els.recordBtn.disabled = false;
       if (!r.ok || !data.ok) {
-        setStatus('Failed: ' + (data.error || r.statusText), 'err');
+        // Prefer the human-readable message when the server sends
+        // one; fall back to the error code for older responses.
+        setStatus(data.message || 'Failed: ' + (data.error || r.statusText), 'err');
+        // Re-open the recording controls so the caller can retry
+        // without having to walk the sequence again.
+        if (data.error === 'no-speech-detected' && els.recordingBlock) {
+          show(els.recordingBlock);
+        }
         return;
       }
       // Stage 4 — caller hears the post-record thanks in their
