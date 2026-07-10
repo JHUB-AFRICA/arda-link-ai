@@ -172,8 +172,11 @@ describe("voiceOpener — insight selection + language routing", () => {
         neighborNdviDelta: 0.02, // too small
       }),
     );
-    // Just greeting + ask — no insight sentence.
-    expect(text.split(".").filter((s) => s.trim().length > 0).length).toBe(2);
+    // No insight phrases surface — assert on absence rather than
+    // sentence count (greeting templates B/C are two sentences).
+    expect(text).not.toMatch(
+      /machache mno|below the .+ average|jirani|greener|Bwawa|borehole/,
+    );
   });
 
   it("is stable within a UTC day for the same caller", () => {

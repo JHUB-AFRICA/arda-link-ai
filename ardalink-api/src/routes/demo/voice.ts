@@ -38,6 +38,30 @@ import {
   buildLocalizedBrief,
   buildLocalizedVoiceOpener,
 } from "../../lib/herderContext";
+import {
+  categoryLabelFor,
+  dtmfConfirmation,
+  dtmfMenuPrompt,
+  noInputFallback,
+  postRecordThanks,
+  voiceOpener,
+  type VoiceLang,
+} from "../../lib/voiceCopy";
+
+/**
+ * DTMF categories in the same order + digit assignment used by the
+ * real /api/voice-callback flow. We reflect this back to the browser
+ * so the demo keypad is a faithful mirror of the AT flow.
+ */
+const DEMO_DTMF_CATEGORIES: ReadonlyArray<{ dtmf: string; id: string }> = [
+  { dtmf: "1", id: "bcs" },
+  { dtmf: "2", id: "water_point" },
+  { dtmf: "3", id: "mortality" },
+  { dtmf: "4", id: "feeding" },
+  { dtmf: "5", id: "milk" },
+  { dtmf: "6", id: "water_trek" },
+  { dtmf: "7", id: "drought_signal" },
+];
 
 const DEMO_TENANT_ID = process.env.DETERMINISTIC_TENANT_ID ?? "bula-pesa";
 
@@ -60,11 +84,38 @@ router.get(
     }
     try {
       const ctx = await resolveHerderContext(phone, DEMO_TENANT_ID);
+
+      // New payload: mirrors every audible turn of the real AT
+      // deterministic pipeline, in the caller's language, so the
+      // browser demo can walk the sequence turn-by-turn.
+      //
+      // NOTE: `opener` is kept as a plain string for backwards
+      // compatibility with the existing HTML — the language + rich
+      // sequence live under `sequence.*` below.
+      const openerV2 = voiceOpener(ctx);
+      const lang: VoiceLang = openerV2.lang;
+      const categories = DEMO_DTMF_CATEGORIES.map((c) => ({
+        dtmf: c.dtmf,
+        id: c.id,
+        label: categoryLabelFor(lang, c.id),
+      }));
+
       res.json({
         ctx,
-        opener: buildLocalizedVoiceOpener(ctx),
+        // legacy strings kept for anything still importing them
+        opener: openerV2.text,
         briefSw: buildLocalizedBrief(ctx, "sw"),
         briefEn: buildLocalizedBrief(ctx, "en"),
+        // v2 sequence — everything the demo needs to walk the call
+        sequence: {
+          lang,
+          opener: openerV2.text,
+          menuPrompt: dtmfMenuPrompt(lang),
+          categories,
+          confirmationTemplate: dtmfConfirmation(lang, "{{label}}"),
+          postRecord: postRecordThanks(ctx, lang),
+          noInput: noInputFallback(lang),
+        },
       });
     } catch (err) {
       logger.error({ err }, "[Demo Voice] context lookup failed");
@@ -1368,7 +1419,7 @@ function deterministicDemoHtml(): string {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ArdaLink — Deterministic Voice Demo</title>
+  <title>ArdaLink — Call Simulator (Kiswahili / English)</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -1414,42 +1465,41 @@ function deterministicDemoHtml(): string {
 </head>
 <body>
   <div class="card">
-    <h1>📞 ArdaLink Voice Call (deterministic)</h1>
-    <div class="sub">Same pipeline used for real herder phone calls — enter your phone, listen to the personalized opener, pick a category, then record up to 20 s. Azure Speech + GPT-5 Mini extracts the ground truth against your ward's satellite data.</div>
+    <h1>📞 ArdaLink Call Simulator</h1>
+    <div class="sub">Full deterministic call flow, in the caller's own language. Opener → DTMF menu → category → 20 s record → indicator extraction. Same pipeline Africa's Talking hits for real herder calls.</div>
 
     <div class="badges">
       <span class="badge" id="sttBadge">stt: —</span>
       <span class="badge" id="micBadge">mic: —</span>
       <span class="badge live">llm: azure/gpt-5-mini</span>
+      <span class="badge" id="langBadge">lang: —</span>
       <span class="badge" id="herderBadge">herder: —</span>
     </div>
 
-    <label for="phone">Your phone (used to look up your ward + prior reports)</label>
+    <label for="phone">Caller phone (used to look up ward, language, and history)</label>
     <input type="tel" id="phone" placeholder="+254712000004" style="width:100%;padding:12px 14px;border-radius:12px;border:1px solid #334155;background:#0f172a;color:#f1f5f9;font-size:14px;" />
-    <button id="lookupBtn" style="width:100%;padding:10px;margin-top:8px;border-radius:12px;border:1px solid #334155;background:#0f172a;color:#94a3b8;font-size:13px;cursor:pointer;">🔍 Look me up + play opener</button>
+    <button id="startCallBtn" style="width:100%;padding:12px;margin-top:8px;border-radius:12px;border:none;background:#22c55e;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">📞 Start Call</button>
 
-    <div id="openerBox" class="hidden" style="margin-top:10px;padding:10px 12px;background:#0f172a;border-left:3px solid #60a5fa;border-radius:4px;font-size:13px;color:#cbd5e1;"></div>
+    <!-- Call transcript — grows as the sequence advances -->
+    <div id="callTranscript" class="hidden" style="margin-top:14px;display:flex;flex-direction:column;gap:6px;"></div>
 
-    <label for="category">What are you reporting?</label>
-    <select id="category">
-      <option value="bcs">Body condition score (BCS)</option>
-      <option value="water_point">Water-point status</option>
-      <option value="mortality">Livestock mortality</option>
-      <option value="feeding">Supplementary feeding</option>
-      <option value="milk">Milk production</option>
-      <option value="water_trek">Water trek distance</option>
-      <option value="drought_signal">Other drought indicator</option>
-    </select>
-
-    <button class="btn-record" id="recordBtn">🔴 Record (20 s max)</button>
-    <button class="btn-stop" id="stopBtn" disabled>⏹ Stop &amp; Send</button>
-
-    <div class="meter">
-      <span class="timer" id="timer">0.0 s</span>
-      <div class="bar"><div id="micBar"></div></div>
+    <!-- DTMF keypad — appears after opener + menu play -->
+    <div id="dtmfKeypad" class="hidden" style="margin-top:12px;">
+      <div style="font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Press a key to answer</div>
+      <div id="dtmfButtons" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;"></div>
     </div>
 
-    <div class="status" id="status">Ready. Choose a category and press Record.</div>
+    <!-- Recording controls — appear after confirmation plays -->
+    <div id="recordingBlock" class="hidden" style="margin-top:12px;">
+      <button class="btn-record" id="recordBtn">🔴 Record answer (20 s max)</button>
+      <button class="btn-stop" id="stopBtn" disabled>⏹ Stop &amp; send</button>
+      <div class="meter">
+        <span class="timer" id="timer">0.0 s</span>
+        <div class="bar"><div id="micBar"></div></div>
+      </div>
+    </div>
+
+    <div class="status" id="status">Enter a phone and press Start Call.</div>
 
     <div id="reportSection" class="hidden">
       <div class="report">
@@ -1468,18 +1518,30 @@ function deterministicDemoHtml(): string {
     micBar: document.getElementById('micBar'),
     timer: document.getElementById('timer'),
     status: document.getElementById('status'),
-    category: document.getElementById('category'),
     sttBadge: document.getElementById('sttBadge'),
     micBadge: document.getElementById('micBadge'),
+    langBadge: document.getElementById('langBadge'),
     herderBadge: document.getElementById('herderBadge'),
     reportSection: document.getElementById('reportSection'),
     transcriptSection: document.getElementById('transcriptSection'),
     reportBody: document.getElementById('reportBody'),
     phone: document.getElementById('phone'),
-    lookupBtn: document.getElementById('lookupBtn'),
-    openerBox: document.getElementById('openerBox'),
+    startCallBtn: document.getElementById('startCallBtn'),
+    callTranscript: document.getElementById('callTranscript'),
+    dtmfKeypad: document.getElementById('dtmfKeypad'),
+    dtmfButtons: document.getElementById('dtmfButtons'),
+    recordingBlock: document.getElementById('recordingBlock'),
   };
-  let openerAudio = null;
+
+  // Call-sequence state. sequence is the payload from
+  // /api/demo/voice/context: opener text, menuPrompt, categories,
+  // confirmationTemplate, postRecord, noInput, lang. Each stage is a
+  // play-then-await pattern; the UI unlocks the next control (keypad
+  // or record button) only when the current TTS has finished,
+  // mirroring how a real caller would hear the flow.
+  let sequence = null;
+  let currentAudio = null;
+  let selectedCategory = null;
 
   let stream = null;
   let recorder = null;
@@ -1499,6 +1561,46 @@ function deterministicDemoHtml(): string {
     el.textContent = text; el.className = 'badge' + (cls ? ' ' + cls : '');
   }
   function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function show(el) { el.classList.remove('hidden'); }
+  function hide(el) { el.classList.add('hidden'); }
+
+  // Append a chat-style bubble to the call transcript. speaker is
+  // "ArdaLink" for TTS output or "You" for the caller's keypad taps.
+  function pushBubble(speaker, text, kind) {
+    const bg = kind === 'you' ? '#3d3d5c' : '#0f172a';
+    const border = kind === 'you' ? 'transparent' : '#60a5fa';
+    const align = kind === 'you' ? 'flex-end' : 'flex-start';
+    const div = document.createElement('div');
+    div.style.cssText = 'max-width:88%;padding:10px 12px;background:' + bg + ';border-left:3px solid ' + border + ';border-radius:6px;font-size:13px;color:#e2e8f0;align-self:' + align + ';';
+    div.innerHTML = '<div style="opacity:0.6;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;">' + escapeHtml(speaker) + '</div><div>' + escapeHtml(text) + '</div>';
+    els.callTranscript.appendChild(div);
+    els.callTranscript.scrollTop = els.callTranscript.scrollHeight;
+    return div;
+  }
+
+  // Speak text via server TTS in the given language. Resolves when
+  // playback ends (or immediately if TTS is unavailable — the demo
+  // still walks the flow so the transcript stays legible).
+  async function say(text, lang) {
+    if (!text) return;
+    if (currentAudio) { try { currentAudio.pause(); currentAudio.src = ''; } catch(_){} currentAudio = null; }
+    try {
+      const tts = await fetch('/api/speech/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, lang }),
+      });
+      if (!tts.ok) return;
+      const blob = await tts.blob();
+      currentAudio = new Audio(URL.createObjectURL(blob));
+      await new Promise((resolve) => {
+        currentAudio.onended = resolve;
+        currentAudio.onerror = resolve;
+        currentAudio.play().catch(resolve);
+      });
+      currentAudio = null;
+    } catch { currentAudio = null; }
+  }
 
   // Probe speech status once so we're honest about availability.
   try {
@@ -1507,46 +1609,85 @@ function deterministicDemoHtml(): string {
     else setBadge(els.sttBadge, 'stt: not configured', 'warn');
   } catch { setBadge(els.sttBadge, 'stt: offline', 'warn'); }
 
-  async function lookupHerder() {
+  function renderKeypad(categories) {
+    els.dtmfButtons.innerHTML = '';
+    categories.forEach((c) => {
+      const btn = document.createElement('button');
+      btn.style.cssText = 'padding:12px 8px;border-radius:12px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;font-size:13px;cursor:pointer;text-align:left;';
+      btn.innerHTML = '<span style="display:inline-block;width:22px;height:22px;line-height:22px;text-align:center;background:#22c55e;color:#0f172a;border-radius:50%;font-weight:700;margin-right:8px;font-size:12px;">' + c.dtmf + '</span>' + escapeHtml(c.label);
+      btn.addEventListener('click', () => onKeypadPress(c));
+      els.dtmfButtons.appendChild(btn);
+    });
+  }
+
+  async function startCall() {
     const phone = els.phone.value.trim();
-    if (!phone) { setStatus('Enter your phone first.', 'err'); return; }
-    setStatus('Looking up your ward + history…', 'busy');
-    els.openerBox.classList.add('hidden');
+    if (!phone) { setStatus('Enter a phone first.', 'err'); return; }
+    els.startCallBtn.disabled = true;
+    els.startCallBtn.style.opacity = 0.5;
+    hide(els.reportSection);
+    hide(els.dtmfKeypad);
+    hide(els.recordingBlock);
+    els.callTranscript.innerHTML = '';
+    show(els.callTranscript);
+    setStatus('Dialling… looking up caller.', 'busy');
+
+    let data;
     try {
       const r = await fetch('/api/demo/voice/context?phone=' + encodeURIComponent(phone));
-      const data = await r.json();
-      if (!r.ok) { setStatus('Lookup failed.', 'err'); return; }
-      const ctx = data.ctx || {};
-      if (ctx.known) {
-        setBadge(els.herderBadge, 'herder: ' + (ctx.name || phone) + (ctx.location ? ' · ' + ctx.location : ''), 'live');
-      } else {
-        setBadge(els.herderBadge, 'herder: new (no profile)', 'warn');
-      }
-      els.openerBox.innerHTML = '<div style="opacity:0.7;font-size:11px;margin-bottom:4px;">SPOKEN OPENER</div>' + escapeHtml(data.opener);
-      els.openerBox.classList.remove('hidden');
-      setStatus('Playing opener… then choose a category and record.', 'busy');
-      // Play the opener via server TTS so the demo mirrors the real call.
-      try {
-        if (openerAudio) { openerAudio.pause(); openerAudio.src = ''; }
-        const tts = await fetch('/api/speech/tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: data.opener, lang: 'sw' }),
-        });
-        if (tts.ok) {
-          const blob = await tts.blob();
-          openerAudio = new Audio(URL.createObjectURL(blob));
-          openerAudio.onended = () => setStatus('Ready. Choose a category and press Record.', 'ok');
-          await openerAudio.play();
-        } else {
-          setStatus('Opener ready (TTS unavailable). Choose a category and record.', 'ok');
-        }
-      } catch { setStatus('Ready. Choose a category and press Record.', 'ok'); }
+      data = await r.json();
+      if (!r.ok) { setStatus('Lookup failed.', 'err'); resetCallButton(); return; }
     } catch (e) {
       setStatus('Lookup error: ' + e.message, 'err');
+      resetCallButton();
+      return;
     }
+
+    sequence = data.sequence;
+    const ctx = data.ctx || {};
+    setBadge(els.langBadge, 'lang: ' + sequence.lang, 'live');
+    if (ctx.known) {
+      setBadge(els.herderBadge, 'herder: ' + (ctx.name || phone), 'live');
+    } else {
+      setBadge(els.herderBadge, 'herder: new caller', 'warn');
+    }
+
+    // Stage 1 — opener. Show + speak, then advance.
+    setStatus('ArdaLink is speaking (opener)…', 'busy');
+    pushBubble('ArdaLink', sequence.opener, 'ai');
+    await say(sequence.opener, sequence.lang);
+
+    // Stage 2 — DTMF menu prompt. Show + speak, then unlock keypad.
+    setStatus('ArdaLink is speaking (menu)…', 'busy');
+    pushBubble('ArdaLink', sequence.menuPrompt, 'ai');
+    await say(sequence.menuPrompt, sequence.lang);
+
+    renderKeypad(sequence.categories);
+    show(els.dtmfKeypad);
+    setStatus('Waiting for your keypad press…', 'ok');
   }
-  els.lookupBtn.addEventListener('click', lookupHerder);
+
+  function resetCallButton() {
+    els.startCallBtn.disabled = false;
+    els.startCallBtn.style.opacity = 1;
+  }
+
+  async function onKeypadPress(c) {
+    if (!sequence) return;
+    selectedCategory = c;
+    hide(els.dtmfKeypad);
+    pushBubble('You', c.dtmf + ' — ' + c.label, 'you');
+    // Substitute the picked label into the confirmation template.
+    const conf = (sequence.confirmationTemplate || '').replace('{{label}}', c.label);
+    pushBubble('ArdaLink', conf, 'ai');
+    setStatus('ArdaLink is speaking (confirmation)…', 'busy');
+    await say(conf, sequence.lang);
+    // Unlock the recording controls once the confirmation has finished.
+    show(els.recordingBlock);
+    setStatus('Press Record and speak your answer.', 'ok');
+  }
+
+  els.startCallBtn.addEventListener('click', startCall);
 
   async function ensureStream() {
     if (stream) return stream;
@@ -1643,7 +1784,7 @@ function deterministicDemoHtml(): string {
   async function uploadAndProcess() {
     setStatus('Transcribing + extracting indicators…', 'busy');
     const blob = new Blob(chunks, { type: mimeType || 'audio/webm' });
-    const category = els.category.value;
+    const category = (selectedCategory && selectedCategory.id) || 'drought_signal';
     const phone = els.phone.value.trim();
     try {
       const qs = new URLSearchParams({ category });
@@ -1659,10 +1800,20 @@ function deterministicDemoHtml(): string {
         setStatus('Failed: ' + (data.error || r.statusText), 'err');
         return;
       }
-      setStatus('Done. Ground truth captured (report #' + data.reportId + ').', 'ok');
-      els.reportSection.classList.remove('hidden');
+      // Stage 4 — caller hears the post-record thanks in their
+      // language before the report renders. Feels like the real
+      // asante-kwaheri close of an AT call.
+      pushBubble('You', data.transcript || '(no transcript)', 'you');
+      if (sequence && sequence.postRecord) {
+        pushBubble('ArdaLink', sequence.postRecord, 'ai');
+        setStatus('ArdaLink is speaking (thanks)…', 'busy');
+        await say(sequence.postRecord, sequence.lang);
+      }
+      setStatus('Call complete. Report #' + data.reportId + ' captured.', 'ok');
+      show(els.reportSection);
       els.transcriptSection.innerHTML = '"' + escapeHtml(data.transcript) + '"' + (data.detectedLocale ? ' <span style="color:#94a3b8">— ' + data.detectedLocale + '</span>' : '');
       renderReport(data);
+      resetCallButton();
     } catch (e) {
       setStatus('Upload error: ' + e.message, 'err');
       els.recordBtn.disabled = false;
