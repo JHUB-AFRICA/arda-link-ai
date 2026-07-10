@@ -73,7 +73,13 @@ router.post("/voice-callback", async (req, res): Promise<void> => {
     // caller's name. Bounded to 2 s so a slow Supabase lookup can't
     // blow the AT ~10 s turn budget — falls back to a generic sw
     // opener when the lookup times out or the phone isn't enrolled.
-    const rawCaller = destinationNumber || callerNumber || "";
+    //
+    // AT direction semantics:
+    //   inbound  — the caller is `callerNumber`;      `destinationNumber` is our AT number
+    //   outbound — the caller is `destinationNumber`; `callerNumber`      is our AT number
+    // Falling back the other way covers sandbox/test flows where AT
+    // may omit direction or one of the two number fields.
+    const rawCaller = pickHerderPhoneFromAt(direction, callerNumber, destinationNumber);
     const canonicalPhone = normalizeAtPhone(rawCaller) ?? rawCaller;
     const lang = await resolveCallerLang(canonicalPhone, req);
 
@@ -159,8 +165,13 @@ router.post("/voice-callback", async (req, res): Promise<void> => {
       if (recordingUrl) {
         // Africa's Talking POSTs form-encoded bodies where `+` in the
         // phone value is decoded to a space. Canonicalize back to E.164
-        // before persistence — the DB uses `+254…` throughout.
-        const phone = normalizeAtPhone(destinationNumber || callerNumber || "");
+        // before persistence — the DB uses `+254…` throughout. Uses
+        // the same direction-aware picker as the opener stage so the
+        // ground-truth row is attributed to the herder even on inbound
+        // calls (where the herder is callerNumber, not destinationNumber).
+        const phone = normalizeAtPhone(
+          pickHerderPhoneFromAt(direction, callerNumber, destinationNumber),
+        );
         // Fire-and-forget: AT is waiting for our XML response, we don't
         // hold it while STT + LLM run (can take 5–10 s each).
         void processDeterministicVoiceRecording({
@@ -254,6 +265,29 @@ function resolvePublicBase(req: Request): string {
  * on `req.body`. Recover the leading `+` and drop stray whitespace so the
  * DB always sees canonical E.164.
  */
+/**
+ * Pick which of AT's two phone fields belongs to the herder based on
+ * `direction`. On inbound calls (herder dialled our number), the
+ * herder is `callerNumber`. On outbound calls (we dialled the herder),
+ * the herder is `destinationNumber`. When direction is missing or
+ * unrecognised, prefer whichever field actually contains a phone.
+ */
+function pickHerderPhoneFromAt(
+  direction: string | undefined,
+  callerNumber: string | undefined,
+  destinationNumber: string | undefined,
+): string {
+  const d = (direction ?? "").toLowerCase();
+  if (d === "inbound") {
+    return (callerNumber || destinationNumber || "").trim();
+  }
+  if (d === "outbound") {
+    return (destinationNumber || callerNumber || "").trim();
+  }
+  // Sandbox / unspecified — pick whichever we actually have.
+  return (destinationNumber || callerNumber || "").trim();
+}
+
 function normalizeAtPhone(raw: string | undefined | null): string | null {
   if (!raw) return null;
   const trimmed = raw.trim().replace(/\s+/g, "");

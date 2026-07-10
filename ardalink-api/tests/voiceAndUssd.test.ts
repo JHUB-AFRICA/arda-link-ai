@@ -275,7 +275,12 @@ describe("POST /api/sms-callback — AT inbound SMS", () => {
 
     expect(res.status).toBe(200);
     expect(res.text.length).toBeLessThanOrEqual(160);
-    expect(res.text).toContain("Bulla Pesa");
+    // Since 2026-07-10 the MALISHO reply is WPDx-driven — the snapshot
+    // has no coverage in Bulla Pesa or Wabera, so the top hits come
+    // from Burat / Ngare Mara. Assert on shape (Malisho header + a
+    // km-distance-suffixed line) rather than a specific ward name.
+    expect(res.text).toMatch(/Malisho/i);
+    expect(res.text).toMatch(/(\d+km\)|Hakuna data ya WPDx)/);
   });
 
   it("replies to ONGEA with callback confirmation", async () => {

@@ -1,6 +1,11 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { logger } from "../lib/logger.js";
 import { centroidForTenant, formatUssdLines } from "../lib/wpdx.js";
+import {
+  resolveHerderContext,
+  buildLocalizedBrief,
+  type HerderContext,
+} from "../lib/herderContext.js";
 
 const DEFAULT_TENANT_ID =
   process.env.DETERMINISTIC_TENANT_ID ?? "bula-pesa";
@@ -104,20 +109,25 @@ function parseLastInput(text: string): {
   };
 }
 
+/**
+ * USSD brief screen — mirrors buildLocalizedBrief() so the herder
+ * hears the same anomaly-driven line here as on SMS BULA. USSD caps
+ * around 182 characters per screen, so we prefix END and trust the
+ * brief helper's own 300-char cap.
+ */
 function buildBulaPesaReply(
-  brief: { stressedPct: number | null; riskLevel: string | null } | null,
+  ctx: HerderContext | null,
   lang: "sw" | "en",
 ): string {
-  if (!brief || brief.stressedPct == null) {
-    if (lang === "sw") {
-      return "END Samahani, hatuna ripoti ya satellite leo. Tafadhali jaribu tena baadaye. (Sorry, no satellite reading today. Try again later.)";
-    }
-    return "END Sorry, no satellite reading is available right now. Please try again later.";
+  if (!ctx) {
+    return lang === "sw"
+      ? "END Samahani, hakuna data ya leo. Jaribu tena baadaye."
+      : "END Sorry, no data available. Try again later.";
   }
-  if (lang === "sw") {
-    return `END Bula Pesa leo: ${brief.stressedPct.toFixed(0)}% ya eneo limeathirika. Hatari: ${brief.riskLevel ?? "?"}. Pata ripoti kamili: piga simu ArdaLink.`;
-  }
-  return `END Bula Pesa today: ${brief.stressedPct.toFixed(0)}% of the ward is vegetation-stressed. Risk: ${brief.riskLevel ?? "?"}. For the full brief, call ArdaLink.`;
+  const brief = buildLocalizedBrief(ctx, lang);
+  // Keep well inside USSD's per-screen budget.
+  const trimmed = brief.length > 175 ? brief.slice(0, 174) + "…" : brief;
+  return `END ${trimmed}`;
 }
 
 function buildWaterPointsReply(): string {
@@ -207,15 +217,15 @@ router.post("/ussd-callback", async (req, res): Promise<void> => {
           return;
         }
         if (last === "1") {
-          const brief = await readLastBrief();
+          const ctx = await resolveHerderContext(phone, DEFAULT_TENANT_ID);
           res.set("Content-Type", "text/plain");
-          res.send(buildBulaPesaReply(brief, "sw"));
+          res.send(buildBulaPesaReply(ctx, "sw"));
           return;
         }
         if (last === "2") {
-          const brief = await readLastBrief();
+          const ctx = await resolveHerderContext(phone, DEFAULT_TENANT_ID);
           res.set("Content-Type", "text/plain");
-          res.send(buildBulaPesaReply(brief, "en"));
+          res.send(buildBulaPesaReply(ctx, "en"));
           return;
         }
       }

@@ -343,18 +343,23 @@ async function shortAudioFallback(
   const cfg = config();
   const languages = locales.length > 0 ? locales : ['sw-KE'];
 
-  // Azure short-audio REST silently returns empty for WebM. When the
-  // caller hands us WebM (default browser MediaRecorder output), try
-  // to transmux to OGG first. Same audio codec (Opus), only the
-  // container swaps — no re-encoding cost.
+  // Azure short-audio in southafricanorth rejects most upstream
+  // formats — verified empirically for WebM/opus (browser) and
+  // audio/mpeg (AT recordings). Only WAV and OGG/opus round-trip
+  // reliably. Rather than maintain a case-by-case allowlist, decode
+  // everything to WAV 16 kHz mono PCM up front — it's the format
+  // Azure documents as universal, works in every region, and costs
+  // ~100-200 ms per clip through ffmpeg. Falls back to the original
+  // bytes when ffmpeg is unavailable so we never hard-fail STT.
   let bodyAudio: Uint8Array | Buffer = audio;
   let effectiveContentType = contentType;
-  const isWebm = (contentType || '').toLowerCase().startsWith('audio/webm');
-  if (isWebm) {
-    const remuxed = await transmuxWebmToOgg(audio);
-    if (remuxed) {
-      bodyAudio = remuxed;
-      effectiveContentType = 'audio/ogg;codecs=opus';
+  const lowerType = (contentType || '').toLowerCase();
+  const alreadyWav = lowerType.startsWith('audio/wav');
+  if (!alreadyWav) {
+    const wav = await transcodeToWav16kMono(audio);
+    if (wav) {
+      bodyAudio = wav;
+      effectiveContentType = 'audio/wav; codecs=audio/pcm; samplerate=16000';
     }
   }
   const azureContentType = normaliseAudioContentType(effectiveContentType);
@@ -459,17 +464,19 @@ function normaliseAudioContentType(input: string): string {
 }
 
 /**
- * Transmux WebM/opus → OGG/opus via ffmpeg. Same audio codec, only
- * the container changes, so this is a `-c copy` operation — no
- * re-encoding, ~30 ms per 20 s clip. WebM is what the browser's
- * MediaRecorder emits by default; Azure short-audio REST accepts OGG
- * but silently returns empty transcripts for WebM.
+ * Convert any input audio (WebM/opus, MP3, MP4/AAC, arbitrary) to
+ * WAV 16 kHz mono PCM via ffmpeg. WAV is the universal format for
+ * Azure's short-audio REST endpoint — works in every region, no
+ * codec parameter negotiation needed. ~100-200 ms overhead per 20 s
+ * clip, worth it for reliability.
  *
- * Returns null if ffmpeg is unavailable or the transmux fails — the
- * caller then tries the original bytes anyway (some formats work
- * without conversion; ffmpeg failure shouldn't hard-fail STT).
+ * We used to try a WebM→OGG `-c copy` transmux, but Azure's
+ * short-audio parser in southafricanorth also rejects raw MP3
+ * (AT's default recording format), so decoding to WAV is the only
+ * shape that works for every upstream. When ffmpeg isn't installed
+ * or the encode fails, callers fall back to the original bytes.
  */
-function transmuxWebmToOgg(
+function transcodeToWav16kMono(
   audio: Uint8Array | Buffer,
 ): Promise<Buffer | null> {
   return new Promise((resolve) => {
@@ -477,10 +484,11 @@ function transmuxWebmToOgg(
     const ff = spawn('ffmpeg', [
       '-hide_banner',
       '-loglevel', 'error',
-      '-f', 'webm',
       '-i', 'pipe:0',
-      '-c', 'copy',
-      '-f', 'ogg',
+      '-ac', '1',        // mono
+      '-ar', '16000',    // 16 kHz — Azure's preferred sample rate
+      '-f', 'wav',
+      '-y',
       'pipe:1',
     ]);
     const chunks: Buffer[] = [];
@@ -500,7 +508,7 @@ function transmuxWebmToOgg(
         const stderr = Buffer.concat(errChunks).toString('utf8').slice(0, 200);
         logger.warn(
           { code, stderr },
-          '[Speech] ffmpeg webm→ogg transmux failed',
+          '[Speech] ffmpeg → WAV transcode failed',
         );
         resolve(null);
         return;

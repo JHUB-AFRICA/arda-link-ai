@@ -1,5 +1,14 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { logger } from "../lib/logger.js";
+import {
+  resolveHerderContext,
+  buildLocalizedBrief,
+} from "../lib/herderContext.js";
+import { centroidForTenant, formatUssdLines } from "../lib/wpdx.js";
+import { languageForCaller } from "../lib/voiceCopy.js";
+
+const DEFAULT_TENANT_ID =
+  process.env.DETERMINISTIC_TENANT_ID ?? "bula-pesa";
 
 // Optional: Use the new intelligenceCore if ENABLE_INTELLIGENCE_CORE is set
 const useIntelligenceCore = process.env.ENABLE_INTELLIGENCE_CORE === "true";
@@ -76,26 +85,78 @@ router.post("/sms-callback", async (req, res): Promise<void> => {
   };
 
   try {
+    // Resolve the caller's context once so every reply is
+    // language-aware + personalized. Unknown callers get a bounded
+    // default context that still routes on Kiswahili.
+    const ctx = await resolveHerderContext(from, DEFAULT_TENANT_ID);
+    const lang = languageForCaller(ctx);
+
     switch (keyword) {
       case "BULA": {
-        const brief = await readLastBrief();
-        const line = brief
-          ? `Bula Pesa leo: ${brief.stressedPct?.toFixed(0) ?? "?"}% stressed, risk=${brief.riskLevel ?? "?"}. ArdaLink itapiga simu hivi karibuni.`
-          : "Bula Pesa: hakuna ripoti mpya. ArdaLink itapiga simu hivi karibuni.";
+        // Full localized brief — the same one USSD selection 1
+        // renders. buildLocalizedBrief caps at 300 chars and
+        // trimToSms trims to 160 for the SMS segment.
+        const brief = buildLocalizedBrief(ctx, lang);
         await maybeCallback(from, "BULA keyword");
-        reply(line);
+        reply(brief);
         return;
       }
       case "MALISHO": {
+        // WPDx-backed water points (same as USSD selection 2 and
+        // the demo SMS simulator). Prefer working infrastructure
+        // first so herders see the good options at the top.
+        const origin =
+          centroidForTenant(DEFAULT_TENANT_ID) ??
+          { lat: 0.3453, lon: 37.5810 };
+        const lines = formatUssdLines(origin, 5, { workingFirst: true });
+        const body =
+          lines.length > 0
+            ? lines.join("; ")
+            : lang === "sw"
+              ? "Hakuna data ya WPDx bado"
+              : "No WPDx data yet";
         reply(
-          "Malisho karibu: 1) Bulla Pesa BH (SW, 2km) 2) Wabera Well (NW, 7km) 3) Ngare Mara Spring (NE, 9km)",
+          (lang === "sw" ? "Malisho karibu nawe: " : "Water points near you: ") +
+            body,
         );
         return;
       }
       case "ONGEA":
       case "AI": {
         await maybeCallback(from, `${keyword} keyword`);
-        reply("ArdaLink itapiga simu hivi karibuni. / ArdaLink will call you shortly.");
+        reply(
+          lang === "sw"
+            ? "Sawa. ArdaLink atakupigia simu hivi karibuni kupokea ripoti yako."
+            : "Okay. ArdaLink will call you shortly to record your report.",
+        );
+        return;
+      }
+      case "RIPOTI":
+      case "REPORT": {
+        // My last report — matches the demo SMS handler and the
+        // RIPOTI keyword advertised in help. Falls back to a
+        // localised "no report yet" when the caller isn't in the
+        // ground_truth_reports table for this tenant.
+        if (!ctx.known || ctx.lastBcsScore == null) {
+          reply(
+            lang === "sw"
+              ? "Hakuna ripoti bado. Piga ONGEA kuomba simu ya kutoa ripoti."
+              : "No report yet. Text ONGEA to request a voice call.",
+          );
+          return;
+        }
+        const bcs = ctx.lastBcsScore.toFixed(1);
+        const species = ctx.lastBcsSpecies ?? "?";
+        const where = ctx.lastReportedLocation
+          ? (lang === "sw"
+              ? ` Ulisema uko ${ctx.lastReportedLocation}.`
+              : ` You said you were at ${ctx.lastReportedLocation}.`)
+          : "";
+        reply(
+          lang === "sw"
+            ? `Ripoti yako ya mwisho: BCS ${bcs} (${species}), ${ctx.lastActionTag ?? "hakuna alama"}.${where}`
+            : `Your last report: BCS ${bcs} (${species}), ${ctx.lastActionTag ?? "no tag"}.${where}`,
+        );
         return;
       }
       case "STOP":
@@ -107,14 +168,18 @@ router.post("/sms-callback", async (req, res): Promise<void> => {
       }
       default: {
         reply(
-          "ArdaLink: jibu BULA (brief), MALISHO (water), ONGEA (call), au STOP (opt-out).",
+          lang === "sw"
+            ? "ArdaLink: BULA (habari), MALISHO (maji), ONGEA (simu), RIPOTI (yako), STOP (toa)."
+            : "ArdaLink: BULA (brief), MALISHO (water), ONGEA (call), RIPOTI (last report), STOP.",
         );
         return;
       }
     }
   } catch (err: unknown) {
     logger.error({ err, from, keyword }, "[SMS] handler error");
-    reply("ArdaLink: hitilafu. Jaribu tena. / Error. Try again.");
+    reply(
+      "ArdaLink: hitilafu. Jaribu tena. / Error. Try again.",
+    );
   }
 });
 
