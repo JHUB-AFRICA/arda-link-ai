@@ -730,8 +730,17 @@ function realtimeSimulatorHtml(apiPort: string): string {
 
       // 1) Get mic
       try {
+        // Same rationale as the deterministic simulator: browser-side
+        // noiseSuppression is over-aggressive for ASR pipelines and
+        // can strip legitimate voice in rooms with background noise.
+        // Let the STT / Realtime service denoise instead.
         micStream = await navigator.mediaDevices.getUserMedia({
-          audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+          audio: {
+            channelCount: 1,
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: true,
+          },
         });
         setBadge(els.micBadge, 'mic: ready', 'live');
       } catch (e) {
@@ -1820,7 +1829,20 @@ function deterministicDemoHtml(): string {
   async function ensureStream() {
     if (stream) return stream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+      // Ask for a raw-ish waveform. Chrome/Brave's noiseSuppression
+      // is aggressive enough to strip legitimate voice when there is
+      // any constant background sound (fan, aircon, road) — Azure
+      // STT expects the untouched signal and does its own denoising.
+      // autoGainControl compensates for quiet speakers without
+      // adding a denoiser stage.
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: true,
+        },
+      });
       setBadge(els.micBadge, 'mic: ready', 'live');
     } catch (e) {
       setBadge(els.micBadge, 'mic: denied', 'warn');
