@@ -15,6 +15,7 @@
  * can check isSpeechConfigured() before using.
  */
 
+import { spawn } from 'node:child_process';
 import { logger } from './logger.js';
 
 export interface SpeechConfig {
@@ -326,6 +327,13 @@ async function tryFastTranscribe(
  * Short-audio fallback — the classic Speech recognition REST endpoint.
  * Works in every Speech region. Handles arbitrary containers because
  * the recognition service auto-detects most codecs.
+ *
+ * IMPORTANT: this endpoint does NOT support Azure's `languageIdentification`
+ * query param (that's only on Fast Transcription / Speech SDK). Setting
+ * `language=` here locks recognition to ONE locale — if the caller
+ * spoke a different one, Azure returns empty. Our herders may speak
+ * either sw-KE or en-KE, so we retry across each of the configured
+ * locales and take the first non-empty transcript.
  */
 async function shortAudioFallback(
   audio: Uint8Array | Buffer,
@@ -333,69 +341,181 @@ async function shortAudioFallback(
   locales: string[],
 ): Promise<FastTranscribeResult | null> {
   const cfg = config();
-  const primaryLanguage = locales[0] ?? 'sw-KE';
-  const url = new URL(
-    `https://${cfg.region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1`,
-  );
-  url.searchParams.set('language', primaryLanguage);
-  url.searchParams.set('format', 'detailed');
-  url.searchParams.set('profanity', 'masked');
-  if (locales.length > 1) {
-    url.searchParams.set('languageIdentification', locales.join(','));
+  const languages = locales.length > 0 ? locales : ['sw-KE'];
+
+  // Azure short-audio REST silently returns empty for WebM. When the
+  // caller hands us WebM (default browser MediaRecorder output), try
+  // to transmux to OGG first. Same audio codec (Opus), only the
+  // container swaps — no re-encoding cost.
+  let bodyAudio: Uint8Array | Buffer = audio;
+  let effectiveContentType = contentType;
+  const isWebm = (contentType || '').toLowerCase().startsWith('audio/webm');
+  if (isWebm) {
+    const remuxed = await transmuxWebmToOgg(audio);
+    if (remuxed) {
+      bodyAudio = remuxed;
+      effectiveContentType = 'audio/ogg;codecs=opus';
+    }
   }
-  try {
-    const res = await fetch(url.toString(), {
-      method: 'POST',
-      headers: {
-        'Ocp-Apim-Subscription-Key': cfg.key,
-        'Content-Type': contentType || 'audio/wav',
-        Accept: 'application/json',
-      },
-      body: audio,
-      signal: AbortSignal.timeout(30000),
-    });
-    if (!res.ok) {
-      const errText = await res.text().catch(() => res.statusText);
-      logger.error(
-        { status: res.status, body: errText.slice(0, 400) },
-        '[Speech] Short-audio fallback failed',
-      );
-      return null;
-    }
-    const data = (await res.json()) as {
-      RecognitionStatus?: string;
-      DisplayText?: string;
-      NBest?: { Display?: string; Confidence?: number }[];
-      Duration?: number;
-      Language?: string;
-    };
-    const nbest = data.NBest?.[0];
-    const transcript = (nbest?.Display ?? data.DisplayText ?? '').trim();
-    if (!transcript) {
-      logger.warn(
-        { status: data.RecognitionStatus, lang: data.Language },
-        '[Speech] Short-audio returned empty transcript',
-      );
-      return null;
-    }
-    logger.info(
-      {
-        detectedLanguage: data.Language,
-        confidence: nbest?.Confidence,
-        textLen: transcript.length,
-      },
-      '[Speech] Short-audio recognized (fallback path)',
+  const azureContentType = normaliseAudioContentType(effectiveContentType);
+
+  let firstStatus: string | undefined;
+  let firstLang: string | undefined;
+  for (const language of languages) {
+    const url = new URL(
+      `https://${cfg.region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1`,
     );
-    return {
-      transcript,
-      locale: data.Language,
-      durationMs:
-        typeof data.Duration === 'number' ? data.Duration / 10_000 : undefined,
-    };
-  } catch (err) {
-    logger.error({ err }, '[Speech] Short-audio fallback crashed');
-    return null;
+    url.searchParams.set('language', language);
+    url.searchParams.set('format', 'detailed');
+    url.searchParams.set('profanity', 'masked');
+    try {
+      const res = await fetch(url.toString(), {
+        method: 'POST',
+        headers: {
+          'Ocp-Apim-Subscription-Key': cfg.key,
+          'Content-Type': azureContentType,
+          Accept: 'application/json',
+        },
+        body: bodyAudio,
+        signal: AbortSignal.timeout(30000),
+      });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => res.statusText);
+        logger.warn(
+          {
+            status: res.status,
+            language,
+            body: errText.slice(0, 400),
+            sentContentType: azureContentType,
+          },
+          '[Speech] Short-audio fallback non-2xx — will try next locale',
+        );
+        continue;
+      }
+      const data = (await res.json()) as {
+        RecognitionStatus?: string;
+        DisplayText?: string;
+        NBest?: { Display?: string; Confidence?: number }[];
+        Duration?: number;
+        Language?: string;
+      };
+      const nbest = data.NBest?.[0];
+      const transcript = (nbest?.Display ?? data.DisplayText ?? '').trim();
+      firstStatus ??= data.RecognitionStatus;
+      firstLang ??= data.Language;
+      if (transcript) {
+        logger.info(
+          {
+            language,
+            detectedLanguage: data.Language,
+            confidence: nbest?.Confidence,
+            textLen: transcript.length,
+          },
+          '[Speech] Short-audio recognized (fallback path)',
+        );
+        return {
+          transcript,
+          locale: data.Language ?? language,
+          durationMs:
+            typeof data.Duration === 'number'
+              ? data.Duration / 10_000
+              : undefined,
+        };
+      }
+      logger.info(
+        { language, status: data.RecognitionStatus },
+        '[Speech] Short-audio empty for this locale — will retry next',
+      );
+    } catch (err) {
+      logger.warn(
+        { err, language },
+        '[Speech] Short-audio fallback crashed — will try next locale',
+      );
+    }
   }
+  logger.warn(
+    { status: firstStatus, lang: firstLang, languagesTried: languages },
+    '[Speech] Short-audio returned empty transcript for every configured locale',
+  );
+  return null;
+}
+
+/**
+ * Normalise a browser-supplied Content-Type to something Azure's
+ * short-audio REST endpoint recognises. Azure's parser accepts
+ * `audio/wav`, `audio/ogg;codecs=opus`, `audio/mp3`, and NOT
+ * `audio/webm` (verified empirically 2026-07-10). Ogg-opus is our
+ * canonical form because ffmpeg can transmux to it without
+ * re-encoding.
+ */
+function normaliseAudioContentType(input: string): string {
+  const raw = (input || '').trim().toLowerCase();
+  if (!raw) return 'audio/ogg; codecs=audio/opus';
+  if (raw.startsWith('audio/ogg')) return 'audio/ogg; codecs=audio/opus';
+  if (raw.startsWith('audio/webm')) return 'audio/webm; codecs=audio/opus';
+  if (raw.startsWith('audio/mpeg') || raw.startsWith('audio/mp3'))
+    return 'audio/mp3';
+  return raw;
+}
+
+/**
+ * Transmux WebM/opus → OGG/opus via ffmpeg. Same audio codec, only
+ * the container changes, so this is a `-c copy` operation — no
+ * re-encoding, ~30 ms per 20 s clip. WebM is what the browser's
+ * MediaRecorder emits by default; Azure short-audio REST accepts OGG
+ * but silently returns empty transcripts for WebM.
+ *
+ * Returns null if ffmpeg is unavailable or the transmux fails — the
+ * caller then tries the original bytes anyway (some formats work
+ * without conversion; ffmpeg failure shouldn't hard-fail STT).
+ */
+function transmuxWebmToOgg(
+  audio: Uint8Array | Buffer,
+): Promise<Buffer | null> {
+  return new Promise((resolve) => {
+    let done = false;
+    const ff = spawn('ffmpeg', [
+      '-hide_banner',
+      '-loglevel', 'error',
+      '-f', 'webm',
+      '-i', 'pipe:0',
+      '-c', 'copy',
+      '-f', 'ogg',
+      'pipe:1',
+    ]);
+    const chunks: Buffer[] = [];
+    const errChunks: Buffer[] = [];
+    ff.stdout.on('data', (c: Buffer) => chunks.push(c));
+    ff.stderr.on('data', (c: Buffer) => errChunks.push(c));
+    ff.on('error', (err) => {
+      if (done) return;
+      done = true;
+      logger.warn({ err: String(err) }, '[Speech] ffmpeg spawn failed');
+      resolve(null);
+    });
+    ff.on('close', (code) => {
+      if (done) return;
+      done = true;
+      if (code !== 0) {
+        const stderr = Buffer.concat(errChunks).toString('utf8').slice(0, 200);
+        logger.warn(
+          { code, stderr },
+          '[Speech] ffmpeg webm→ogg transmux failed',
+        );
+        resolve(null);
+        return;
+      }
+      resolve(Buffer.concat(chunks));
+    });
+    try {
+      ff.stdin.end(audio);
+    } catch (err) {
+      if (done) return;
+      done = true;
+      logger.warn({ err: String(err) }, '[Speech] ffmpeg stdin write failed');
+      resolve(null);
+    }
+  });
 }
 
 /**
