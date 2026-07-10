@@ -31,32 +31,52 @@ async function safeRun<T>(label: string, fn: () => Promise<T>): Promise<T | null
   }
 }
 
+// Open-Meteo's Archive endpoint can be slow (5-10 s) under load.
+// The default 5 s vitest timeout cuts requests off before safeRun
+// can catch and return null. Give these two the same 15 s ceiling
+// used by the other live-network tests below so they cleanly skip
+// on outage instead of hard-failing the suite.
+const LIVE_NET_TIMEOUT_MS = 15_000;
+
 describe("Open-Meteo Archive — historical climate window", () => {
-  it("returns a window with the expected shape", async () => {
-    const r = await safeRun("Open-Meteo Archive", () =>
-      fetchHistoricalClimateWindow(WARD_LAT, WARD_LON, "2025-06-01", "2025-06-30"),
-    );
-    if (!r) return; // upstream unreachable — skip
-    expect(r.days).toBe(30);
-    expect(r.source).toBe("open-meteo-archive");
-    expect(["none", "mild", "moderate", "severe", "extreme"]).toContain(
-      r.droughtSeverity,
-    );
-    expect(r.moistureAdequacyIndex).toBeGreaterThanOrEqual(0);
-  });
+  it(
+    "returns a window with the expected shape",
+    async () => {
+      const r = await safeRun("Open-Meteo Archive", () =>
+        fetchHistoricalClimateWindow(
+          WARD_LAT,
+          WARD_LON,
+          "2025-06-01",
+          "2025-06-30",
+        ),
+      );
+      if (!r) return; // upstream unreachable — skip
+      expect(r.days).toBe(30);
+      expect(r.source).toBe("open-meteo-archive");
+      expect(["none", "mild", "moderate", "severe", "extreme"]).toContain(
+        r.droughtSeverity,
+      );
+      expect(r.moistureAdequacyIndex).toBeGreaterThanOrEqual(0);
+    },
+    LIVE_NET_TIMEOUT_MS,
+  );
 });
 
 describe("Open-Meteo Archive — year-over-year", () => {
-  it("produces a comparison with an interpretation string", async () => {
-    const r = await safeRun("Open-Meteo Archive (year-over-year)", () =>
-      fetchYearOverYearClimate(WARD_LAT, WARD_LON, 30),
-    );
-    if (!r) return;
-    expect(r.comparison.interpretation.length).toBeGreaterThan(10);
-    expect(typeof r.comparison.severityShift).toBe("string");
-    // The two windows must cover the same number of days.
-    expect(r.current.days).toBe(r.lastYear.days);
-  });
+  it(
+    "produces a comparison with an interpretation string",
+    async () => {
+      const r = await safeRun("Open-Meteo Archive (year-over-year)", () =>
+        fetchYearOverYearClimate(WARD_LAT, WARD_LON, 30),
+      );
+      if (!r) return;
+      expect(r.comparison.interpretation.length).toBeGreaterThan(10);
+      expect(typeof r.comparison.severityShift).toBe("string");
+      // The two windows must cover the same number of days.
+      expect(r.current.days).toBe(r.lastYear.days);
+    },
+    LIVE_NET_TIMEOUT_MS,
+  );
 });
 
 describe("Open-Meteo Air Quality — PM2.5 / PM10", () => {
