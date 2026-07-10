@@ -87,14 +87,21 @@ def test_vci_gee_not_configured(client_no_gee: TestClient):
 
 
 def test_trigger_dry_run(client: TestClient):
-    """POST /api/v1/satellite/trigger with dryRun=true returns dry_run status."""
+    """POST /api/v1/satellite/trigger with dryRun=true returns dry_run status.
+
+    DEMO_WARDS was refreshed 2026-07-09 to the 5 canonical Isiolo
+    Sub-County tenants (post-retirement of Garbatulla + Merti).
+    Asserts on the current active set. The retired garbatulla / kinna
+    slugs are still resolvable via the _SLUG_TO_NAME alias table so
+    in-flight callers don't fail cold, but they no longer appear in
+    the default trigger list.
+    """
     response = client.post("/api/v1/satellite/trigger?dry_run=true")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "dry_run"
-    assert "bula-pesa" in data["wards"]
-    assert "garbatulla" in data["wards"]
-    assert "kinna" in data["wards"]
+    expected_wards = {"bulla-pesa", "wabera", "ngare-mara", "burat", "oldonyiro"}
+    assert set(data["wards"]) == expected_wards
     assert data["results"] is None
     assert data["error"] is None
     assert "started_at" in data
