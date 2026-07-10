@@ -31,6 +31,8 @@ import { logger } from "../../lib/logger";
 import { fastTranscribe, isSpeechConfigured } from "../../lib/speech";
 import { extractIndicators, generateActionTag } from "../../lib/openai";
 import { getLastResult } from "../../lib/intelligence";
+import { fetchSatelliteVCI, type VCISnapshot } from "../../lib/engine";
+import { tenantForWardId } from "../../lib/wardMapping";
 import { computeTrustScore, logTrustScore } from "../../lib/trustScore";
 import { withTenantContext } from "../../lib/tenancy-context";
 import {
@@ -83,15 +85,53 @@ router.get(
       return;
     }
     try {
-      const ctx = await resolveHerderContext(phone, DEMO_TENANT_ID);
+      let ctx = await resolveHerderContext(phone, DEMO_TENANT_ID);
 
-      // New payload: mirrors every audible turn of the real AT
-      // deterministic pipeline, in the caller's language, so the
-      // browser demo can walk the sequence turn-by-turn.
-      //
-      // NOTE: `opener` is kept as a plain string for backwards
-      // compatibility with the existing HTML — the language + rich
-      // sequence live under `sequence.*` below.
+      // Overlay LIVE engine data (GEE VCI + NDVI current/min/max +
+      // urban mask + prosopis penalty) so the demo speaks numbers
+      // the engine literally just fetched instead of the Supabase
+      // monthly aggregate. The engine call takes ~15–30 s per ward
+      // — fine for the demo (operator-driven, no AT timeout) but
+      // gated behind ?live=false in case the caller wants to skip
+      // for speed. Failures fall through silently.
+      const wantLive = String(req.query.live ?? "true").toLowerCase() !== "false";
+      let engineSnapshot: VCISnapshot | null = null;
+      if (wantLive) {
+        const tenantSlug =
+          tenantForWardId(ctx.wardId ?? "") || DEMO_TENANT_ID;
+        try {
+          engineSnapshot = await fetchSatelliteVCI(tenantSlug, DEMO_TENANT_ID);
+          if (engineSnapshot && engineSnapshot.ndvi_now != null) {
+            // MODIS NDVI arrives as raw fixed-point (0..10000). Normalise
+            // to the 0..1 range the rest of the codebase reasons in.
+            const normNdvi = engineSnapshot.ndvi_now / 10000;
+            const normMin = (engineSnapshot.ndvi_min ?? 0) / 10000;
+            const normMax = (engineSnapshot.ndvi_max ?? 0) / 10000;
+            ctx = {
+              ...ctx,
+              // Prefer engine's live NDVI over the Supabase monthly mean.
+              wardNdviMean: normNdvi,
+              // Override the Supabase-derived VCI with the engine's fresh
+              // one — same 0..100 scale, but grounded in "now" not
+              // "last-month-mean vs 11-year history".
+              vciDerived: engineSnapshot.vci,
+              // Keep the historical bounds too, but from engine's own
+              // MODIS record range — different span than the Supabase
+              // per-month percentile envelope.
+              ndviBaselineP5: normMin,
+              ndviBaselineP95: normMax,
+            };
+          }
+        } catch (err) {
+          logger.warn(
+            { err, tenantSlug, wardId: ctx.wardId },
+            "[Demo Voice] engine live fetch failed — falling back to Supabase-only ctx",
+          );
+        }
+      }
+
+      // Build the sequence AFTER the overlay so opener + brief
+      // reflect the freshest numbers we have.
       const openerV2 = voiceOpener(ctx);
       const lang: VoiceLang = openerV2.lang;
       const categories = DEMO_DTMF_CATEGORIES.map((c) => ({
@@ -102,6 +142,21 @@ router.get(
 
       res.json({
         ctx,
+        // Live engine snapshot — the UI renders this as a "live from
+        // GEE" pill so operators can see the demo is grounded in data
+        // that was fetched seconds ago, not a stale monthly aggregate.
+        engineSnapshot: engineSnapshot
+          ? {
+              vci: engineSnapshot.vci,
+              ndviNow: (engineSnapshot.ndvi_now ?? 0) / 10000,
+              ndviMin: (engineSnapshot.ndvi_min ?? 0) / 10000,
+              ndviMax: (engineSnapshot.ndvi_max ?? 0) / 10000,
+              urbanMasked: engineSnapshot.urban_masked,
+              prosopisFactor: engineSnapshot.prosopis_factor,
+              capturedAt: engineSnapshot.captured_at,
+              wardName: engineSnapshot.ward_name,
+            }
+          : null,
         // legacy strings kept for anything still importing them
         opener: openerV2.text,
         briefSw: buildLocalizedBrief(ctx, "sw"),
@@ -1472,8 +1527,19 @@ function deterministicDemoHtml(): string {
       <span class="badge" id="sttBadge">stt: —</span>
       <span class="badge" id="micBadge">mic: —</span>
       <span class="badge live">llm: azure/gpt-5-mini</span>
+      <span class="badge" id="engineBadge">engine: —</span>
       <span class="badge" id="langBadge">lang: —</span>
       <span class="badge" id="herderBadge">herder: —</span>
+    </div>
+
+    <!-- Live engine snapshot — appears after context lookup so
+         operators can see the caller's satellite data came fresh
+         from Google Earth Engine seconds ago, not from a stale
+         monthly aggregate. -->
+    <div id="engineSnapshot" class="hidden" style="margin-top:10px;padding:12px;background:linear-gradient(135deg,#065f46 0%,#064e3b 100%);border-radius:12px;border:1px solid #10b981;">
+      <div style="font-size:11px;color:#a7f3d0;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">🛰 Live from GEE engine</div>
+      <div id="engineFacts" style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px 12px;font-size:12px;color:#ecfdf5;"></div>
+      <div id="engineFresh" style="font-size:10px;color:#6ee7b7;margin-top:6px;"></div>
     </div>
 
     <label for="phone">Caller phone (used to look up ward, language, and history)</label>
@@ -1531,6 +1597,10 @@ function deterministicDemoHtml(): string {
     dtmfKeypad: document.getElementById('dtmfKeypad'),
     dtmfButtons: document.getElementById('dtmfButtons'),
     recordingBlock: document.getElementById('recordingBlock'),
+    engineBadge: document.getElementById('engineBadge'),
+    engineSnapshot: document.getElementById('engineSnapshot'),
+    engineFacts: document.getElementById('engineFacts'),
+    engineFresh: document.getElementById('engineFresh'),
   };
 
   // Call-sequence state. sequence is the payload from
@@ -1645,11 +1715,22 @@ function deterministicDemoHtml(): string {
 
     sequence = data.sequence;
     const ctx = data.ctx || {};
+    const snap = data.engineSnapshot;
     setBadge(els.langBadge, 'lang: ' + sequence.lang, 'live');
     if (ctx.known) {
       setBadge(els.herderBadge, 'herder: ' + (ctx.name || phone), 'live');
     } else {
       setBadge(els.herderBadge, 'herder: new caller', 'warn');
+    }
+
+    // Render live engine snapshot pill if we got one from the engine.
+    if (snap) {
+      setBadge(els.engineBadge, 'engine: LIVE (VCI ' + snap.vci.toFixed(1) + ')', 'live');
+      renderEngineSnapshot(snap);
+      show(els.engineSnapshot);
+    } else {
+      setBadge(els.engineBadge, 'engine: unreachable', 'warn');
+      hide(els.engineSnapshot);
     }
 
     // Stage 1 — opener. Show + speak, then advance.
@@ -1670,6 +1751,34 @@ function deterministicDemoHtml(): string {
   function resetCallButton() {
     els.startCallBtn.disabled = false;
     els.startCallBtn.style.opacity = 1;
+  }
+
+  function renderEngineSnapshot(snap) {
+    // Six live facts fresh from the GEE MODIS composite the engine
+    // pulled seconds ago: VCI 0-100, current NDVI, historic MODIS
+    // min/max range, whether urban pixels were masked, and the
+    // Prosopis penalty factor. This is the "the demo is real" pill.
+    const facts = [
+      ['VCI',            snap.vci.toFixed(1) + ' / 100'],
+      ['NDVI now',       snap.ndviNow.toFixed(3)],
+      ['NDVI min',       snap.ndviMin.toFixed(3)],
+      ['NDVI max',       snap.ndviMax.toFixed(3)],
+      ['Urban masked',   snap.urbanMasked ? 'yes' : 'no'],
+      ['Prosopis factor', snap.prosopisFactor.toFixed(2)],
+    ];
+    els.engineFacts.innerHTML = facts.map(function(f) {
+      return '<div><span style="color:#6ee7b7">' + escapeHtml(f[0]) + '</span> <b>' + escapeHtml(String(f[1])) + '</b></div>';
+    }).join('');
+    // Freshness — how many seconds ago the engine captured this data.
+    var age = '(unknown age)';
+    try {
+      var capMs = Date.parse(snap.capturedAt);
+      if (!isNaN(capMs)) {
+        var s = Math.max(0, Math.round((Date.now() - capMs) / 1000));
+        age = s < 60 ? s + ' s ago' : Math.round(s / 60) + ' min ago';
+      }
+    } catch(_) {}
+    els.engineFresh.textContent = 'Captured ' + age + ' · ward ' + (snap.wardName || '');
   }
 
   async function onKeypadPress(c) {
