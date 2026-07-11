@@ -50,6 +50,11 @@ vi.mock("../src/lib/supabase.js", () => ({
   fetchWardMonthlyBaseline: async () => null,
   computeVci: () => null,
   countWorseThanYears: () => null,
+  // Identity view helper — returns the fixture-driven verified match
+  // or lead when set, else null (unknown phone). The verified /
+  // callContextByPhone paths short-circuit before this fires, so
+  // default null is fine for existing tests.
+  identityForPhone: async () => null,
 }));
 
 vi.mock("../src/lib/intelligence.js", () => ({

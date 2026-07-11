@@ -127,7 +127,11 @@ describe("fastTranscribe", () => {
     expect(result).toBeNull();
   });
 
-  it("returns null when Fast succeeds with an empty transcript AND short-audio also empty", async () => {
+  it("returns noSpeech=true when Fast succeeds empty AND Azure short-audio Success but empty", async () => {
+    // Since 2026-07-10 the short-audio fallback distinguishes 'Azure
+    // said Success but heard no speech' from 'Azure was unreachable'.
+    // The former returns { transcript:'', noSpeech:true } so the demo
+    // UI can show a useful 'we didn't hear you' message.
     mockFetch([
       () =>
         new Response(
@@ -146,7 +150,7 @@ describe("fastTranscribe", () => {
     ]);
     const { fastTranscribe } = await import("../src/lib/speech.js");
     const result = await fastTranscribe(new Uint8Array([1]), "audio/wav");
-    expect(result).toBeNull();
+    expect(result).toEqual({ transcript: "", locale: undefined, noSpeech: true });
   });
 
   it("passes the locales list from AZURE_SPEECH_STT_LANGUAGES", async () => {

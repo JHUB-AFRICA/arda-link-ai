@@ -35,8 +35,10 @@ import {
   fetchWardMonthlyBaseline,
   computeVci,
   countWorseThanYears,
+  identityForPhone,
   type SbCallContext,
   type SbPastoralist,
+  type SbPhoneIdentity,
   type WardMonthlyBaseline,
 } from "./supabase.js";
 import { wardIdForTenant, tenantForWardId, DEFAULT_WARD_ID } from "./wardMapping.js";
@@ -52,6 +54,16 @@ const DEFAULT_TENANT_ID =
 export interface HerderContext {
   /** True if we matched a pastoralist row on either Supabase or local. */
   known: boolean;
+  /**
+   * Data tier — critical for downstream policy:
+   *   verified — real pastoralists row. Full analytics, drill batches,
+   *              ground_truth_reports inserts, threshold alerts.
+   *   lead     — self-subscribed via USSD/SMS/inbound-call. Welcome
+   *              cadence only; NEVER included in the daily drill or
+   *              analytics until ops promotes them.
+   *   unknown  — phone matched nothing; skip every outbound dispatch.
+   */
+  tier: "verified" | "lead" | "unknown";
   /** Which source resolved the herder (helpful for debugging). */
   source: "supabase" | "local" | "none";
   phone: string;
@@ -149,6 +161,7 @@ function baseContext(rawPhone: string, tenantId: string): HerderContext {
   const wardId = wardIdForTenant(tenantId);
   return {
     known: false,
+    tier: "unknown",
     source: "none",
     phone: rawPhone,
     canonicalPhone,
@@ -234,6 +247,9 @@ function mergeSupabaseCallContext(
   return {
     ...base,
     known: true,
+    // A hit on api_call_context means the phone is in `pastoralists`
+    // (the view only reads verified rows). Leads never appear here.
+    tier: "verified",
     source: "supabase",
     pastoralistId: ctx.pastoralist_id,
     name: ctx.full_name ?? base.name,
@@ -256,6 +272,7 @@ function mergeSupabasePastoralist(
   return {
     ...base,
     known: true,
+    tier: "verified",
     source: "supabase",
     pastoralistId: p.pastoralist_id,
     name: p.full_name ?? base.name,
@@ -457,6 +474,9 @@ async function resolveFromLocalOnly(
       return {
         ...ctx,
         known: true,
+        // Local mirror row → treat as verified. The mirror only ever
+        // holds ops-added rows (leads never sync down since S2/S6).
+        tier: "verified",
         source: "local",
         name: pastoralist.name,
         location: pastoralist.location || null,
@@ -482,6 +502,32 @@ async function resolveFromLocalOnly(
   }
 }
 
+/**
+ * Overlay lead identity onto a base ctx when the phone matches a row
+ * in pastoralist_leads (via api_phone_identity view). Marks tier='lead'
+ * so downstream policy can gate outbound dispatches + analytics writes.
+ */
+function mergeLeadIdentity(
+  base: HerderContext,
+  id: SbPhoneIdentity,
+): HerderContext {
+  const lang =
+    id.preferred_language === "en" || id.preferred_language === "sw"
+      ? id.preferred_language
+      : base.preferredLanguage;
+  return {
+    ...base,
+    known: true,
+    tier: "lead",
+    source: "supabase",
+    pastoralistId: id.identity_id,
+    name: id.full_name ?? base.name,
+    preferredLanguage: lang,
+    wardId: id.ward_id ?? base.wardId,
+    location: id.location_text ?? base.location,
+  };
+}
+
 export async function resolveHerderContext(
   rawPhone: string,
   tenantId: string = DEFAULT_TENANT_ID,
@@ -500,7 +546,18 @@ export async function resolveHerderContext(
       ctx = mergeSupabaseCallContext(ctx, view);
     } else {
       const p = await pastoralistByPhone(ctx.canonicalPhone);
-      if (p) ctx = mergeSupabasePastoralist(ctx, p);
+      if (p) {
+        ctx = mergeSupabasePastoralist(ctx, p);
+      } else {
+        // No verified pastoralist. Check the leads table via the
+        // identity view — a self-subscribed lead still deserves a
+        // personalised opener and language routing, just gated
+        // differently downstream.
+        const identity = await identityForPhone(ctx.canonicalPhone);
+        if (identity && identity.tier === "lead") {
+          ctx = mergeLeadIdentity(ctx, identity);
+        }
+      }
     }
 
     // If Supabase resolved the herder, backfill the local-only detail
