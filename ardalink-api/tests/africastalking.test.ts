@@ -213,7 +213,7 @@ describe("initiateOutboundCall", () => {
     expect(r.ok).toBe(true);
     expect(r.messageId).toBe("ATVId_test1");
     expect(r.status).toBe("Queued");
-    expect(capturedUrl).toContain("voice.sandbox.africastalking.com/call");
+    expect(capturedUrl).toContain("voice.africastalking.com/call");
     expect(capturedBody).toContain("username=sandbox");
     expect(capturedBody).toContain("from=%2B254711082200");
     expect(capturedBody).toContain("to=%2B254712345678");

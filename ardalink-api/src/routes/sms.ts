@@ -6,6 +6,7 @@ import {
 } from "../lib/herderContext.js";
 import { centroidForTenant, formatUssdLines } from "../lib/wpdx.js";
 import { languageForCaller } from "../lib/voiceCopy.js";
+import { initiateOutboundCall, sendSmsViaAt } from "../lib/africastalking.js";
 
 const DEFAULT_TENANT_ID =
   process.env.DETERMINISTIC_TENANT_ID ?? "bula-pesa";
@@ -123,11 +124,25 @@ router.post("/sms-callback", async (req, res): Promise<void> => {
       }
       case "ONGEA":
       case "AI": {
-        await maybeCallback(from, `${keyword} keyword`);
+        // Dispatch the outbound call in the background so the SMS
+        // reply goes back to the herder immediately. The AT
+        // africastalking.ts shim enforces the 1-per-15min voice cap
+        // and logs the outcome. Failure fires a follow-up SMS to
+        // close the loop (see the .then/.catch below).
+        void initiateOutboundCall(from).then((r) => {
+          if (!r.ok) {
+            void sendSmsViaAt(
+              from,
+              lang === "sw"
+                ? "ArdaLink hakuweza kupiga sasa. Jaribu tena baada ya dakika 15."
+                : "ArdaLink could not call now. Please try again in 15 minutes.",
+            );
+          }
+        });
         reply(
           lang === "sw"
-            ? "Sawa. ArdaLink atakupigia simu hivi karibuni kupokea ripoti yako."
-            : "Okay. ArdaLink will call you shortly to record your report.",
+            ? "Sawa. ArdaLink inakupigia sasa kupokea ripoti yako."
+            : "Okay. ArdaLink is calling you now to record your report.",
         );
         return;
       }

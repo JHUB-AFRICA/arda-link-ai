@@ -34,6 +34,9 @@ import {
   isSupabaseConfigured,
   pastoralistByPhone,
 } from "./supabase.js";
+import { resolveHerderContext } from "./herderContext.js";
+import { languageForCaller } from "./voiceCopy.js";
+import { sendSmsViaAt } from "./africastalking.js";
 
 // Demo/system tenant used for calls that don't have a JWT-derived tenant
 // (browser demos, sandbox AT flows). Real herder calls should propagate the
@@ -256,6 +259,21 @@ export async function processDeterministicVoiceRecording(
       });
     }
 
+    // ─── Post-call SMS handoff — closes the voice loop ───────────────
+    // Per the "no open loops" rule (2026-07-11), every completed voice
+    // call ends by sending a summary SMS in the caller's language. The
+    // herder walks away knowing what we captured and gets a written
+    // record they can re-read. Skip when we don't know who the caller
+    // is (tier='unknown') to avoid random-number spam.
+    if (input.phone) {
+      void sendPostCallSummary({
+        phone: input.phone,
+        indicators,
+        actionTag,
+        reportId: report?.id ?? null,
+      });
+    }
+
     return report?.id ?? null;
   } catch (err) {
     logger.error({ err }, "[Deterministic] Failed to insert ground-truth row");
@@ -271,6 +289,103 @@ interface SupabaseMirrorArgs {
   transcript: string;
   locale: string | null;
   sourceLanguage: string;
+}
+
+/**
+ * Send a summary SMS after the voice call completes. Closes the loop
+ * per the "no open loops" policy: caller walks away knowing exactly
+ * what we recorded and gets a written record for their own reference.
+ *
+ * Language + tier are read from HerderContext. Unknown callers (no
+ * verified pastoralist AND no lead row) are skipped so we don't spam
+ * random numbers. Env kill switch SEND_POSTCALL_SMS=false stops the
+ * dispatch entirely, useful during dry-run demos.
+ */
+interface PostCallSummaryArgs {
+  phone: string;
+  indicators: Awaited<ReturnType<typeof extractIndicators>>;
+  actionTag: string | null;
+  reportId: number | null;
+}
+async function sendPostCallSummary(args: PostCallSummaryArgs): Promise<void> {
+  const enabled = (process.env.SEND_POSTCALL_SMS ?? "true")
+    .trim()
+    .toLowerCase();
+  if (enabled === "false" || enabled === "0") {
+    logger.info(
+      { phone: args.phone, reportId: args.reportId },
+      "[Deterministic] SEND_POSTCALL_SMS=false — skipping summary SMS",
+    );
+    return;
+  }
+  try {
+    const ctx = await resolveHerderContext(args.phone, DEFAULT_TENANT_ID);
+    if (ctx.tier === "unknown") {
+      logger.info(
+        { phone: args.phone },
+        "[Deterministic] Skipping post-call SMS — caller tier=unknown",
+      );
+      return;
+    }
+    const lang = languageForCaller(ctx);
+    const body = buildPostCallSummaryText(ctx.name ?? null, args, lang);
+    void sendSmsViaAt(args.phone, body);
+    logger.info(
+      { phone: args.phone, tier: ctx.tier, lang, reportId: args.reportId },
+      "[Deterministic] Post-call summary SMS queued",
+    );
+  } catch (err) {
+    logger.warn(
+      { err: String(err), phone: args.phone },
+      "[Deterministic] Post-call summary SMS failed",
+    );
+  }
+}
+
+/**
+ * Compose a short (≤160 char) summary of what we captured. Includes:
+ *   - caller's first name if known
+ *   - action tag (e.g. "Dry Season Stress")
+ *   - most notable indicators — BCS, mortality, water status
+ * Keeps text natural: no jargon, no "action_tag=" style dumps.
+ */
+function buildPostCallSummaryText(
+  name: string | null,
+  args: PostCallSummaryArgs,
+  lang: "sw" | "en",
+): string {
+  const nameBit = name ? " " + name.trim().split(/\s+/)[0] : "";
+  const bcs = args.indicators?.bcs_score;
+  const mortality = args.indicators?.mortality_rate;
+  const waterStatus = args.indicators?.water_point_status;
+
+  const bits: string[] = [];
+  if (typeof bcs === "number") {
+    bits.push(lang === "sw" ? `BCS ${bcs.toFixed(1)}` : `BCS ${bcs.toFixed(1)}`);
+  }
+  if (mortality != null) {
+    // mortality_rate is a string enum ("1-3" | "4-plus" | ...).
+    const mLabel = String(mortality).slice(0, 12);
+    bits.push(lang === "sw" ? `Vifo: ${mLabel}` : `Losses: ${mLabel}`);
+  }
+  if (waterStatus) {
+    const w = String(waterStatus).slice(0, 20);
+    bits.push(lang === "sw" ? `Maji: ${w}` : `Water: ${w}`);
+  }
+
+  const captured =
+    bits.length > 0
+      ? bits.join(", ")
+      : lang === "sw"
+        ? "Tumepokea taarifa yako"
+        : "Report received";
+
+  const tail =
+    lang === "sw"
+      ? "Asante. Tutafuatilia."
+      : "Thanks. We will follow up.";
+
+  return `ArdaLink${nameBit}: ${captured}. ${tail}`.slice(0, 160);
 }
 
 async function writeSupabaseMirror(args: SupabaseMirrorArgs): Promise<void> {

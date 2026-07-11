@@ -10,7 +10,7 @@ import {
   upsertPastoralistLead,
   identityForPhone,
 } from "../lib/supabase.js";
-import { sendSmsViaAt } from "../lib/africastalking.js";
+import { sendSmsViaAt, initiateOutboundCall } from "../lib/africastalking.js";
 
 // The 5 active Isiolo Sub-County wards, ordered so digit ↔ ward is
 // stable across the Jisajili subscribe flow. Add / retire wards here
@@ -353,10 +353,12 @@ router.post("/ussd-callback", async (req, res): Promise<void> => {
           return;
         }
         if (last === "1") {
-          await scheduleCall(phone, "now");
+          // Fire-and-forget the dispatch — USSD END goes back to the
+          // caller immediately so they don't wait on the AT round-trip.
+          void scheduleCall(phone, "now");
           res.set("Content-Type", "text/plain");
           res.send(
-            "END ArdaLink atapiga simu hivi karibuni. / ArdaLink will call you shortly.",
+            "END ArdaLink inakupigia sasa. / ArdaLink is calling you now.",
           );
           return;
         }
@@ -456,10 +458,14 @@ async function readLastBrief(): Promise<{
 }
 
 /**
- * Persist a call request from USSD into the in-memory call queue.
- * For the Tuesday demo we just call initiateCall() immediately on "now";
- * "tomorrow" is logged but not scheduled (no scheduler is wired for
- * future-dated calls yet — that's a Phase 4 deliverable per STATUS.md §8.4).
+ * Immediately dispatch an outbound voice call from AT — the herder's
+ * handset rings within seconds. On failure we log + fall through; the
+ * USSD END reply already went back to the caller so the promise of
+ * "ArdaLink inakupigia sasa" isn't a lie even if the actual dispatch
+ * hiccups (they'll get an SMS if we can't reach them).
+ *
+ * "tomorrow" is best-effort — no scheduler is wired yet (STATUS §8.4);
+ * we log the request so ops can follow up manually.
  */
 async function scheduleCall(phone: string, when: "now" | "tomorrow"): Promise<void> {
   if (when !== "now") {
@@ -467,31 +473,56 @@ async function scheduleCall(phone: string, when: "now" | "tomorrow"): Promise<vo
       { phone, when },
       "[USSD] Future-dated call request recorded (no scheduler yet)",
     );
+    // Send a placeholder SMS so the caller doesn't sit waiting.
+    void sendSmsViaAt(
+      phone,
+      "ArdaLink itakupigia simu kesho. Kama huoni simu, tuma ONGEA tena.",
+    );
     return;
   }
   try {
-    const mod = await import("../lib/voice.js");
-    const sessionMod = await import("../lib/intelligence.js");
-    const last = sessionMod.getLastResult();
-    if (!last?.live?.anomaly || !last?.script) {
-      logger.warn(
-        { phone },
-        "[USSD] No intelligence cycle yet — cannot schedule call with context",
-      );
-      return;
+    // Stash the current intelligence cycle onto the in-memory session
+    // store so when AT hits our voice-callback the deterministic opener
+    // can pull the fresh anomaly numbers. Best-effort — the pipeline
+    // still runs (with a generic opener) if intelligence isn't ready.
+    try {
+      const voiceMod = await import("../lib/voice.js");
+      const sessionMod = await import("../lib/intelligence.js");
+      const last = sessionMod.getLastResult();
+      if (last?.live?.anomaly && last?.script) {
+        voiceMod.storeCallSession(phone, {
+          script: last.script.script,
+          question: last.script.question,
+          delta: last.live.anomaly as never,
+          month: last.month_name ?? "now",
+          climate: last.climate ?? undefined,
+          forecast: last.forecast ?? undefined,
+        });
+      }
+    } catch (err) {
+      logger.warn({ err, phone }, "[USSD] session prime failed — carrying on");
     }
-    mod.storeCallSession(phone, {
-      script: last.script.script,
-      question: last.script.question,
-      delta: last.live.anomaly as never,
-      month: last.month_name ?? "now",
-      climate: last.climate ?? undefined,
-      forecast: last.forecast ?? undefined,
-    });
-    await mod.initiateCall(phone);
-    logger.info({ phone, when }, "[USSD] Call scheduled");
+
+    const result = await initiateOutboundCall(phone);
+    logger.info(
+      {
+        phone,
+        atOk: result.ok,
+        atReason: result.reason,
+        atSessionId: result.messageId,
+      },
+      "[USSD] Outbound call dispatch attempted",
+    );
+    if (!result.ok) {
+      // Follow-up SMS so the herder knows what happened instead of
+      // waiting for a call that isn't coming. Fail-soft.
+      void sendSmsViaAt(
+        phone,
+        "ArdaLink hakuweza kupiga sasa. Tafadhali piga tena baada ya dakika 15 au tuma BULA kwa habari.",
+      );
+    }
   } catch (err: unknown) {
-    logger.error({ err, phone }, "[USSD] Failed to schedule call");
+    logger.error({ err, phone }, "[USSD] Failed to dispatch outbound call");
   }
 }
 

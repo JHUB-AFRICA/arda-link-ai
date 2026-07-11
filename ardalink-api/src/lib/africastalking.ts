@@ -68,15 +68,15 @@ function cfg(): AtCfg {
     apiKey,
     senderId,
     isSandbox,
-    // AT ships two separate hosts. Voice lives on the numeric-prefixed
-    // regional host, SMS on the messaging host. Both split at
-    // sandbox/production boundary.
+    // SMS host is split at sandbox/production. Voice is not — AT
+    // uses a single voice.africastalking.com endpoint for both
+    // environments and distinguishes them by the api key. There is
+    // no voice.sandbox.africastalking.com subdomain (verified 2026-07-11
+    // — DNS returns NXDOMAIN).
     smsHost: isSandbox
       ? "https://api.sandbox.africastalking.com"
       : "https://api.africastalking.com",
-    voiceHost: isSandbox
-      ? "https://voice.sandbox.africastalking.com"
-      : "https://voice.africastalking.com",
+    voiceHost: "https://voice.africastalking.com",
   };
 }
 
