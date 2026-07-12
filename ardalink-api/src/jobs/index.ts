@@ -12,3 +12,10 @@ export {
   isSatelliteJobEnabled,
   getScheduleDescription,
 } from "./satelliteJob.js";
+
+export {
+  runForecastJob,
+  startForecastJob,
+  stopForecastJob,
+  isForecastJobEnabled,
+} from "./forecastJob.js";

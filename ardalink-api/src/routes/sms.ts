@@ -6,6 +6,8 @@ import {
 } from "../lib/herderContext.js";
 import { centroidForTenant, formatUssdLines } from "../lib/wpdx.js";
 import { languageForCaller } from "../lib/voiceCopy.js";
+import { initiateOutboundCall, sendSmsViaAt } from "../lib/africastalking.js";
+import { logLeadInteraction } from "../lib/supabase.js";
 
 const DEFAULT_TENANT_ID =
   process.env.DETERMINISTIC_TENANT_ID ?? "bula-pesa";
@@ -77,11 +79,40 @@ router.post("/sms-callback", async (req, res): Promise<void> => {
     "[SMS] Inbound keyword",
   );
 
-  // AT expects a plain-text 200 with the reply body. Empty body means
-  // "don't reply" — useful for STOP.
+  // AT's inbound SMS webhook contract does NOT treat the HTTP response
+  // body as an auto-reply (that's USSD's convention). For SMS we have
+  // to explicitly POST to /version1/messaging to send a reply. We fire
+  // sendSmsViaAt with bypassRateLimit=true because these are direct
+  // responses to the herder's own inbound — they're not proactive
+  // dispatch and shouldn't count against the daily-drill cap.
+  //
+  // We still put the text in the HTTP response body as a defensive
+  // fallback (some AT products / older sandbox versions do consume it),
+  // and to keep test fixtures / grep-based CI checks stable.
+  //
+  // Every reply also logs a lead_interactions row so the ops
+  // CallbackLog panel can show what the herder saw. Tier is
+  // captured at reply-time so ops can filter for leads vs verified.
+  let capturedTier: "verified" | "lead" | "unknown" = "unknown";
+  let capturedWardId: string | null = null;
   const reply = (text: string): void => {
+    const smsBody = trimToSms(text);
     res.set("Content-Type", "text/plain");
-    res.send(trimToSms(text));
+    res.send(smsBody);
+    if (smsBody && from) {
+      void sendSmsViaAt(from, smsBody, { bypassRateLimit: true });
+    }
+    void logLeadInteraction({
+      phone_number: from,
+      tier: capturedTier,
+      channel: "sms",
+      session_id: body.id ?? null,
+      keyword,
+      input_text: rawText,
+      reply_text: smsBody || null,
+      ward_id: capturedWardId,
+      raw_body: { to: body.to ?? null, smsId: body.id ?? null },
+    });
   };
 
   try {
@@ -90,14 +121,23 @@ router.post("/sms-callback", async (req, res): Promise<void> => {
     // default context that still routes on Kiswahili.
     const ctx = await resolveHerderContext(from, DEFAULT_TENANT_ID);
     const lang = languageForCaller(ctx);
+    capturedTier = ctx.tier;
+    capturedWardId = ctx.wardId ?? null;
 
     switch (keyword) {
       case "BULA": {
         // Full localized brief — the same one USSD selection 1
         // renders. buildLocalizedBrief caps at 300 chars and
         // trimToSms trims to 160 for the SMS segment.
+        //
+        // NOTE (2026-07-12): BULA no longer triggers a voice
+        // callback. It's a pull-brief keyword — the reply IS the
+        // response. ONGEA is the dedicated call-me-back keyword;
+        // the daily drill cron is what does proactive outreach.
+        // The legacy maybeCallback() dependency was throwing when
+        // the intelligence cycle hadn't populated a .script yet,
+        // which surfaced as an unhelpful "hitilafu" error reply.
         const brief = buildLocalizedBrief(ctx, lang);
-        await maybeCallback(from, "BULA keyword");
         reply(brief);
         return;
       }
@@ -123,11 +163,25 @@ router.post("/sms-callback", async (req, res): Promise<void> => {
       }
       case "ONGEA":
       case "AI": {
-        await maybeCallback(from, `${keyword} keyword`);
+        // Dispatch the outbound call in the background so the SMS
+        // reply goes back to the herder immediately. The AT
+        // africastalking.ts shim enforces the 1-per-15min voice cap
+        // and logs the outcome. Failure fires a follow-up SMS to
+        // close the loop (see the .then/.catch below).
+        void initiateOutboundCall(from).then((r) => {
+          if (!r.ok) {
+            void sendSmsViaAt(
+              from,
+              lang === "sw"
+                ? "ArdaLink hakuweza kupiga sasa. Jaribu tena baada ya dakika 15."
+                : "ArdaLink could not call now. Please try again in 15 minutes.",
+            );
+          }
+        });
         reply(
           lang === "sw"
-            ? "Sawa. ArdaLink atakupigia simu hivi karibuni kupokea ripoti yako."
-            : "Okay. ArdaLink will call you shortly to record your report.",
+            ? "Sawa. ArdaLink inakupigia sasa kupokea ripoti yako."
+            : "Okay. ArdaLink is calling you now to record your report.",
         );
         return;
       }

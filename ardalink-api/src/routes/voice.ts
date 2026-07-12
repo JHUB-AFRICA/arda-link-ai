@@ -3,6 +3,7 @@ import { logger } from "../lib/logger.js";
 import { getLastResult } from "../lib/intelligence.js";
 import { processDeterministicVoiceRecording } from "../lib/voiceDeterministicPipeline.js";
 import { resolveHerderContext } from "../lib/herderContext.js";
+import { logLeadInteraction } from "../lib/supabase.js";
 import {
   categoryLabelFor,
   dtmfConfirmation,
@@ -83,6 +84,27 @@ router.post("/voice-callback", async (req, res): Promise<void> => {
     const canonicalPhone = normalizeAtPhone(rawCaller) ?? rawCaller;
     const lang = await resolveCallerLang(canonicalPhone, req);
 
+    // Log every voice stage hit to lead_interactions for the ops
+    // CallbackLog panel. Fire-and-forget — never blocks AT response.
+    const logVoiceHit = (
+      stageLabel: string,
+      inputText: string | null,
+      replyText: string | null,
+    ): void => {
+      if (!canonicalPhone) return;
+      void logLeadInteraction({
+        phone_number: canonicalPhone,
+        tier: "unknown", // resolved via ctx below when we bother; keeps this hot path cheap
+        channel: "voice",
+        session_id: typeof sessionId === "string" ? sessionId : null,
+        keyword: stageLabel,
+        input_text: inputText,
+        reply_text: replyText ? replyText.slice(0, 500) : null,
+        ward_id: null,
+        raw_body: { direction, stage: stageLabel },
+      });
+    };
+
     // Stage 1 — value-first opener + DTMF menu.
     if (stage === "opener") {
       const opener = await buildOpenerFor(canonicalPhone, lang);
@@ -99,6 +121,7 @@ router.post("/voice-callback", async (req, res): Promise<void> => {
         { sessionId, direction, mode, lang },
         "voice-callback deterministic stage=opener",
       );
+      logVoiceHit("opener", null, opener);
       res.type("text/xml").send(xml);
       return;
     }
@@ -124,6 +147,7 @@ router.post("/voice-callback", async (req, res): Promise<void> => {
         { sessionId, digits, category: category.id, lang },
         "voice-callback deterministic stage=dtmf",
       );
+      logVoiceHit(`dtmf:${category.id}`, digits, label);
       res.type("text/xml").send(xml);
       return;
     }
@@ -193,6 +217,7 @@ router.post("/voice-callback", async (req, res): Promise<void> => {
       // by name if we have it. Bounded lookup so we don't stall AT.
       const thanks = await buildThanksFor(canonicalPhone, lang);
       const xml = asXml(`  <Say>${xmlEscape(thanks)}</Say>`);
+      logVoiceHit(`recorded:${category}`, recordingUrl, thanks);
       res.type("text/xml").send(xml);
       return;
     }

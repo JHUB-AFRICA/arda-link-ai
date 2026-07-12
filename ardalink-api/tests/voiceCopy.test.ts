@@ -22,6 +22,11 @@ import type { HerderContext } from "../src/lib/herderContext";
 function makeCtx(patch: Partial<HerderContext> = {}): HerderContext {
   return {
     known: true,
+    tier: "verified",
+    peerCallerCount: null,
+    peerThinAnimalsCount: null,
+    peerBrokenWaterCount: null,
+    peerWindowDays: null,
     source: "supabase",
     phone: "+254712000004",
     canonicalPhone: "+254712000004",
