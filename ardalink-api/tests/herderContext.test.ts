@@ -55,6 +55,11 @@ vi.mock("../src/lib/supabase.js", () => ({
   // callContextByPhone paths short-circuit before this fires, so
   // default null is fine for existing tests.
   identityForPhone: async () => null,
+  // Water-point ground-truth overlay + peer-signal aggregator —
+  // default to empty so pre-existing herderContext tests don't need
+  // to reason about them. Dedicated tests can add fixtures.
+  recentWaterPointGroundTruth: async () => [],
+  peerSignalForWard: async () => null,
 }));
 
 vi.mock("../src/lib/intelligence.js", () => ({
