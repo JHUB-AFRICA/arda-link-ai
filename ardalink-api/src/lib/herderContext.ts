@@ -35,16 +35,24 @@ import {
   fetchWardMonthlyBaseline,
   computeVci,
   countWorseThanYears,
+  identityForPhone,
   type SbCallContext,
   type SbPastoralist,
+  type SbPhoneIdentity,
   type WardMonthlyBaseline,
 } from "./supabase.js";
 import { wardIdForTenant, tenantForWardId, DEFAULT_WARD_ID } from "./wardMapping.js";
 import {
   centroidForTenant,
   nearestPoints,
+  nearestWorkingKnownPoints,
   type WpdxStatus,
 } from "./wpdx.js";
+import {
+  recentWaterPointGroundTruth,
+  peerSignalForWard,
+  type SbPeerSignal,
+} from "./supabase.js";
 
 const DEFAULT_TENANT_ID =
   process.env.DETERMINISTIC_TENANT_ID ?? "bula-pesa";
@@ -52,6 +60,16 @@ const DEFAULT_TENANT_ID =
 export interface HerderContext {
   /** True if we matched a pastoralist row on either Supabase or local. */
   known: boolean;
+  /**
+   * Data tier — critical for downstream policy:
+   *   verified — real pastoralists row. Full analytics, drill batches,
+   *              ground_truth_reports inserts, threshold alerts.
+   *   lead     — self-subscribed via USSD/SMS/inbound-call. Welcome
+   *              cadence only; NEVER included in the daily drill or
+   *              analytics until ops promotes them.
+   *   unknown  — phone matched nothing; skip every outbound dispatch.
+   */
+  tier: "verified" | "lead" | "unknown";
   /** Which source resolved the herder (helpful for debugging). */
   source: "supabase" | "local" | "none";
   phone: string;
@@ -109,6 +127,15 @@ export interface HerderContext {
   nearestWaterPointDistanceKm: number | null;
   nearestWaterPointStatus: WpdxStatus | null;
 
+  // Peer signal — what other herders in this ward have reported in
+  // the last 7 days. Populated by overlayPeerSignal below when the
+  // ward has any activity. Powers the "N wachungaji karibu nawe
+  // wameripoti hali kama hii wiki hii" opener line.
+  peerCallerCount: number | null;
+  peerThinAnimalsCount: number | null;
+  peerBrokenWaterCount: number | null;
+  peerWindowDays: number | null;
+
   // Real-anomaly signals derived from Supabase's 11-year
   // satellite_indices history for this ward + calendar month. These
   // replace the fixed-threshold "97 % stressed" line with sentences
@@ -149,6 +176,7 @@ function baseContext(rawPhone: string, tenantId: string): HerderContext {
   const wardId = wardIdForTenant(tenantId);
   return {
     known: false,
+    tier: "unknown",
     source: "none",
     phone: rawPhone,
     canonicalPhone,
@@ -188,6 +216,10 @@ function baseContext(rawPhone: string, tenantId: string): HerderContext {
     nearestWaterPointName: null,
     nearestWaterPointDistanceKm: null,
     nearestWaterPointStatus: null,
+    peerCallerCount: null,
+    peerThinAnimalsCount: null,
+    peerBrokenWaterCount: null,
+    peerWindowDays: null,
     baselineMonth: null,
     baselineYears: null,
     ndviBaselineP50: null,
@@ -200,16 +232,44 @@ function baseContext(rawPhone: string, tenantId: string): HerderContext {
 }
 
 /**
- * Overlay: nearest WPDx water point + status. Anchor point is the
- * herder's tenant ward centroid (we don't have GPS from the phone).
- * Deterministic + static — the WPDx snapshot lives in code.
+ * Overlay: peer signal for the caller's ward — what other herders
+ * have reported this week. Fires silently when the ward has no
+ * activity (fresh pilot, no signal yet).
  */
-function overlayNearestWaterPoint(ctx: HerderContext): HerderContext {
+async function overlayPeerSignal(ctx: HerderContext): Promise<HerderContext> {
+  if (!ctx.wardId) return ctx;
+  const signal = await peerSignalForWard(ctx.wardId, 7);
+  if (!signal || signal.callerCount === 0) return ctx;
+  return {
+    ...ctx,
+    peerCallerCount: signal.callerCount,
+    peerThinAnimalsCount: signal.thinAnimalsCount,
+    peerBrokenWaterCount: signal.brokenWaterCount,
+    peerWindowDays: signal.windowDays,
+  };
+}
+
+/**
+ * Overlay: nearest WPDx water point + status, blended with recent
+ * herder ground-truth. If any herder reported "working" for a point
+ * within 90 days, we surface THAT point (freshest evidence wins).
+ * Falls back to the raw WPDx snapshot when no ground truth exists.
+ *
+ * WPDx's 2012 Isiolo survey is all Non-Functional, so without the
+ * ground-truth overlay every herder opener would say "the nearest
+ * borehole was broken", which is stale after 14 years. This overlay
+ * IS the mechanism by which herder reports become the new source of
+ * truth.
+ */
+async function overlayNearestWaterPoint(
+  ctx: HerderContext,
+): Promise<HerderContext> {
   const origin =
     centroidForTenant(tenantForWardId(ctx.wardId)) ??
     centroidForTenant("bula-pesa");
   if (!origin) return ctx;
-  const nearest = nearestPoints(origin, 1);
+  const overrides = (await recentWaterPointGroundTruth(90)) ?? [];
+  const nearest = nearestWorkingKnownPoints(origin, 1, overrides);
   const top = nearest[0];
   if (!top) return ctx;
   return {
@@ -234,6 +294,9 @@ function mergeSupabaseCallContext(
   return {
     ...base,
     known: true,
+    // A hit on api_call_context means the phone is in `pastoralists`
+    // (the view only reads verified rows). Leads never appear here.
+    tier: "verified",
     source: "supabase",
     pastoralistId: ctx.pastoralist_id,
     name: ctx.full_name ?? base.name,
@@ -256,6 +319,7 @@ function mergeSupabasePastoralist(
   return {
     ...base,
     known: true,
+    tier: "verified",
     source: "supabase",
     pastoralistId: p.pastoralist_id,
     name: p.full_name ?? base.name,
@@ -457,6 +521,9 @@ async function resolveFromLocalOnly(
       return {
         ...ctx,
         known: true,
+        // Local mirror row → treat as verified. The mirror only ever
+        // holds ops-added rows (leads never sync down since S2/S6).
+        tier: "verified",
         source: "local",
         name: pastoralist.name,
         location: pastoralist.location || null,
@@ -482,6 +549,36 @@ async function resolveFromLocalOnly(
   }
 }
 
+/**
+ * Overlay lead identity onto a base ctx when the phone matches a row
+ * in pastoralist_leads (via api_phone_identity view). Marks tier='lead'
+ * so downstream policy can gate outbound dispatches + analytics writes.
+ */
+function mergeLeadIdentity(
+  base: HerderContext,
+  id: SbPhoneIdentity,
+): HerderContext {
+  const lang =
+    id.preferred_language === "en" || id.preferred_language === "sw"
+      ? id.preferred_language
+      : base.preferredLanguage;
+  return {
+    ...base,
+    known: true,
+    tier: "lead",
+    source: "supabase",
+    pastoralistId: id.identity_id,
+    name: id.full_name ?? base.name,
+    preferredLanguage: lang,
+    wardId: id.ward_id ?? base.wardId,
+    // location_text is what the lead typed during Jisajili (a ward
+    // name like "Ngare Mara"), so it also serves as the display
+    // wardName until we have a dedicated lookup.
+    wardName: id.location_text ?? base.wardName,
+    location: id.location_text ?? base.location,
+  };
+}
+
 export async function resolveHerderContext(
   rawPhone: string,
   tenantId: string = DEFAULT_TENANT_ID,
@@ -500,7 +597,18 @@ export async function resolveHerderContext(
       ctx = mergeSupabaseCallContext(ctx, view);
     } else {
       const p = await pastoralistByPhone(ctx.canonicalPhone);
-      if (p) ctx = mergeSupabasePastoralist(ctx, p);
+      if (p) {
+        ctx = mergeSupabasePastoralist(ctx, p);
+      } else {
+        // No verified pastoralist. Check the leads table via the
+        // identity view — a self-subscribed lead still deserves a
+        // personalised opener and language routing, just gated
+        // differently downstream.
+        const identity = await identityForPhone(ctx.canonicalPhone);
+        if (identity && identity.tier === "lead") {
+          ctx = mergeLeadIdentity(ctx, identity);
+        }
+      }
     }
 
     // If Supabase resolved the herder, backfill the local-only detail
@@ -510,7 +618,8 @@ export async function resolveHerderContext(
       ctx = await overlayWardReference(ctx);
       ctx = await overlayHistoricalAnomaly(ctx);
       ctx = await overlayNeighborAdvice(ctx);
-      ctx = overlayNearestWaterPoint(ctx);
+      ctx = await overlayNearestWaterPoint(ctx);
+      ctx = await overlayPeerSignal(ctx);
       // Backfill tenant/ward correlation when Supabase gave us a ward_id.
       if (ctx.wardId && !tenantForWardId(ctx.wardId)) {
         ctx.wardId = wardIdForTenant(tenantId);
@@ -524,7 +633,8 @@ export async function resolveHerderContext(
   ctx = await overlayWardReference(ctx);
   ctx = await overlayHistoricalAnomaly(ctx);
   ctx = await overlayNeighborAdvice(ctx);
-  ctx = overlayNearestWaterPoint(ctx);
+  ctx = await overlayNearestWaterPoint(ctx);
+  ctx = await overlayPeerSignal(ctx);
   return ctx;
 }
 
@@ -535,70 +645,162 @@ export async function resolveHerderContext(
  * characters so it fits in a USSD screen or single-segment SMS budget.
  */
 export function buildLocalizedBrief(ctx: HerderContext, lang: "sw" | "en"): string {
-  const namePart = ctx.name ? `${ctx.name}, ` : "";
-  const locPart = ctx.location
-    ? ` (${ctx.location})`
-    : ctx.wardName
-      ? ` (${ctx.wardName})`
-      : "";
-  const stressed = ctx.wardStressedPct != null
-    ? `${ctx.wardStressedPct.toFixed(0)}%`
-    : null;
-  const ndviBit = ctx.wardNdviMean != null
-    ? `NDVI ${ctx.wardNdviMean.toFixed(2)}`
-    : null;
-  const rainBit = ctx.wardRainfall30dMm != null
-    ? `${ctx.wardRainfall30dMm.toFixed(0)}mm mvua`
-    : null;
-  const risk = ctx.wardRiskLevel ?? null;
-  const rec = ctx.wardRecommendation ?? null;
-  const lastBcs = ctx.lastBcsScore != null
-    ? `BCS ${ctx.lastBcsScore.toFixed(1)}`
-    : null;
-  // Anomaly line — from Supabase historical baseline, expressed as a
-  // VCI + "worse than X of last Y" pair. This is what makes the brief
-  // feel like an insight vs a data dump.
-  const vciBit =
-    ctx.vciDerived != null && ctx.baselineYears != null && ctx.baselineYears >= 5
+  const firstName = ctx.name ? ctx.name.trim().split(/\s+/)[0] : null;
+  const namePart = firstName ? `${firstName}, ` : "";
+
+  // Herders don't say "VCI 81" or "NDVI 0.28" — those are our
+  // internal signals. Convert them into a plain word ranking:
+  //   severity ∈ 'severe' | 'stressed' | 'moderate' | 'fair'
+  // derived from vciDerived when we have a proper baseline, else
+  // from wardStressedPct as a fallback.
+  const severity = severityFromCtx(ctx);
+
+  // Rainfall — herders think in "no rain lately" not "3mm/30d".
+  const rainLine =
+    ctx.wardRainfall30dMm != null
+      ? ctx.wardRainfall30dMm < 5
+        ? { sw: "mvua ni ndogo sana mwezi huu", en: "very little rain this month" }
+        : ctx.wardRainfall30dMm < 20
+          ? { sw: "mvua bado ni kidogo", en: "rain has been light" }
+          : { sw: "mvua imepatikana kidogo", en: "some rain has fallen" }
+      : null;
+
+  // Neighbor migration hint. Only surface when the delta is
+  // meaningful AND we have a name — no point saying "consider
+  // moving somewhere" without pointing.
+  const neighborLine =
+    ctx.neighborWardName &&
+    ctx.neighborNdviDelta != null &&
+    ctx.neighborNdviDelta >= 0.05
       ? {
-          sw: `VCI ${Math.round(ctx.vciDerived)}/100 (mbaya kuliko miaka ${ctx.worseThanYears ?? "?"}/${ctx.baselineYears})`,
-          en: `VCI ${Math.round(ctx.vciDerived)}/100 (worse than ${ctx.worseThanYears ?? "?"} of last ${ctx.baselineYears} years)`,
+          sw: `${ctx.neighborWardName} jirani ina majani zaidi kidogo — fikiria kuhamia huko`,
+          en: `${ctx.neighborWardName} nearby has slightly more pasture — consider moving that way`,
         }
       : null;
 
-  const neighborBit =
-    ctx.neighborWardName && ctx.neighborNdviMean != null
+  // Water point line — prefer working over broken. When only broken
+  // is known within 30km, invite the herder to update us if it's
+  // been fixed. When no working point exists at all, say so plainly.
+  const waterLine = buildWaterLine(ctx, lang);
+
+  // Peer signal — turn "isolated" into "part of a community".
+  // Requires at least 2 other callers in the window to feel real;
+  // one lonely report reads like the caller's own echo.
+  const peerLine =
+    ctx.peerCallerCount != null && ctx.peerCallerCount >= 2
       ? {
-          sw: `${ctx.neighborWardName} jirani NDVI ${ctx.neighborNdviMean.toFixed(2)} — fikiria kuhamisha huko.`,
-          en: `Neighbor ${ctx.neighborWardName} has better NDVI ${ctx.neighborNdviMean.toFixed(2)} — consider moving there.`,
+          sw: `Wachungaji ${ctx.peerCallerCount} karibu nawe wameripoti wiki hii`,
+          en: `${ctx.peerCallerCount} herders near you also reported this week`,
+        }
+      : null;
+
+  // Personal echo — the herder's own last report, so they know we
+  // remember. First name only, natural phrasing.
+  const lastBcsLine =
+    ctx.lastBcsScore != null
+      ? {
+          sw: `Ripoti yako ya mwisho: mifugo yako BCS ${ctx.lastBcsScore.toFixed(1)}`,
+          en: `Your last report: BCS ${ctx.lastBcsScore.toFixed(1)}`,
         }
       : null;
 
   if (lang === "sw") {
     const parts: string[] = [];
-    parts.push(`Habari ${namePart}kutoka ArdaLink${locPart}.`);
-    if (vciBit) parts.push(vciBit.sw + ".");
-    else if (ndviBit) parts.push(`${ndviBit} kwenye ward yako.`);
-    else if (stressed) parts.push(`Malisho ya ward: ${stressed} yameathirika.`);
-    if (rainBit) parts.push(`Mvua ya siku 30: ${rainBit}.`);
-    if (risk) parts.push(`Hatari ya ukame: ${risk}.`);
-    if (neighborBit) parts.push(neighborBit.sw);
-    if (lastBcs) parts.push(`Ripoti yako ya mwisho: ${lastBcs}.`);
-    if (rec) parts.push(`Ushauri: ${rec}`);
+    parts.push(
+      `Habari ${namePart}ArdaLink hapa` +
+        (ctx.wardName ? ` (${ctx.wardName})` : "") +
+        ".",
+    );
+    if (severity) parts.push(swSeverityLine(severity, rainLine?.sw ?? null));
+    else if (rainLine) parts.push(rainLine.sw + ".");
+    if (neighborLine) parts.push(neighborLine.sw + ".");
+    if (waterLine) parts.push(waterLine + ".");
+    if (peerLine) parts.push(peerLine.sw + ".");
+    if (lastBcsLine) parts.push(lastBcsLine.sw + ".");
     return parts.join(" ").slice(0, 300);
   }
 
   const parts: string[] = [];
-  parts.push(`Hello ${namePart}from ArdaLink${locPart}.`);
-  if (vciBit) parts.push(vciBit.en + ".");
-  else if (ndviBit) parts.push(`${ndviBit} across your ward.`);
-  else if (stressed) parts.push(`Ward pasture: ${stressed} is stressed.`);
-  if (rainBit) parts.push(`30-day rain: ${rainBit}.`);
-  if (risk) parts.push(`Drought risk: ${risk}.`);
-  if (neighborBit) parts.push(neighborBit.en);
-  if (lastBcs) parts.push(`Your last report: ${lastBcs}.`);
-  if (rec) parts.push(`Advice: ${rec}`);
+  parts.push(
+    `Hello ${namePart}ArdaLink here` +
+      (ctx.wardName ? ` (${ctx.wardName})` : "") +
+      ".",
+  );
+  if (severity) parts.push(enSeverityLine(severity, rainLine?.en ?? null));
+  else if (rainLine) parts.push(rainLine.en + ".");
+  if (neighborLine) parts.push(neighborLine.en + ".");
+  if (waterLine) parts.push(waterLine + ".");
+  if (peerLine) parts.push(peerLine.en + ".");
+  if (lastBcsLine) parts.push(lastBcsLine.en + ".");
   return parts.join(" ").slice(0, 300);
+}
+
+// ── Brief helpers — herder-natural phrasing, no jargon ────────────────
+
+type Severity = "severe" | "stressed" | "moderate" | "fair";
+
+function severityFromCtx(ctx: HerderContext): Severity | null {
+  // Prefer VCI-based severity when we have >=5 years of baseline.
+  if (
+    ctx.vciDerived != null &&
+    ctx.baselineYears != null &&
+    ctx.baselineYears >= 5
+  ) {
+    if (ctx.vciDerived <= 25) return "severe";
+    if (ctx.vciDerived <= 50) return "stressed";
+    if (ctx.vciDerived <= 75) return "moderate";
+    return "fair";
+  }
+  // Fallback to stressed-pixel-pct when no baseline.
+  if (ctx.wardStressedPct != null) {
+    if (ctx.wardStressedPct >= 70) return "severe";
+    if (ctx.wardStressedPct >= 40) return "stressed";
+    if (ctx.wardStressedPct >= 20) return "moderate";
+    return "fair";
+  }
+  return null;
+}
+
+function swSeverityLine(severity: Severity, rainTail: string | null): string {
+  const rainSuffix = rainTail ? `, ${rainTail}` : "";
+  const map: Record<Severity, string> = {
+    severe: `Malisho ya ward yako ni mabaya sana mwezi huu${rainSuffix}`,
+    stressed: `Malisho ya ward yako ni kidogo chini ya wastani${rainSuffix}`,
+    moderate: `Malisho ya ward yako ni ya wastani${rainSuffix}`,
+    fair: `Malisho ya ward yako bado ni ya kadri${rainSuffix}`,
+  };
+  return map[severity] + ".";
+}
+
+function enSeverityLine(severity: Severity, rainTail: string | null): string {
+  const rainSuffix = rainTail ? `, ${rainTail}` : "";
+  const map: Record<Severity, string> = {
+    severe: `Pasture is very poor this month${rainSuffix}`,
+    stressed: `Pasture is a bit below average${rainSuffix}`,
+    moderate: `Pasture is around average${rainSuffix}`,
+    fair: `Pasture is holding for now${rainSuffix}`,
+  };
+  return map[severity] + ".";
+}
+
+function buildWaterLine(ctx: HerderContext, lang: "sw" | "en"): string | null {
+  if (!ctx.nearestWaterPointName) return null;
+  const km = ctx.nearestWaterPointDistanceKm;
+  const wardOfPoint = ctx.nearestWaterPointName.split(" ")[0] ?? ctx.nearestWaterPointName;
+
+  if (ctx.nearestWaterPointStatus === "working") {
+    if (lang === "sw") {
+      return `Bwawa la ${wardOfPoint} lilikuwa likifanya kazi (${km ?? "?"}km)`;
+    }
+    return `${wardOfPoint} borehole was reported working (${km ?? "?"}km)`;
+  }
+  if (ctx.nearestWaterPointStatus === "broken") {
+    if (lang === "sw") {
+      return `Bwawa la karibu (${wardOfPoint}) ilikuwa mbovu — tuambie kama sasa iko sawa`;
+    }
+    return `The nearest borehole (${wardOfPoint}) was broken — tell us if it works now`;
+  }
+  return null;
 }
 
 /**

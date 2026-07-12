@@ -741,6 +741,388 @@ export const recentGroundTruthCalls = (
   );
 };
 
+// ── Pastoralist leads (self-enrolled via USSD/SMS/inbound-call) ────────
+
+/**
+ * A self-subscribed pastoralist. Distinct from `pastoralists` — leads
+ * live in a separate table and never enter analytics or drill batches
+ * until ops promotes them via the leads panel. See feedback memory
+ * "Pastoralist two-tier writes" for the policy.
+ */
+export interface SbPastoralistLead {
+  lead_id: string;
+  phone_number: string;
+  full_name: string | null;
+  preferred_language: "sw" | "en" | null;
+  ward_id: string | null;
+  location_text: string | null;
+  herd_size: number | null;
+  enrollment_source:
+    | "ussd_self"
+    | "sms_self"
+    | "inbound_call"
+    | "field_agent";
+  status:
+    | "lead"
+    | "contacted"
+    | "verified"
+    | "declined"
+    | "opted_out";
+  alerts_enabled: boolean;
+  first_contact_at: string;
+  last_contact_at: string;
+  verified_at: string | null;
+  verified_by: string | null;
+  promoted_pastoralist_id: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * A row from the `api_phone_identity` view — a union of verified
+ * pastoralists + non-declined leads, tagged with a `tier` column so
+ * downstream callers can gate behaviour. Never returns a phone that
+ * appears in both tables (the view suppresses the lead row when a
+ * verified pastoralist exists for the same phone).
+ */
+export interface SbPhoneIdentity {
+  tier: "verified" | "lead";
+  phone_number: string;
+  identity_id: string;
+  full_name: string | null;
+  preferred_language: string | null;
+  ward_id: string | null;
+  location_text: string | null;
+}
+
+/**
+ * Lookup any phone in the identity view. Interactive mode (2.5 s
+ * timeout) so USSD/voice paths stay inside the AT budget. Returns
+ * null for an unknown phone.
+ */
+export const identityForPhone = async (
+  phone: string,
+  mode: SupabaseMode = "interactive",
+): Promise<SbPhoneIdentity | null> => {
+  const rows = await sbGet<SbPhoneIdentity>(
+    `api_phone_identity?phone_number=eq.${encodeURIComponent(phone)}&limit=1`,
+    { mode },
+  );
+  return rows?.[0] ?? null;
+};
+
+/**
+ * Insert or update a lead. Uses PostgREST's on-conflict merge on
+ * `phone_number` so the second USSD subscribe from the same number
+ * updates last_contact_at + any fields the caller supplied, rather
+ * than 409-ing. Never writes to `pastoralists` — that's ops-only.
+ *
+ * Returns the resulting row (freshly inserted OR updated) so the
+ * caller can pipe it back into HerderContext for the closing SMS.
+ */
+export const upsertPastoralistLead = async (
+  row: Partial<SbPastoralistLead> & { phone_number: string },
+  mode: SupabaseMode = "batch",
+): Promise<SbPastoralistLead | null> => {
+  const payload: Record<string, unknown> = {
+    phone_number: row.phone_number,
+    last_contact_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+  // Only include fields the caller supplied — undefined would otherwise
+  // wipe existing values on the merge.
+  if (row.full_name != null) payload.full_name = row.full_name;
+  if (row.preferred_language != null)
+    payload.preferred_language = row.preferred_language;
+  if (row.ward_id != null) payload.ward_id = row.ward_id;
+  if (row.location_text != null) payload.location_text = row.location_text;
+  if (row.herd_size != null) payload.herd_size = row.herd_size;
+  if (row.enrollment_source != null)
+    payload.enrollment_source = row.enrollment_source;
+  if (row.status != null) payload.status = row.status;
+  if (row.alerts_enabled != null) payload.alerts_enabled = row.alerts_enabled;
+  if (row.notes != null) payload.notes = row.notes;
+
+  try {
+    const res = await sbFetch(
+      "pastoralist_leads?on_conflict=phone_number",
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+        headers: {
+          Prefer: "return=representation,resolution=merge-duplicates",
+        },
+        sbMode: mode,
+      },
+    );
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      logger.warn(
+        { status: res.status, body: body.slice(0, 300) },
+        "[Supabase] pastoralist_leads upsert non-2xx",
+      );
+      return null;
+    }
+    const rows = (await res.json()) as SbPastoralistLead[];
+    return rows[0] ?? null;
+  } catch (err) {
+    logger.warn({ err }, "[Supabase] pastoralist_leads upsert crashed");
+    return null;
+  }
+};
+
+/**
+ * Set a lead's status (declined / opted_out / contacted). Called from
+ * ops actions and from the SMS STOP handler.
+ */
+export const setLeadStatus = async (
+  phone: string,
+  status: SbPastoralistLead["status"],
+  mode: SupabaseMode = "batch",
+): Promise<boolean> => {
+  try {
+    const res = await sbFetch(
+      `pastoralist_leads?phone_number=eq.${encodeURIComponent(phone)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({
+          status,
+          updated_at: new Date().toISOString(),
+        }),
+        headers: { Prefer: "return=minimal" },
+        sbMode: mode,
+      },
+    );
+    return res.ok;
+  } catch (err) {
+    logger.warn({ err, phone, status }, "[Supabase] setLeadStatus crashed");
+    return false;
+  }
+};
+
+/**
+ * Recent leads for the ops panel. Sorted by newest last-contact so
+ * fresh subscribers surface at the top. Filters out declined /
+ * opted_out by default; callers can pass `includeInactive=true`
+ * for a full audit view.
+ */
+export const recentLeads = (
+  limit = 50,
+  opts: { includeInactive?: boolean; mode?: SupabaseMode } = {},
+) => {
+  const safeLimit = Math.min(Math.max(limit, 1), 200);
+  const statusFilter = opts.includeInactive
+    ? ""
+    : "&status=in.(lead,contacted,verified)";
+  return sbGet<SbPastoralistLead>(
+    `pastoralist_leads?select=*${statusFilter}&order=last_contact_at.desc&limit=${safeLimit}`,
+    { mode: opts.mode ?? "batch" },
+  );
+};
+
+// ── Peer signal — what other herders in the ward reported ────────────
+
+/**
+ * Ward-scoped aggregate of recent herder reports. The brief uses this
+ * to write a peer line: "6 wachungaji karibu nawe wameripoti hali
+ * kama hii wiki hii" — turns an isolated caller into part of a
+ * community signal.
+ *
+ * Sources: ground_truth_calls (Supabase — verified pastoralists) +
+ * lead_interactions (Supabase — leads' inbound touches). Local
+ * ground_truth_reports mirror is not queried here because the ops
+ * dashboard reads the merged /api/ground-truth/merged view.
+ */
+export interface SbPeerSignal {
+  ward_id: string;
+  windowDays: number;
+  totalReports: number;
+  callerCount: number;
+  thinAnimalsCount: number; // reports with bcs_score < 2.5
+  mortalityCount: number; // reports with mortality_rate not null and > 0
+  brokenWaterCount: number; // reports with water_point_status broken/mbovu
+  interactionCount: number; // total lead_interactions in the window (any channel)
+}
+
+export const peerSignalForWard = async (
+  wardId: string,
+  windowDays = 7,
+  mode: SupabaseMode = "interactive",
+): Promise<SbPeerSignal | null> => {
+  const cutoff = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000)
+    .toISOString();
+
+  // We deliberately query the raw tables rather than a materialised
+  // view — the 200-row cap on ground_truth_calls per ward is generous
+  // for a 7-day window even at pilot-scale, and it avoids adding a
+  // Supabase view for a computation the api will change often.
+  const gtPath =
+    `ground_truth_calls?select=call_id,ward_id,bcs_score,mortality_rate,water_point_status,pastoralist_id` +
+    `&ward_id=eq.${encodeURIComponent(wardId)}` +
+    `&call_timestamp=gte.${encodeURIComponent(cutoff)}&limit=200`;
+  const intPath =
+    `lead_interactions?select=phone_number` +
+    `&ward_id=eq.${encodeURIComponent(wardId)}` +
+    `&occurred_at=gte.${encodeURIComponent(cutoff)}&limit=500`;
+
+  const [gtRows, intRows] = await Promise.all([
+    sbGet<{
+      call_id: string;
+      bcs_score: number | null;
+      mortality_rate: number | null;
+      water_point_status: string | null;
+      pastoralist_id: string | null;
+    }>(gtPath, { mode, cache: true }),
+    sbGet<{ phone_number: string }>(intPath, { mode, cache: true }),
+  ]);
+
+  if (!gtRows && !intRows) return null;
+
+  const callers = new Set<string>();
+  let thinAnimalsCount = 0;
+  let mortalityCount = 0;
+  let brokenWaterCount = 0;
+  for (const r of gtRows ?? []) {
+    if (r.pastoralist_id) callers.add(r.pastoralist_id);
+    if (r.bcs_score != null && r.bcs_score < 2.5) thinAnimalsCount++;
+    if (r.mortality_rate != null && r.mortality_rate > 0) mortalityCount++;
+    const ws = (r.water_point_status ?? "").toLowerCase();
+    if (ws.includes("brok") || ws.includes("mbovu") || ws.includes("dry")) {
+      brokenWaterCount++;
+    }
+  }
+  for (const r of intRows ?? []) callers.add(r.phone_number);
+
+  return {
+    ward_id: wardId,
+    windowDays,
+    totalReports: gtRows?.length ?? 0,
+    callerCount: callers.size,
+    thinAnimalsCount,
+    mortalityCount,
+    brokenWaterCount,
+    interactionCount: intRows?.length ?? 0,
+  };
+};
+
+// ── Water-point ground-truth overrides ────────────────────────────────
+
+/**
+ * A ground-truth override for a water point. Herders can update WPDx
+ * status via voice ("water at Burat is working now") or SMS. Rows
+ * are extracted from ground_truth_calls.water_point_status +
+ * water_point_name, filtered to a recency window (default 90 days).
+ * When present, this overrides WPDx snapshot status per point.
+ */
+export interface SbWaterPointGroundTruth {
+  water_point_name: string;
+  water_point_status: string;
+  call_timestamp: string;
+  ward_id: string | null;
+}
+
+/**
+ * Recent ground-truth updates about water points. Read from
+ * ground_truth_calls where water_point_status is populated within
+ * `daysWindow`. Cached briefly (60s) — herder briefs will fetch this
+ * many times per minute during a busy period.
+ */
+export const recentWaterPointGroundTruth = async (
+  daysWindow = 90,
+  mode: SupabaseMode = "interactive",
+): Promise<SbWaterPointGroundTruth[] | null> => {
+  const cutoff = new Date(Date.now() - daysWindow * 24 * 60 * 60 * 1000)
+    .toISOString();
+  const path =
+    `ground_truth_calls?select=water_point_name,water_point_status,call_timestamp,ward_id` +
+    `&water_point_name=not.is.null&water_point_status=not.is.null` +
+    `&call_timestamp=gte.${encodeURIComponent(cutoff)}` +
+    `&order=call_timestamp.desc&limit=200`;
+  return sbGet<SbWaterPointGroundTruth>(path, { mode, cache: true });
+};
+
+// ── lead_interactions — audit log of every AT surface hit ────────────
+
+/**
+ * Row shape for `lead_interactions`. Written from every AT-facing
+ * route (ussd/sms/voice) on every hit — the operational audit
+ * trail behind the ops CallbackLog dashboard, and feature source
+ * for the trust-score model.
+ *
+ * `tier` is snapshot at the time of the interaction — a lead who
+ * later gets verified still shows as tier='lead' on their old rows.
+ */
+export interface SbLeadInteractionInsert {
+  phone_number: string;
+  tier: "verified" | "lead" | "unknown";
+  channel: "ussd" | "sms" | "voice" | "voice_event";
+  session_id?: string | null;
+  keyword?: string | null;
+  input_text?: string | null;
+  reply_text?: string | null;
+  ward_id?: string | null;
+  raw_body?: unknown;
+}
+
+/**
+ * Fire-and-forget log write. Never blocks — the caller's AT
+ * response has already been formulated. Only touches Supabase; the
+ * local mirror isn't used because interactions are analytics data,
+ * not source-of-truth. Failures are warn-logged and swallowed.
+ */
+export const logLeadInteraction = async (
+  row: SbLeadInteractionInsert,
+): Promise<void> => {
+  try {
+    const res = await sbFetch("lead_interactions", {
+      method: "POST",
+      body: JSON.stringify(row),
+      headers: { Prefer: "return=minimal" },
+      sbMode: "batch",
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      logger.warn(
+        { status: res.status, body: body.slice(0, 200), channel: row.channel },
+        "[Supabase] lead_interactions insert non-2xx",
+      );
+    }
+  } catch (err) {
+    logger.warn({ err, channel: row.channel }, "[Supabase] lead_interactions insert crashed");
+  }
+};
+
+/**
+ * Recent interactions for the ops CallbackLog panel. Filterable by
+ * channel + ward + phone. Sorted newest first.
+ */
+export interface SbLeadInteractionRead extends SbLeadInteractionInsert {
+  interaction_id: string;
+  occurred_at: string;
+}
+
+export const recentLeadInteractions = (
+  opts: {
+    limit?: number;
+    channel?: "ussd" | "sms" | "voice" | "voice_event";
+    ward_id?: string;
+    phone?: string;
+    mode?: SupabaseMode;
+  } = {},
+) => {
+  const safeLimit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+  const filters: string[] = [];
+  if (opts.channel) filters.push(`channel=eq.${opts.channel}`);
+  if (opts.ward_id) filters.push(`ward_id=eq.${encodeURIComponent(opts.ward_id)}`);
+  if (opts.phone) filters.push(`phone_number=eq.${encodeURIComponent(opts.phone)}`);
+  const filterStr = filters.length > 0 ? "&" + filters.join("&") : "";
+  return sbGet<SbLeadInteractionRead>(
+    `lead_interactions?select=*${filterStr}&order=occurred_at.desc&limit=${safeLimit}`,
+    { mode: opts.mode ?? "batch" },
+  );
+};
+
 export function clearSupabaseCache(): void {
   cache.clear();
 }

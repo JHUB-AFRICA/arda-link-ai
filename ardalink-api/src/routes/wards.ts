@@ -231,4 +231,88 @@ router.get("/wards/:wardId/baseline", async (req, res): Promise<void> => {
   }
 });
 
+/**
+ * GET /api/wards/timeseries
+ *
+ * Compact time-series feed for the dashboard NDVI + rainfall panels.
+ * Returns per-ward:
+ *   - ndvi:     last 12 months of monthly ndvi_mean from satellite_indices
+ *   - forecast: next 14 days of rainfall_mm_p50 / p95 / prob from weather_forecast
+ *   - weather:  latest weather observation (30d rainfall, temp)
+ *
+ * One request lets the panel render all 5 wards. Tenant-exempt (public
+ * aggregate) so the map/dashboard can show it without a Bearer.
+ */
+router.get("/wards/timeseries", async (_req, res): Promise<void> => {
+  if (!isSupabaseConfigured()) {
+    res.json({ ready: false, reason: "supabase_not_configured", wards: [] });
+    return;
+  }
+  try {
+    const sbBase = (process.env.SUPABASE_URL ?? "").replace(/\/$/, "");
+    const key = (process.env.SUPABASE_SECRET_KEY ?? "").trim();
+    const headers = {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      Accept: "application/json",
+    };
+    const wards = await listActiveWardsWithGeometry();
+    if (!wards || wards.length === 0) {
+      res.json({ ready: false, reason: "no_wards", wards: [] });
+      return;
+    }
+    const cutoff12mo = new Date();
+    cutoff12mo.setMonth(cutoff12mo.getMonth() - 12);
+    const cutoffFcst = new Date();
+    cutoffFcst.setHours(0, 0, 0, 0);
+
+    const perWard = await Promise.all(
+      wards.map(async (w) => {
+        const ndviUrl =
+          `${sbBase}/rest/v1/satellite_indices?ward_id=eq.${encodeURIComponent(w.ward_id)}` +
+          `&period_end=gte.${encodeURIComponent(cutoff12mo.toISOString())}` +
+          `&select=period_end,ndvi_mean,vci_value&order=period_end.asc&limit=24`;
+        const fcstUrl =
+          `${sbBase}/rest/v1/weather_forecast?ward_id=eq.${encodeURIComponent(w.ward_id)}` +
+          `&target_date=gte.${encodeURIComponent(cutoffFcst.toISOString().slice(0, 10))}` +
+          `&select=target_date,rainfall_mm_p50,rainfall_mm_p95,precipitation_probability,temperature_c_max` +
+          `&order=target_date.asc,generated_at.desc&limit=14`;
+        try {
+          const [ndviRes, fcstRes] = await Promise.all([
+            fetch(ndviUrl, { headers, signal: AbortSignal.timeout(4_000) }),
+            fetch(fcstUrl, { headers, signal: AbortSignal.timeout(4_000) }),
+          ]);
+          const ndvi = ndviRes.ok
+            ? ((await ndviRes.json()) as unknown[])
+            : [];
+          const forecast = fcstRes.ok
+            ? ((await fcstRes.json()) as unknown[])
+            : [];
+          return {
+            ward_id: w.ward_id,
+            name: w.name,
+            ndvi,
+            forecast,
+          };
+        } catch (err) {
+          logger.warn(
+            { err: String(err), wardId: w.ward_id },
+            "[Wards] timeseries: per-ward fetch failed",
+          );
+          return {
+            ward_id: w.ward_id,
+            name: w.name,
+            ndvi: [],
+            forecast: [],
+          };
+        }
+      }),
+    );
+    res.json({ ready: true, wards: perWard });
+  } catch (err) {
+    logger.error({ err }, "[Wards] timeseries failed");
+    res.status(500).json({ ready: false, reason: "query_failed", wards: [] });
+  }
+});
+
 export default router;
