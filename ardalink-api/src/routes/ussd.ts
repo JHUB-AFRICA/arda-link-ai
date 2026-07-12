@@ -9,6 +9,7 @@ import {
 import {
   upsertPastoralistLead,
   identityForPhone,
+  logLeadInteraction,
 } from "../lib/supabase.js";
 import { sendSmsViaAt, initiateOutboundCall } from "../lib/africastalking.js";
 
@@ -268,6 +269,51 @@ router.post("/ussd-callback", async (req, res): Promise<void> => {
     },
     "[USSD] Inbound keystroke",
   );
+
+  // Wrap res.send so every reply automatically logs a
+  // lead_interactions row without having to instrument every branch.
+  // Tier is resolved lazily on first use so unknown-caller replies
+  // (menu screens with no personalisation) still log tier='unknown'.
+  let ctxTier: "verified" | "lead" | "unknown" | null = null;
+  let ctxWardId: string | null = null;
+  const originalSend = res.send.bind(res);
+  res.send = ((chunk: string | Buffer) => {
+    const replyText = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+    // Resolve tier lazily via identity view — fast, cached — if we
+    // haven't already for this request.
+    const resolveTier = async (): Promise<{
+      tier: "verified" | "lead" | "unknown";
+      wardId: string | null;
+    }> => {
+      if (ctxTier != null) return { tier: ctxTier, wardId: ctxWardId };
+      try {
+        const id = await identityForPhone(phone);
+        ctxTier = id?.tier ?? "unknown";
+        ctxWardId = id?.ward_id ?? null;
+      } catch {
+        ctxTier = "unknown";
+      }
+      return { tier: ctxTier, wardId: ctxWardId };
+    };
+    void resolveTier().then(({ tier, wardId }) => {
+      void logLeadInteraction({
+        phone_number: phone,
+        tier,
+        channel: "ussd",
+        session_id: body.sessionId ?? null,
+        keyword: null,
+        input_text: rawText,
+        reply_text: replyText.slice(0, 500),
+        ward_id: wardId,
+        raw_body: {
+          serviceCode: body.serviceCode ?? null,
+          level,
+          last,
+        },
+      });
+    });
+    return originalSend(chunk);
+  }) as typeof res.send;
 
   try {
     // ── Level 0: dial-in menu ───────────────────────────────────────────────

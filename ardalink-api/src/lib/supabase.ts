@@ -921,6 +921,87 @@ export const recentLeads = (
   );
 };
 
+// ── lead_interactions — audit log of every AT surface hit ────────────
+
+/**
+ * Row shape for `lead_interactions`. Written from every AT-facing
+ * route (ussd/sms/voice) on every hit — the operational audit
+ * trail behind the ops CallbackLog dashboard, and feature source
+ * for the trust-score model.
+ *
+ * `tier` is snapshot at the time of the interaction — a lead who
+ * later gets verified still shows as tier='lead' on their old rows.
+ */
+export interface SbLeadInteractionInsert {
+  phone_number: string;
+  tier: "verified" | "lead" | "unknown";
+  channel: "ussd" | "sms" | "voice" | "voice_event";
+  session_id?: string | null;
+  keyword?: string | null;
+  input_text?: string | null;
+  reply_text?: string | null;
+  ward_id?: string | null;
+  raw_body?: unknown;
+}
+
+/**
+ * Fire-and-forget log write. Never blocks — the caller's AT
+ * response has already been formulated. Only touches Supabase; the
+ * local mirror isn't used because interactions are analytics data,
+ * not source-of-truth. Failures are warn-logged and swallowed.
+ */
+export const logLeadInteraction = async (
+  row: SbLeadInteractionInsert,
+): Promise<void> => {
+  try {
+    const res = await sbFetch("lead_interactions", {
+      method: "POST",
+      body: JSON.stringify(row),
+      headers: { Prefer: "return=minimal" },
+      sbMode: "batch",
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      logger.warn(
+        { status: res.status, body: body.slice(0, 200), channel: row.channel },
+        "[Supabase] lead_interactions insert non-2xx",
+      );
+    }
+  } catch (err) {
+    logger.warn({ err, channel: row.channel }, "[Supabase] lead_interactions insert crashed");
+  }
+};
+
+/**
+ * Recent interactions for the ops CallbackLog panel. Filterable by
+ * channel + ward + phone. Sorted newest first.
+ */
+export interface SbLeadInteractionRead extends SbLeadInteractionInsert {
+  interaction_id: string;
+  occurred_at: string;
+}
+
+export const recentLeadInteractions = (
+  opts: {
+    limit?: number;
+    channel?: "ussd" | "sms" | "voice" | "voice_event";
+    ward_id?: string;
+    phone?: string;
+    mode?: SupabaseMode;
+  } = {},
+) => {
+  const safeLimit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+  const filters: string[] = [];
+  if (opts.channel) filters.push(`channel=eq.${opts.channel}`);
+  if (opts.ward_id) filters.push(`ward_id=eq.${encodeURIComponent(opts.ward_id)}`);
+  if (opts.phone) filters.push(`phone_number=eq.${encodeURIComponent(opts.phone)}`);
+  const filterStr = filters.length > 0 ? "&" + filters.join("&") : "";
+  return sbGet<SbLeadInteractionRead>(
+    `lead_interactions?select=*${filterStr}&order=occurred_at.desc&limit=${safeLimit}`,
+    { mode: opts.mode ?? "batch" },
+  );
+};
+
 export function clearSupabaseCache(): void {
   cache.clear();
 }
