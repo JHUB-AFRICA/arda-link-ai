@@ -921,6 +921,42 @@ export const recentLeads = (
   );
 };
 
+// ── Water-point ground-truth overrides ────────────────────────────────
+
+/**
+ * A ground-truth override for a water point. Herders can update WPDx
+ * status via voice ("water at Burat is working now") or SMS. Rows
+ * are extracted from ground_truth_calls.water_point_status +
+ * water_point_name, filtered to a recency window (default 90 days).
+ * When present, this overrides WPDx snapshot status per point.
+ */
+export interface SbWaterPointGroundTruth {
+  water_point_name: string;
+  water_point_status: string;
+  call_timestamp: string;
+  ward_id: string | null;
+}
+
+/**
+ * Recent ground-truth updates about water points. Read from
+ * ground_truth_calls where water_point_status is populated within
+ * `daysWindow`. Cached briefly (60s) — herder briefs will fetch this
+ * many times per minute during a busy period.
+ */
+export const recentWaterPointGroundTruth = async (
+  daysWindow = 90,
+  mode: SupabaseMode = "interactive",
+): Promise<SbWaterPointGroundTruth[] | null> => {
+  const cutoff = new Date(Date.now() - daysWindow * 24 * 60 * 60 * 1000)
+    .toISOString();
+  const path =
+    `ground_truth_calls?select=water_point_name,water_point_status,call_timestamp,ward_id` +
+    `&water_point_name=not.is.null&water_point_status=not.is.null` +
+    `&call_timestamp=gte.${encodeURIComponent(cutoff)}` +
+    `&order=call_timestamp.desc&limit=200`;
+  return sbGet<SbWaterPointGroundTruth>(path, { mode, cache: true });
+};
+
 // ── lead_interactions — audit log of every AT surface hit ────────────
 
 /**

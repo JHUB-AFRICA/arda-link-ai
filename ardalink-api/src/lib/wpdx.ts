@@ -136,6 +136,117 @@ export function workingCount(): number {
   return WPDX_ISIOLO.filter((p) => statusFor(p) === "working").length;
 }
 
+// ── Ground-truth overlay ─────────────────────────────────────────────
+
+/**
+ * A herder-reported override for a specific WPDx point. Callers
+ * fetch these from Supabase (see recentWaterPointGroundTruth in
+ * supabase.ts) and pass them here to build an updated status map.
+ */
+export interface WaterPointOverride {
+  water_point_name: string;
+  water_point_status: string;
+  call_timestamp: string;
+}
+
+/**
+ * Build a name → resolved status map from ground-truth overrides.
+ * Matching is fuzzy — a herder saying "Burat" or "burat borehole"
+ * matches any WPDx point in Burat ward. When multiple herders
+ * disagree, the most recent timestamp wins.
+ *
+ * The output map is keyed by the CANONICAL WPDx displayName so it
+ * plugs directly into filter / rank code without name-normalisation
+ * duplication.
+ */
+export function overlayStatusFromGroundTruth(
+  overrides: WaterPointOverride[],
+): Map<string, WpdxStatus> {
+  // Sort newest-first so the reduce picks most-recent as canonical.
+  const sorted = [...overrides].sort(
+    (a, b) =>
+      new Date(b.call_timestamp).getTime() -
+      new Date(a.call_timestamp).getTime(),
+  );
+  const result = new Map<string, WpdxStatus>();
+  for (const ov of sorted) {
+    const status = interpretHerderStatus(ov.water_point_status);
+    if (status === "unknown") continue;
+    const needle = ov.water_point_name.toLowerCase().trim();
+    for (const p of WPDX_ISIOLO) {
+      const dn = displayName(p).toLowerCase();
+      const wardOnly = (p.ward ?? "").toLowerCase();
+      if (dn.includes(needle) || wardOnly.includes(needle) || needle.includes(wardOnly)) {
+        if (!result.has(displayName(p))) {
+          result.set(displayName(p), status);
+        }
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * Herders describe water status in whatever language they prefer —
+ * "inafanya kazi", "working", "sawa", "broken", "mbovu", "empty",
+ * "safi". Map that free-form string to our WpdxStatus tri-state.
+ */
+function interpretHerderStatus(raw: string): WpdxStatus {
+  const s = raw.toLowerCase().trim();
+  if (
+    s.includes("work") ||
+    s.includes("running") ||
+    s.includes("sawa") ||
+    s.includes("inafanya") ||
+    s.includes("kazi") ||
+    s.includes("safi") ||
+    s === "ok" ||
+    s === "yes"
+  ) {
+    return "working";
+  }
+  if (
+    s.includes("broken") ||
+    s.includes("dry") ||
+    s.includes("empty") ||
+    s.includes("mbovu") ||
+    s.includes("kavu") ||
+    s.includes("haifany")
+  ) {
+    return "broken";
+  }
+  return "unknown";
+}
+
+/**
+ * Nearest N points to origin under a ground-truth overlay. Points
+ * whose overlay status is 'working' are ranked first, then 'unknown',
+ * then 'broken' — same behaviour as workingFirst on nearestPoints
+ * but the overlay dominates the WPDx snapshot's baseline status.
+ */
+export function nearestWorkingKnownPoints(
+  origin: { lat: number; lon: number },
+  n: number,
+  overrides: WaterPointOverride[] = [],
+): NearbyPoint[] {
+  const overlay = overlayStatusFromGroundTruth(overrides);
+  const rows: NearbyPoint[] = WPDX_ISIOLO.map((p) => {
+    const overlayStatus = overlay.get(displayName(p));
+    return {
+      point: p,
+      status: overlayStatus ?? statusFor(p),
+      distanceKm: distanceKm(origin, p),
+      displayName: displayName(p),
+    };
+  });
+  rows.sort((a, b) => {
+    const rank = (s: WpdxStatus) =>
+      s === "working" ? 0 : s === "unknown" ? 1 : 2;
+    return rank(a.status) - rank(b.status) || a.distanceKm - b.distanceKm;
+  });
+  return rows.slice(0, Math.max(0, n));
+}
+
 /**
  * Ward centroids — coarse approximations from the Supabase active_wards
  * centroids we shipped in the ward map. Used as the origin coord when a

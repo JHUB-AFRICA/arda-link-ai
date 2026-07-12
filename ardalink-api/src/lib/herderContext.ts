@@ -45,8 +45,10 @@ import { wardIdForTenant, tenantForWardId, DEFAULT_WARD_ID } from "./wardMapping
 import {
   centroidForTenant,
   nearestPoints,
+  nearestWorkingKnownPoints,
   type WpdxStatus,
 } from "./wpdx.js";
+import { recentWaterPointGroundTruth } from "./supabase.js";
 
 const DEFAULT_TENANT_ID =
   process.env.DETERMINISTIC_TENANT_ID ?? "bula-pesa";
@@ -213,16 +215,26 @@ function baseContext(rawPhone: string, tenantId: string): HerderContext {
 }
 
 /**
- * Overlay: nearest WPDx water point + status. Anchor point is the
- * herder's tenant ward centroid (we don't have GPS from the phone).
- * Deterministic + static — the WPDx snapshot lives in code.
+ * Overlay: nearest WPDx water point + status, blended with recent
+ * herder ground-truth. If any herder reported "working" for a point
+ * within 90 days, we surface THAT point (freshest evidence wins).
+ * Falls back to the raw WPDx snapshot when no ground truth exists.
+ *
+ * WPDx's 2012 Isiolo survey is all Non-Functional, so without the
+ * ground-truth overlay every herder opener would say "the nearest
+ * borehole was broken", which is stale after 14 years. This overlay
+ * IS the mechanism by which herder reports become the new source of
+ * truth.
  */
-function overlayNearestWaterPoint(ctx: HerderContext): HerderContext {
+async function overlayNearestWaterPoint(
+  ctx: HerderContext,
+): Promise<HerderContext> {
   const origin =
     centroidForTenant(tenantForWardId(ctx.wardId)) ??
     centroidForTenant("bula-pesa");
   if (!origin) return ctx;
-  const nearest = nearestPoints(origin, 1);
+  const overrides = (await recentWaterPointGroundTruth(90)) ?? [];
+  const nearest = nearestWorkingKnownPoints(origin, 1, overrides);
   const top = nearest[0];
   if (!top) return ctx;
   return {
@@ -567,7 +579,7 @@ export async function resolveHerderContext(
       ctx = await overlayWardReference(ctx);
       ctx = await overlayHistoricalAnomaly(ctx);
       ctx = await overlayNeighborAdvice(ctx);
-      ctx = overlayNearestWaterPoint(ctx);
+      ctx = await overlayNearestWaterPoint(ctx);
       // Backfill tenant/ward correlation when Supabase gave us a ward_id.
       if (ctx.wardId && !tenantForWardId(ctx.wardId)) {
         ctx.wardId = wardIdForTenant(tenantId);
@@ -581,7 +593,7 @@ export async function resolveHerderContext(
   ctx = await overlayWardReference(ctx);
   ctx = await overlayHistoricalAnomaly(ctx);
   ctx = await overlayNeighborAdvice(ctx);
-  ctx = overlayNearestWaterPoint(ctx);
+  ctx = await overlayNearestWaterPoint(ctx);
   return ctx;
 }
 
