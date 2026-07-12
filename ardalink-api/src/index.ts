@@ -5,7 +5,7 @@ import { logger } from "./lib/logger.js";
 import { handleVoiceStream } from "./lib/voiceStream.js";
 import { handleBrowserVoiceStream } from "./lib/voiceStreamBrowser.js";
 import { startScheduler } from "./lib/scheduler.js";
-import { startSatelliteJob } from "./jobs/index.js";
+import { startSatelliteJob, startForecastJob } from "./jobs/index.js";
 import { consumeToken } from "./lib/callTokens.js";
 import { isTrustedOrigin } from "./lib/originGuard.js";
 
@@ -59,6 +59,15 @@ const httpServer = app.listen(port, (err) => {
     startSatelliteJob();
   } catch (err) {
     logger.error({ err }, "Satellite job bootstrap failed");
+  }
+
+  // Start the 6-hourly rainfall forecast job (Open-Meteo ensemble
+  // → Supabase weather_forecast). Powers herder-facing forecast
+  // lines without a per-request round-trip to Open-Meteo.
+  try {
+    startForecastJob();
+  } catch (err) {
+    logger.error({ err }, "Forecast job bootstrap failed");
   }
 });
 
