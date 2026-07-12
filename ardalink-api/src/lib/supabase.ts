@@ -921,6 +921,91 @@ export const recentLeads = (
   );
 };
 
+// ── Peer signal — what other herders in the ward reported ────────────
+
+/**
+ * Ward-scoped aggregate of recent herder reports. The brief uses this
+ * to write a peer line: "6 wachungaji karibu nawe wameripoti hali
+ * kama hii wiki hii" — turns an isolated caller into part of a
+ * community signal.
+ *
+ * Sources: ground_truth_calls (Supabase — verified pastoralists) +
+ * lead_interactions (Supabase — leads' inbound touches). Local
+ * ground_truth_reports mirror is not queried here because the ops
+ * dashboard reads the merged /api/ground-truth/merged view.
+ */
+export interface SbPeerSignal {
+  ward_id: string;
+  windowDays: number;
+  totalReports: number;
+  callerCount: number;
+  thinAnimalsCount: number; // reports with bcs_score < 2.5
+  mortalityCount: number; // reports with mortality_rate not null and > 0
+  brokenWaterCount: number; // reports with water_point_status broken/mbovu
+  interactionCount: number; // total lead_interactions in the window (any channel)
+}
+
+export const peerSignalForWard = async (
+  wardId: string,
+  windowDays = 7,
+  mode: SupabaseMode = "interactive",
+): Promise<SbPeerSignal | null> => {
+  const cutoff = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000)
+    .toISOString();
+
+  // We deliberately query the raw tables rather than a materialised
+  // view — the 200-row cap on ground_truth_calls per ward is generous
+  // for a 7-day window even at pilot-scale, and it avoids adding a
+  // Supabase view for a computation the api will change often.
+  const gtPath =
+    `ground_truth_calls?select=call_id,ward_id,bcs_score,mortality_rate,water_point_status,pastoralist_id` +
+    `&ward_id=eq.${encodeURIComponent(wardId)}` +
+    `&call_timestamp=gte.${encodeURIComponent(cutoff)}&limit=200`;
+  const intPath =
+    `lead_interactions?select=phone_number` +
+    `&ward_id=eq.${encodeURIComponent(wardId)}` +
+    `&occurred_at=gte.${encodeURIComponent(cutoff)}&limit=500`;
+
+  const [gtRows, intRows] = await Promise.all([
+    sbGet<{
+      call_id: string;
+      bcs_score: number | null;
+      mortality_rate: number | null;
+      water_point_status: string | null;
+      pastoralist_id: string | null;
+    }>(gtPath, { mode, cache: true }),
+    sbGet<{ phone_number: string }>(intPath, { mode, cache: true }),
+  ]);
+
+  if (!gtRows && !intRows) return null;
+
+  const callers = new Set<string>();
+  let thinAnimalsCount = 0;
+  let mortalityCount = 0;
+  let brokenWaterCount = 0;
+  for (const r of gtRows ?? []) {
+    if (r.pastoralist_id) callers.add(r.pastoralist_id);
+    if (r.bcs_score != null && r.bcs_score < 2.5) thinAnimalsCount++;
+    if (r.mortality_rate != null && r.mortality_rate > 0) mortalityCount++;
+    const ws = (r.water_point_status ?? "").toLowerCase();
+    if (ws.includes("brok") || ws.includes("mbovu") || ws.includes("dry")) {
+      brokenWaterCount++;
+    }
+  }
+  for (const r of intRows ?? []) callers.add(r.phone_number);
+
+  return {
+    ward_id: wardId,
+    windowDays,
+    totalReports: gtRows?.length ?? 0,
+    callerCount: callers.size,
+    thinAnimalsCount,
+    mortalityCount,
+    brokenWaterCount,
+    interactionCount: intRows?.length ?? 0,
+  };
+};
+
 // ── Water-point ground-truth overrides ────────────────────────────────
 
 /**
