@@ -79,7 +79,9 @@ describe("sendSmsViaAt", () => {
     expect(capturedBody).toContain("username=sandbox");
     expect(capturedBody).toContain("to=%2B254712345678");
     expect(capturedBody).toContain("message=Habari+%E2%80%94+test");
-    expect(capturedBody).toContain("from=%2B254711082200");
+    // sender ID is now optional (blank in sandbox to avoid
+    // 'InvalidSenderId' — see africastalking.ts for the rationale).
+    expect(capturedBody).not.toContain("from=%2B254711082200");
     expect(capturedHeaders.apiKey).toBe("test-key");
   });
 

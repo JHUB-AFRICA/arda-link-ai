@@ -185,7 +185,14 @@ export async function sendSmsViaAt(
     to: phone,
     message: message.slice(0, 160),
   });
-  if (c.senderId) body.set("from", c.senderId);
+  // Sandbox rejects arbitrary sender IDs with "InvalidSenderId" — the
+  // AFRICASTALKING_CALLER_ID env is the *voice* virtual number, not a
+  // valid SMS sender. Send with no `from` and AT picks the account's
+  // default shortcode. Production accounts with an approved sender ID
+  // can set AFRICASTALKING_SMS_SENDER_ID explicitly (alphanumeric or
+  // numeric shortcode) to override.
+  const smsSenderId = (process.env.AFRICASTALKING_SMS_SENDER_ID ?? "").trim();
+  if (smsSenderId) body.set("from", smsSenderId);
 
   try {
     const res = await fetch(`${c.smsHost}/version1/messaging`, {
@@ -222,14 +229,23 @@ export async function sendSmsViaAt(
       };
     };
     const recipient = data.SMSMessageData?.Recipients?.[0];
+    // When AT accepts the request but returns empty Recipients, it means
+    // the destination didn't route (e.g. sandbox simulator was launched
+    // on a different number, or destination is blacklisted). Surface
+    // both the top-level Message string AND the recipient details so
+    // we can debug which case fired.
     logger.info(
       {
         phone,
         atStatus: recipient?.status,
+        atMessage: data.SMSMessageData?.Message,
+        recipientsCount: data.SMSMessageData?.Recipients?.length ?? 0,
         messageId: recipient?.messageId,
         cost: recipient?.cost,
       },
-      "[AT] SMS dispatched",
+      recipient
+        ? "[AT] SMS dispatched"
+        : "[AT] SMS accepted but not routed to any recipient (check simulator phone)",
     );
     return {
       ok: recipient?.status === "Success" || recipient?.status === "Sent",

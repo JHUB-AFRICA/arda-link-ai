@@ -78,11 +78,23 @@ router.post("/sms-callback", async (req, res): Promise<void> => {
     "[SMS] Inbound keyword",
   );
 
-  // AT expects a plain-text 200 with the reply body. Empty body means
-  // "don't reply" — useful for STOP.
+  // AT's inbound SMS webhook contract does NOT treat the HTTP response
+  // body as an auto-reply (that's USSD's convention). For SMS we have
+  // to explicitly POST to /version1/messaging to send a reply. We fire
+  // sendSmsViaAt with bypassRateLimit=true because these are direct
+  // responses to the herder's own inbound — they're not proactive
+  // dispatch and shouldn't count against the daily-drill cap.
+  //
+  // We still put the text in the HTTP response body as a defensive
+  // fallback (some AT products / older sandbox versions do consume it),
+  // and to keep test fixtures / grep-based CI checks stable.
   const reply = (text: string): void => {
+    const body = trimToSms(text);
     res.set("Content-Type", "text/plain");
-    res.send(trimToSms(text));
+    res.send(body);
+    if (body && from) {
+      void sendSmsViaAt(from, body, { bypassRateLimit: true });
+    }
   };
 
   try {
@@ -97,8 +109,15 @@ router.post("/sms-callback", async (req, res): Promise<void> => {
         // Full localized brief — the same one USSD selection 1
         // renders. buildLocalizedBrief caps at 300 chars and
         // trimToSms trims to 160 for the SMS segment.
+        //
+        // NOTE (2026-07-12): BULA no longer triggers a voice
+        // callback. It's a pull-brief keyword — the reply IS the
+        // response. ONGEA is the dedicated call-me-back keyword;
+        // the daily drill cron is what does proactive outreach.
+        // The legacy maybeCallback() dependency was throwing when
+        // the intelligence cycle hadn't populated a .script yet,
+        // which surfaced as an unhelpful "hitilafu" error reply.
         const brief = buildLocalizedBrief(ctx, lang);
-        await maybeCallback(from, "BULA keyword");
         reply(brief);
         return;
       }
