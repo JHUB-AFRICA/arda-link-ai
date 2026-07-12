@@ -18,6 +18,7 @@ import { ChatModal, ChatFloatingButton } from "@/components/ChatModal";
 import { GroundTruthSection } from "@/components/dashboard/GroundTruthSection";
 import LeadsSection from "@/components/dashboard/LeadsSection";
 import CallbackLog from "@/components/dashboard/CallbackLog";
+import TimeSeriesPanel from "@/components/dashboard/TimeSeriesPanel";
 import { MapTab } from "@/components/dashboard/MapTab";
 import { PastoralistsTab } from "@/components/dashboard/PastoralistsTab";
 import { DemosTab } from "@/components/dashboard/DemosTab";
@@ -150,9 +151,10 @@ const navigate = (next: "map" | "pastoralists" | "groundtruth" | "demos") => {
             />
           )}
 
-          {/* --- Tab: Ground Truth Intelligence — leads + callback log + reports --- */}
+          {/* --- Tab: Ground Truth Intelligence — signals + leads + callback log + reports --- */}
           {tab === "groundtruth" && (
             <div className="flex-1 space-y-6 overflow-y-auto p-4">
+              <TimeSeriesPanel />
               <LeadsSection />
               <CallbackLog />
               <GroundTruthSection />

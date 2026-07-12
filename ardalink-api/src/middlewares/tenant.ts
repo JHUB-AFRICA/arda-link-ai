@@ -59,6 +59,11 @@ export function tenantMiddleware(
   ) {
     return next();
   }
+  // /api/wards/timeseries — dashboard NDVI + rainfall series aggregated
+  // across the 5 wards. Public read-only, no per-herder rows.
+  if (req.method === "GET" && req.path === "/api/wards/timeseries") {
+    return next();
+  }
   const secret = jwtSecret();
   if (!secret) {
     res.status(500).json({ error: "JWT_SECRET not configured" });
