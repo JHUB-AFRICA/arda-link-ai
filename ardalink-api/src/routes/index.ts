@@ -19,6 +19,8 @@ import speechRouter from "./speech.js";
 import talkRouter from "./talk.js";
 import wardsRouter from "./wards.js";
 import waterPointsRouter from "./waterPoints.js";
+import opsLeadsRouter from "./ops/leads.js";
+import opsInteractionsRouter from "./ops/interactions.js";
 import demoRouter from "./demo/index.js";
 
 const router: IRouter = Router();
@@ -44,6 +46,8 @@ router.use(speechRouter);
 router.use(talkRouter);
 router.use(wardsRouter);
 router.use(waterPointsRouter);
+router.use(opsLeadsRouter);
+router.use(opsInteractionsRouter);
 
 // Demo routes (for local testing without Africa's Talking)
 router.use("/demo", demoRouter);
