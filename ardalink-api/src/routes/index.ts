@@ -21,6 +21,10 @@ import wardsRouter from "./wards.js";
 import waterPointsRouter from "./waterPoints.js";
 import opsLeadsRouter from "./ops/leads.js";
 import opsInteractionsRouter from "./ops/interactions.js";
+import opsVciBackfillRouter from "./ops/vciBackfill.js";
+import smsDeliveryRouter from "./smsDelivery.js";
+import smsOptOutRouter from "./smsOptOut.js";
+import smsSubscriptionRouter from "./smsSubscription.js";
 import demoRouter from "./demo/index.js";
 
 const router: IRouter = Router();
@@ -48,6 +52,10 @@ router.use(wardsRouter);
 router.use(waterPointsRouter);
 router.use(opsLeadsRouter);
 router.use(opsInteractionsRouter);
+router.use(opsVciBackfillRouter);
+router.use(smsDeliveryRouter);
+router.use(smsOptOutRouter);
+router.use(smsSubscriptionRouter);
 
 // Demo routes (for local testing without Africa's Talking)
 router.use("/demo", demoRouter);
