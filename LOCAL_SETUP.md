@@ -62,7 +62,11 @@ cd ardalink-api/docs/local-dev
 make setup
 ```
 
-This copies `.env.example` to `.env` with safe dev defaults:
+This copies `.env.example` to `.env.local` (the convention
+respected by `dotenv`, FastAPI, and every loader we use) with safe
+dev defaults. **Use `.env.local` for real secrets, not `.env`** —
+`.env.local` is gitignored and won't be picked up by tooling that
+auto-loads `.env`:
 
 - `POSTGRES_PASSWORD=ardalink_dev_only`
 - `JWT_SECRET=replace-with-32-plus-bytes-random` (placeholder, 35+ bytes — valid)
