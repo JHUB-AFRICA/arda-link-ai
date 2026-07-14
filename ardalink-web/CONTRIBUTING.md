@@ -6,7 +6,7 @@
 - pnpm 9
 
 ```bash
-git clone git@github.com:MUNENE1212/ardalink-web.git
+git clone git@github.com:JHUB-AFRICA/arda-link-ai.git
 cd ardalink-web
 pnpm install
 pnpm --filter dashboard run dev

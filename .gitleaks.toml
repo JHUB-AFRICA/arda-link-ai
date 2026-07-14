@@ -1,0 +1,44 @@
+# gitleaks configuration — ArdaLink monorepo
+# Extends the default ruleset with project-specific allowlists so we don't
+# false-positive on the example files (.env.example, .env.*.example), the
+# public docs that intentionally mention service names, and the test
+# fixtures that contain obviously-fake "secrets".
+
+title = "ArdaLink gitleaks config"
+
+# Use the bundled default ruleset as the base.
+[extend]
+useDefault = true
+
+# ─── Allowlists ────────────────────────────────────────────────────────────
+[allowlist]
+description = "Allow example/template files + public docs + test fixtures"
+paths = [
+  '''(^|/)ardalink-.*/docs/local-dev/\.env\.example$''',
+  '''(^|/)ardalink-.*/docs/local-dev/.*\.example$''',
+  '''(^|/)Arda-link-AI-Docs/.*\.md$''',
+  '''(^|/)ardalink-marketing/.*$''',
+  '''(^|/)scripts/.*$''',
+  '''(.*/)?\.gitleaks\.(toml|yml)$''',
+  # Test fixtures contain obvious fakes like "test-key",
+  # "test-jwt-secret-at-least-32-chars-long", "unit-test-secret-do-not-use-in-prod".
+  # The generic-api-key rule uses entropy heuristics and is wrong on these.
+  # A leaked real key would show up in a code path or config — not a test.
+  '''(^|/)ardalink-.*/tests/.*$''',
+  '''(^|/)ardalink-.*/test/.*\.py$''',
+  '''(^|/)__tests__/.*$''',
+]
+
+# Allowlist the well-known provider/test names that appear in docs and
+# example config. The actual secret material lives in .env.local (gitignored).
+regexes = [
+  '''atsk_[A-Fa-f0-9]{8}…''',
+  '''your-?(azure|openai|speech|cosmos|africastalking|service-account|api)[-_]?key''',
+  '''https://your-(account|resource|project)\.''',
+  # Test-only fakes that the entropy rule flags.
+  '''test-?(password|key|secret|jwt-secret|session-secret|attestation-secret|secret-)''',
+  '''unit-test-secret''',
+  '''route-test-(secret|attestation)''',
+  '''(auth|choropleth|forecast|middleware|tenant|tenancy)-test-secret''',
+  '''do-not-use-in-prod''',
+]

@@ -448,7 +448,7 @@ The dashboard is **substantially complete** for the Tuesday demo. Gaps for produ
 
 ### 8.2b Phase 2b — Fork alignment + Supabase depth (planned 2026-07-08, ~2 weeks)
 
-**Reference**: MUNENE1212/ardalink-ai fork is treated as the canonical
+**Reference**: JHUB-AFRICA/arda-link-ai fork is treated as the canonical
 architecture. The gaps below are what separates our current merge
 (`4a8509c`) from the fork's design.
 

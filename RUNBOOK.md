@@ -210,6 +210,23 @@ master ← staging ← dev ← feature/*, fix/*, chore/*, refactor/*, docs/*
 
 Full rules, branch naming, commit message format, and PR-target checklist live in [`CONTRIBUTING.md`](./CONTRIBUTING.md). Read it once; follow it always.
 
+### Branch protection (master, staging, dev)
+
+| Rule | Setting | Why |
+|---|---|---|
+| Required status check | `Monorepo CI / All-green summary` (strict) | Every merge has to clear the 8-job CI |
+| Enforce admins | ✅ | Bypasses are a footgun |
+| Required approving reviews | `0` | Solo contributor; CI is the gate. Raise to `1` when a second maintainer joins. |
+| Require code owner review | off | Until the `@ardalink/*` GitHub teams exist |
+| Require last push approval | off | Solo — same reason |
+| Required linear history | ✅ | No merge commits in the long-lived branches |
+| Allow force-pushes | ❌ | Protected branches are append-only |
+| Allow deletions | ❌ | `master` / `staging` / `dev` cannot be deleted from the GitHub UI |
+| Required conversation resolution | ✅ | All review comments must be resolved before merge |
+
+To change: `Settings → Rules → Rulesets → ardalink-mainline` (or via the
+`branches/{branch}/protection` REST endpoint).
+
 ### Promotion quick-reference
 
 ```bash

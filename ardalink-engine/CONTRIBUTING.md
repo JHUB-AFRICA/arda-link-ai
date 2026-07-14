@@ -12,7 +12,7 @@ Be respectful. Assume good faith. No harassment.
 - Google Earth Engine service account for live satellite ingestion
 
 ```bash
-git clone git@github.com:MUNENE1212/ardalink-engine.git
+git clone git@github.com:JHUB-AFRICA/arda-link-ai.git
 cd ardalink-engine
 uv sync
 cp .env.example .env  # fill in

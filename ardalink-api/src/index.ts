@@ -1,4 +1,17 @@
+// Env loading order: .env.local (developer-secrets, gitignored) → .env (legacy)
+// The bare `import "dotenv/config"` line below loads `.env` last so its values
+// win only when `.env.local` is absent (e.g. in CI).
+import { config as loadEnv } from "dotenv";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const here = resolve(fileURLToPath(import.meta.url), "..");
+if (existsSync(resolve(here, ".env.local"))) {
+  loadEnv({ path: resolve(here, ".env.local"), override: false });
+}
 import "dotenv/config";
+
 import { WebSocketServer } from "ws";
 import app from "./app.js";
 import { logger } from "./lib/logger.js";
