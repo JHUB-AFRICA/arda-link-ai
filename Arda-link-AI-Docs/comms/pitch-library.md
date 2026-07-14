@@ -19,7 +19,7 @@ always beats a memorised script.
 > pastoralist enrollment starts once Africa's Talking activates our
 > voice channel.
 
-*(150 words, ~30 seconds spoken at conversational pace.)*
+*(≈ 76 words, ~30 seconds spoken at conversational pace.)*
 
 ---
 
@@ -57,10 +57,12 @@ always beats a memorised script.
 > desk, we'd love to talk about integrating our ground-truth feed
 > into your NDMA reporting. If you're a fellow builder, the repo is
 > open. If you're a funder, our pre-launch operational cost is about
-> $150/month at 1 500-pastoralist scale — and one county
-> subscription covers it.
+> $150 – 300/month at 1 500-pastoralist scale (the range depends on
+> the SMS-to-voice mix — voice minutes are the biggest lever) — and
+> a single county subscription in the $250 – 400/month range covers
+> full opex before any other revenue.
 
-*(≈475 words, ~2:15 spoken at moderate pace.)*
+*(≈ 279 words, ~2:00 spoken at moderate pace.)*
 
 ---
 
@@ -80,9 +82,12 @@ always beats a memorised script.
 > Kiswahili SMS.
 >
 > Pipeline one is satellite. Sentinel-2 gives us free monthly NDVI
-> per ward. We hold 11 years of history in Supabase — 1 093 rows
-> and counting — and compute a per-month percentile envelope so
-> "worse than the last five Julys" becomes a signal, not a vibe.
+> per ward AND per ~1 km cell. We hold 11 years of ward history in
+> Supabase — 1 093 ward-monthly rows plus 2.36 million per-cell
+> rows across the 5-ward, 27 000-cell grid — and compute a per-month
+> percentile envelope so "worse than the last five Julys" becomes a
+> signal, not a vibe. The cell grid lets us say "487 of 1 287 patches
+> in Oldonyiro are dry today", not just the ward mean.
 >
 > Pipeline two is weather. Open-Meteo, refreshed every 6 hours, 14
 > days of daily rainfall forecast with confidence bands. Not "3 mm
@@ -137,10 +142,14 @@ always beats a memorised script.
 >
 > **What it costs.** At the pilot's target scale — 1 500
 > pastoralists across the 5 canonical wards — we're looking at
-> about $150/month of operating cost. SMS is the biggest line item.
-> Everything else runs on free tiers we've deliberately chosen. One
-> county government subscription at $200/month covers full opex
-> before any other revenue stream activates.
+> **$150 – 300/month of operating cost**, the range depending on the
+> SMS-to-voice channel mix (voice minutes are the biggest lever;
+> SMS-heavy is the low end, voice-heavy the high end). Cloud
+> infrastructure sits around $30 – 100/month depending on tier;
+> satellite (Google Earth Engine free tier) and weather (Open-Meteo
+> free non-commercial) are $0. **A single county-government
+> subscription in the $250 – 400/month range covers full opex
+> before any other revenue stream activates.**
 >
 > **What we're asking for depends on the room.** If you're a
 > county drought desk in ASAL Kenya, we want to integrate a
@@ -153,7 +162,7 @@ always beats a memorised script.
 > collaboration on the Kiswahili content library and the
 > ground-truth flywheel.
 
-*(≈900 words, ~5:00 spoken at deliberate pace.)*
+*(≈ 664 words, ~4:30 spoken at deliberate pace — pad with a personal anecdote to reach the 5-min slot if needed.)*
 
 ---
 
@@ -226,7 +235,7 @@ used for outbound.
 
 We don't think of it as ending. The pilot is Phase 1 of a rolling
 county-by-county cohort expansion. The sustainable business model
-(one county subscription covers full opex at 1 500-user scale) is
+(one county subscription in the $250 – 400/month range covers full opex at 1 500-user scale) is
 designed to keep the system running for the pastoralist regardless
 of grant-funding cycles.
 
