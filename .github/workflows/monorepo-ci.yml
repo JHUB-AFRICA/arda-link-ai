@@ -247,7 +247,7 @@ jobs:
       - name: pytest with coverage floor
         run: cd ardalink-engine && uv run pytest
       - name: secrets scan
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -292,7 +292,7 @@ jobs:
           test -f dist/index.mjs || { echo "::error::dist/index.mjs missing"; exit 1; }
           test -s dist/index.mjs || { echo "::error::dist/index.mjs empty"; exit 1; }
       - name: secrets scan
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -332,7 +332,7 @@ jobs:
           test -f dashboard/dist/index.html || { echo "::error::dashboard/dist/index.html missing"; exit 1; }
           test -f talk/dist/index.html || { echo "::error::talk/dist/index.html missing"; exit 1; }
       - name: secrets scan
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
