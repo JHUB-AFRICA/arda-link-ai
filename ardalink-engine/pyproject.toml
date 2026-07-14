@@ -5,12 +5,15 @@ description = "ArdaLink biophysical engine — satellite ingestion, grid scoring
 authors = [{ name = "ArdaLink" }]
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "Proprietary" }
+license = { text = "MIT" }
 
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "earthengine-api>=1.7.28",
+    # Force httplib2 >= 0.32.0 — 0.31.2 (transitive via google-auth-httplib2)
+    # is flagged PYSEC-2026-3444 by pip-audit; explicit pin unblocks master CI.
+    "httplib2>=0.32.0",
     "geopandas>=1.1.3",
     "networkx>=3.6.1",
     "psycopg2-binary>=2.9.12",
