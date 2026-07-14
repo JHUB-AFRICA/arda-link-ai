@@ -64,6 +64,15 @@ export function tenantMiddleware(
   if (req.method === "GET" && req.path === "/api/wards/timeseries") {
     return next();
   }
+  // /api/wards/:id/cells/{latest,summary} — per-cell aggregate over
+  // satellite_cell_indices for the dashboard heatmap. Public satellite
+  // data, no per-herder rows. Same posture as /wards/map + /baseline.
+  if (
+    req.method === "GET" &&
+    /^\/api\/wards\/[^/]+\/cells\/(latest|summary)$/.test(req.path)
+  ) {
+    return next();
+  }
   const secret = jwtSecret();
   if (!secret) {
     res.status(500).json({ error: "JWT_SECRET not configured" });

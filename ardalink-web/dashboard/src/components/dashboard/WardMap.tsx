@@ -12,8 +12,8 @@
  * when Supabase is unconfigured or unreachable.
  */
 
-import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useQueries, useQuery } from "@tanstack/react-query";
 
 interface WardMapWard {
   ward_id: string;
@@ -44,6 +44,23 @@ interface WardMapResponse {
   wards: WardMapWard[];
   edges: WardMapEdge[];
   supabase: { configured: boolean; reachable: boolean };
+}
+
+interface CellLatest {
+  ward_cell_id: string;
+  ward_id: string;
+  cell_size_m: number;
+  centroid_lat: number;
+  centroid_lon: number;
+  ndvi_mean: number | null;
+  vci_value: number | null;
+  ndvi_anomaly: number | null;
+}
+
+interface CellsResponse {
+  ready: boolean;
+  count: number;
+  cells: CellLatest[];
 }
 
 /**
@@ -114,6 +131,8 @@ function unionBounds(list: (Bounds | null)[]): Bounds | null {
 }
 
 export function WardMap() {
+  const [heatmapOn, setHeatmapOn] = useState(false);
+
   const q = useQuery<WardMapResponse>({
     queryKey: ["wards-map"],
     queryFn: async () => {
@@ -127,6 +146,33 @@ export function WardMap() {
   });
 
   const data = q.data;
+  const wardIds = data?.wards.map((w) => w.ward_id) ?? [];
+
+  // One query per ward for the ~1 km cell heatmap. Only fires when
+  // the toggle is on so we don't pay the ~3300-cell payload cost by
+  // default. Cell NDVI is monthly-updated so cache aggressively.
+  const cellQueries = useQueries({
+    queries: wardIds.map((wardId) => ({
+      queryKey: ["ward-cells", wardId] as const,
+      enabled: heatmapOn,
+      staleTime: 30 * 60_000,
+      queryFn: async (): Promise<CellsResponse> => {
+        const res = await fetch(`/api/wards/${wardId}/cells/latest?limit=2000`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return (await res.json()) as CellsResponse;
+      },
+    })),
+  });
+
+  const allCells = useMemo(() => {
+    if (!heatmapOn) return [];
+    const out: CellLatest[] = [];
+    for (const q of cellQueries) {
+      if (q.data?.ready) out.push(...q.data.cells);
+    }
+    return out;
+  }, [cellQueries, heatmapOn]);
+  const cellsLoading = heatmapOn && cellQueries.some((q) => q.isLoading);
 
   const projected = useMemo(() => {
     if (!data?.wards || data.wards.length === 0) return null;
@@ -183,22 +229,37 @@ export function WardMap() {
             NDVI-coloured from Supabase — brown = stressed, green = healthy
           </p>
         </div>
-        <div className="text-[10px] text-gray-400 flex items-center gap-2">
-          <span
-            className="inline-block w-3 h-3 rounded"
-            style={{ background: ndviColour(0.1) }}
-          />
-          <span>0.10</span>
-          <span
-            className="inline-block w-3 h-3 rounded"
-            style={{ background: ndviColour(0.3) }}
-          />
-          <span>0.30</span>
-          <span
-            className="inline-block w-3 h-3 rounded"
-            style={{ background: ndviColour(0.5) }}
-          />
-          <span>0.50</span>
+        <div className="text-[10px] text-gray-400 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setHeatmapOn((v) => !v)}
+            className={`px-2 py-1 rounded border text-[10px] font-medium transition ${
+              heatmapOn
+                ? "border-emerald-500 text-emerald-300 bg-emerald-950/30"
+                : "border-gray-700 text-gray-400 hover:border-gray-500 hover:text-gray-200"
+            }`}
+            aria-pressed={heatmapOn}
+            title="Overlay per-cell NDVI heatmap (~1 km grid, up to 3 300 cells)"
+          >
+            {cellsLoading ? "Loading…" : heatmapOn ? "Cells: on" : "Cells: off"}
+          </button>
+          <span className="hidden sm:inline-flex items-center gap-2">
+            <span
+              className="inline-block w-3 h-3 rounded"
+              style={{ background: ndviColour(0.1) }}
+            />
+            <span>0.10</span>
+            <span
+              className="inline-block w-3 h-3 rounded"
+              style={{ background: ndviColour(0.3) }}
+            />
+            <span>0.30</span>
+            <span
+              className="inline-block w-3 h-3 rounded"
+              style={{ background: ndviColour(0.5) }}
+            />
+            <span>0.50</span>
+          </span>
         </div>
       </div>
 
@@ -228,11 +289,47 @@ export function WardMap() {
             );
           })}
 
-          {/* Ward polygons. */}
+          {/* Per-cell heatmap layer — rendered as centroid dots. Each
+              cell is ~1 km wide; dot size 1.4 px in the 400 × 260
+              viewport gives roughly the right visual scale for the 5
+              wards' union bounding box. */}
+          {heatmapOn &&
+            allCells.map((c) => {
+              const [x, y] = project(c.centroid_lon, c.centroid_lat);
+              return (
+                <circle
+                  key={c.ward_cell_id}
+                  cx={x}
+                  cy={y}
+                  r={1.4}
+                  fill={ndviColour(c.ndvi_mean)}
+                  fillOpacity={0.9}
+                  stroke="none"
+                >
+                  <title>
+                    {`${c.ward_cell_id} · NDVI ${
+                      c.ndvi_mean == null ? "—" : c.ndvi_mean.toFixed(3)
+                    }${
+                      c.vci_value == null
+                        ? ""
+                        : ` · VCI ${c.vci_value.toFixed(0)}`
+                    }${
+                      c.ndvi_anomaly == null
+                        ? ""
+                        : ` · Δ ${c.ndvi_anomaly.toFixed(3)}`
+                    }`}
+                  </title>
+                </circle>
+              );
+            })}
+
+          {/* Ward polygons — filled by ward-mean NDVI when the heatmap
+              layer is off; outline-only when the heatmap is on so the
+              per-cell dots show through cleanly. */}
           {data.wards.map((w) => {
             const geom = w.geometry;
             if (!geom) return null;
-            const fill = ndviColour(w.ndvi_mean);
+            const fill = heatmapOn ? "transparent" : ndviColour(w.ndvi_mean);
             const paths = geom.coordinates.map((poly, i) => {
               const rings = poly.map((ring) =>
                 ring

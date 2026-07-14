@@ -4,6 +4,25 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added
+
+- **Per-cell satellite indices wired into the herder brief.** Five new
+  helpers in `src/lib/supabase.ts` — `listWardCells`,
+  `latestCellSnapshot`, `latestCellIndicesForWard`,
+  `nearestCellForCoordinates` (haversine on cached geometry, no
+  PostGIS RPC needed), `wardCellStressSummary`. `HerderContext` gains
+  six cell-level fields (`wardCellCount`, `wardStressedCellCount`,
+  `wardCellNdviMedian`, `nearestCellId`, `nearestCellNdvi`,
+  `nearestCellAnomaly`). Unlocks the 2.36 M-row
+  `satellite_cell_indices` table + 26 975-row `ward_cells` grid that
+  had been sitting in Supabase with zero refs.
+- **Public read-only cell endpoints** —
+  `GET /api/wards/:wardId/cells/latest` (per-cell NDVI + centroid,
+  paginated to 2000 rows) and `/cells/summary` (ward-level aggregate).
+  Whitelisted in the tenant middleware — same posture as
+  `/api/wards/map` and `/api/wards/:id/baseline`. Powers the
+  dashboard heatmap layer.
+
 ## [0.2.0] - 2026-07-14
 
 ### Added
