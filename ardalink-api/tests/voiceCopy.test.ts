@@ -74,6 +74,12 @@ function makeCtx(patch: Partial<HerderContext> = {}): HerderContext {
     vciDerived: 20,
     worseThanYears: 6,
     driestYearOnRecord: 2020,
+    wardCellCount: null,
+    wardStressedCellCount: null,
+    wardCellNdviMedian: null,
+    nearestCellId: null,
+    nearestCellNdvi: null,
+    nearestCellAnomaly: null,
     ...patch,
   };
 }
