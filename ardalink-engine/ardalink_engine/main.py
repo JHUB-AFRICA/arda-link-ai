@@ -11,10 +11,14 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Load environment variables from .env file at the repo root
-env_path = Path(__file__).resolve().parent.parent / ".env"
-if env_path.exists():
-    load_dotenv(env_path)
+# Load environment variables. Order: .env.local (developer secrets, gitignored)
+# → .env (legacy/CI). Real production credentials must NEVER live in
+# a tracked file; rotate at provider portal + commit a fresh .env.local.
+_env_dir = Path(__file__).resolve().parent.parent
+for _env_name in (".env.local", ".env"):
+    _p = _env_dir / _env_name
+    if _p.exists():
+        load_dotenv(_p, override=False)
 
 from contextlib import asynccontextmanager  # noqa: E402
 

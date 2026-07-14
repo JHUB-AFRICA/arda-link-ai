@@ -61,14 +61,14 @@ jobs:
               - 'RUNBOOK.md'
               - 'LOCAL_SETUP.md'
               - 'LICENSE'
-              - 'ARCHITECTURE-V2.md'
+              - 'Arda-link-AI-Docs/architecture.md'
               - '.github/workflows/monorepo-ci.yml'
             root:
               - 'README.md'
               - 'RUNBOOK.md'
               - 'LOCAL_SETUP.md'
               - 'LICENSE'
-              - 'ARCHITECTURE-V2.md'
+              - 'Arda-link-AI-Docs/architecture.md'
               - '.gitignore'
               - '.github/**'
               - 'CODEOWNERS'
@@ -107,21 +107,25 @@ jobs:
               exit 1
             fi
           done
-      - name: Fail on live .env files (anywhere)
+      - name: Fail on live .env or .env.local files (anywhere)
         run: |
           set -euo pipefail
-          if find . -name '.env' -not -path './.git/*' 2>/dev/null | grep -q .; then
-            echo "::error::Live .env file present. It must never be committed."
+          if find . \( -name '.env' -o -name '.env.local' \) -not -path './.git/*' 2>/dev/null | grep -q .; then
+            echo "::error::Live .env or .env.local file present. It must never be committed."
             exit 1
           fi
       - name: Fail on Proprietary markers (project is MIT)
         run: |
           set -euo pipefail
+          # Use word boundaries so we catch bare 'Proprietary' in e.g.
+          # pyproject.toml (license = { text = "Proprietary" }) and not just
+          # the hyphenated 'Proprietary-License' form. Also catch the
+          # all-rights-reserved copyright line.
           HITS=$(grep -RIl --exclude-dir=.git --exclude-dir=.github \
                 --exclude-dir=node_modules --exclude-dir=.venv \
                 --exclude-dir=__pycache__ --exclude-dir=dist \
                 --exclude='INVENTORY.md' \
-                -E 'Proprietary[ -]License|all rights reserved' \
+                -E '\bProprietary\b|all rights reserved' \
                 . 2>/dev/null | grep -v 'INVENTORY.md' || true)
           if [ -n "$HITS" ]; then
             echo "::error::Proprietary markers re-introduced. Project is MIT."
@@ -151,19 +155,24 @@ jobs:
             echo "$HITS"
             exit 1
           fi
-      - name: Fail on stale MUNENE1212 cross-references
+      - name: Fail on stale MUNENE1212 / munenendegwa6 cross-references
         run: |
           set -euo pipefail
           # Allow them inside docs/ (historical CTI snapshot) and Arda-link-AI-Docs.
+          # Public-facing files (READMEs, status, contributing, changelogs,
+          # license, runbook) must reference the org, not the personal account.
           HITS=$(grep -RIl --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.venv \
                 --exclude-dir=__pycache__ --exclude-dir=dist --exclude-dir=docs \
-                --exclude-dir=Arda-link-AI-Docs \
-                'MUNENE1212' \
-                README.md RUNBOOK.md LOCAL_SETUP.md LICENSE ARCHITECTURE-V2.md \
-                ardalink-api/README.md ardalink-engine/README.md ardalink-web/README.md \
+                --exclude-dir=Arda-link-AI-Docs --exclude-dir=.github \
+                -E 'MUNENE1212|munenendegwa6' \
+                README.md RUNBOOK.md LOCAL_SETUP.md LICENSE \
+                CONTRIBUTING.md CONVENTIONS.md STATUS.md CHANGELOG.md \
+                ardalink-api/README.md ardalink-api/CONTRIBUTING.md ardalink-api/CHANGELOG.md \
+                ardalink-engine/README.md ardalink-engine/CONTRIBUTING.md ardalink-engine/CHANGELOG.md \
+                ardalink-web/README.md ardalink-web/CONTRIBUTING.md ardalink-web/CHANGELOG.md \
                 ardalink-marketing/README.md 2>/dev/null || true)
           if [ -n "$HITS" ]; then
-            echo "::error::Stale MUNENE1212 cross-references in public docs. Update to JHUB-AFRICA/arda-link-ai."
+            echo "::error::Stale personal-account cross-references in public docs. Update to JHUB-AFRICA/arda-link-ai."
             echo "$HITS"
             exit 1
           fi
@@ -218,11 +227,15 @@ jobs:
             echo "::error::README.md still mentions Proprietary. Project is MIT."
             exit 1
           fi
-      - name: RUNBOOK.md references ARCHITECTURE-V2.md (not ARCHITECTURE.md)
+      - name: RUNBOOK.md points at architecture.md (not legacy ARCHITECTURE.md)
         run: |
           set -euo pipefail
-          if grep -nE 'ARCHITECTURE\.md\b' RUNBOOK.md | grep -v 'ARCHITECTURE-V2'; then
-            echo "::error::RUNBOOK.md still references superseded ARCHITECTURE.md."
+          if grep -nE 'ARCHITECTURE\.md\b' RUNBOOK.md; then
+            echo "::error::RUNBOOK.md still references legacy ARCHITECTURE.md. Use Arda-link-AI-Docs/architecture.md."
+            exit 1
+          fi
+          if ! grep -q 'Arda-link-AI-Docs/architecture.md' RUNBOOK.md; then
+            echo "::error::RUNBOOK.md should link Arda-link-AI-Docs/architecture.md as the canonical architecture doc."
             exit 1
           fi
 
@@ -248,7 +261,7 @@ jobs:
         run: cd ardalink-engine && uv run pytest
       - name: secrets scan
         uses: gitleaks/gitleaks-action@v2
-        continue-on-error: true
+        # continue-on-error removed — secrets-scan now GATES the build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: vuln scan (pip-audit)
@@ -293,7 +306,7 @@ jobs:
           test -s dist/index.mjs || { echo "::error::dist/index.mjs empty"; exit 1; }
       - name: secrets scan
         uses: gitleaks/gitleaks-action@v2
-        continue-on-error: true
+        # continue-on-error removed — secrets-scan now GATES the build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -333,7 +346,7 @@ jobs:
           test -f talk/dist/index.html || { echo "::error::talk/dist/index.html missing"; exit 1; }
       - name: secrets scan
         uses: gitleaks/gitleaks-action@v2
-        continue-on-error: true
+        # continue-on-error removed — secrets-scan now GATES the build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

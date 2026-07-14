@@ -1,0 +1,30 @@
+# gitleaks configuration — ArdaLink monorepo
+# Extends the default ruleset with project-specific allowlists so we don't
+# false-positive on the example files (.env.example, .env.*.example) and the
+# public docs that intentionally mention service names.
+
+title = "ArdaLink gitleaks config"
+
+# Use the bundled default ruleset as the base.
+[extend]
+useDefault = true
+
+# ─── Allowlists ────────────────────────────────────────────────────────────
+[allowlist]
+description = "Allow example/template files + public docs that mention services by name"
+paths = [
+  '''(^|/)ardalink-.*/docs/local-dev/\.env\.example$''',
+  '''(^|/)ardalink-.*/docs/local-dev/.*\.example$''',
+  '''(^|/)Arda-link-AI-Docs/.*\.md$''',
+  '''(^|/)ardalink-marketing/.*$''',
+  '''(^|/)scripts/.*$''',
+  '''(.*/)?\.gitleaks\.(toml|yml)$''',
+]
+
+# Allowlist the well-known provider/test names that appear in docs and
+# example config. The actual secret material lives in .env.local (gitignored).
+regexes = [
+  '''atsk_[A-Fa-f0-9]{8}…''',
+  '''your-?(azure|openai|speech|cosmos|africastalking|service-account|api)[-_]?key''',
+  '''https://your-(account|resource|project)\.''',
+]

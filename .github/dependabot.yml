@@ -1,0 +1,80 @@
+# Dependabot — ArdaLink monorepo
+#
+# Tracks:
+#   - ardalink-engine (Python via uv/pip)
+#   - ardalink-api + ardalink-web (Node via pnpm)
+#   - GitHub Actions runners (action versions)
+#
+# All PRs target `dev` so the engineer can squash-merge to staging after
+# CI green. Never auto-merge — the human decides.
+
+version: 2
+
+updates:
+  - package-ecosystem: "uv"
+    directory: "/ardalink-engine"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "Africa/Nairobi"
+    open-pull-requests-limit: 5
+    target-branch: "dev"
+    commit-message:
+      prefix: "deps(engine)"
+    labels: ["dependencies", "engine"]
+    groups:
+      patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "npm"
+    directory: "/ardalink-api"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "Africa/Nairobi"
+    open-pull-requests-limit: 5
+    target-branch: "dev"
+    commit-message:
+      prefix: "deps(api)"
+    labels: ["dependencies", "api"]
+    groups:
+      patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "npm"
+    directory: "/ardalink-web"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "Africa/Nairobi"
+    open-pull-requests-limit: 5
+    target-branch: "dev"
+    commit-message:
+      prefix: "deps(web)"
+    labels: ["dependencies", "web"]
+    groups:
+      patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "Africa/Nairobi"
+    open-pull-requests-limit: 3
+    target-branch: "dev"
+    commit-message:
+      prefix: "deps(ci)"
+    labels: ["dependencies", "ci"]
+    groups:
+      actions-minor:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]

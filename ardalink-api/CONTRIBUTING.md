@@ -9,7 +9,7 @@ Thanks for your interest.
 - PostgreSQL 14+
 
 ```bash
-git clone git@github.com:MUNENE1212/ardalink-api.git
+git clone git@github.com:JHUB-AFRICA/arda-link-ai.git
 cd ardalink-api
 pnpm install
 cp .env.example .env
