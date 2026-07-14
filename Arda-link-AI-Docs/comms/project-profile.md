@@ -22,7 +22,7 @@ Both are becoming less predictable as the climate shifts:
   someone's ward.** Local rainfall variability is outpacing the
   seasonal rhythms herders' families have relied on for
   generations.
-- **The water-point data of record (WPDx) is a decade stale.**
+- **The water-point data of record (WPDx) is 14 years stale.**
   The 2012 Isiolo survey lists every borehole as
   "Non-Functional". Some are working again. Some aren't. Nobody
   is systematically refreshing this signal.
@@ -136,18 +136,22 @@ partners; over-claiming is fatal to trust.
 
 ## What's built today (evidence-backed)
 
-- **259 automated tests, all passing** — every AT surface, every
-  data helper, every language-aware brief template
-- **1 093 rows of Sentinel-2 satellite history** — 11 years,
-  monthly, 5 wards
-- **910 rows of 14-day rainfall forecast** — refreshed every 6 h
+- **265 automated tests, all passing** — every AT surface, every
+  data helper, every language-aware brief template, cell-index
+  aggregates
+- **1 093 rows of Sentinel-2 ward-monthly satellite history** —
+  11 years, 5 wards. **Plus 2.36 million per-cell NDVI rows** across
+  the 5-ward ~1 km grid (26 975 cells), wired into the herder brief
+- **1 190 rows of 14-day rainfall forecast** — refreshed every 6 h
 - **All 5 Africa's Talking SMS callback types wired** — incoming,
   delivery reports, opt-out, subscription notifications
 - **USSD self-enrollment flow live** — 4-screen Jisajili
-- **Voice pipeline code-complete** — waiting on AT Voice product
-  activation to demo to a live handset
+- **Voice pipeline code-complete and verified via local/tunnel
+  loopback** — waiting on AT Voice product activation to run the
+  end-to-end call on a real handset
 - **Ops dashboard** — real-time interaction log, lead management,
-  ward NDVI trends, 14-day rainfall forecast, PostGIS choropleth
+  ward NDVI trends, 14-day rainfall forecast, PostGIS choropleth,
+  per-cell drought heatmap
 
 Every claim above is independently verifiable in
 `../progress-2026-07-13-technical.md` (with exact file paths and

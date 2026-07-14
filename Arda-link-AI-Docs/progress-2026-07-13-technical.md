@@ -18,12 +18,21 @@ NDVI + Open-Meteo rainfall + WPDx water-point + herder ground-truth** into
 personalised briefs and outbound alerts.
 
 **State today (pre-launch):**
-- All three channels (SMS, USSD, voice pipeline) working end-to-end
-  against the AT sandbox — verified live with test personas
+- **SMS + USSD verified live on the AT sandbox** end-to-end against
+  test personas — inbound message → handler → outbound reply → all AT
+  callback types (delivery, opt-out, subscription) round-trip
+- **Voice pipeline is code-complete and verified via local/tunnel
+  loopback** — the deterministic 3-stage flow (opener → DTMF prompt
+  → STT capture → summary SMS) runs against sim requests to
+  `/api/voice-callback`. Real-handset demo is blocked on AT Voice
+  product activation (see §4.1) — not on our code
 - Ops dashboard shows real-time interaction log, lead management,
-  ward NDVI trends, 14-day rainfall forecast
+  ward NDVI trends, 14-day rainfall forecast, PostGIS ward
+  choropleth, per-cell heatmap (see §2.5)
 - 11 years of Sentinel-2 history + fresh rainfall forecast +
-  WPDx water infrastructure all persisted in Supabase
+  WPDx water infrastructure all persisted in Supabase — plus 2.36 M
+  per-cell NDVI rows across the 5 wards' ~3 300-cell grid, now wired
+  into the herder brief and dashboard
 - Herder-facing content is Kiswahili-natural, no jargon,
   language-routed per caller preference
 - No open loops — every completed action ends with an outbound SMS
@@ -32,11 +41,13 @@ personalised briefs and outbound alerts.
 
 | Metric | Count |
 |---|---|
-| Git commits | 118 |
-| API routes | 87 |
-| Passing tests | 259 / 259 |
-| Satellite indices rows (11yr) | 1 093 |
-| Weather forecast rows | 910 |
+| Git commits | 120 |
+| API routes | 89 |
+| Passing tests | 265 / 265 |
+| Satellite indices rows — ward-monthly (11 yr) | 1 093 (861 with VCI populated; 232 recent rows without a full historical baseline yet) |
+| Satellite cell indices rows — ~1 km grid, 11 yr | 2 361 853 |
+| Ward cells — Isiolo grid | 26 975 (17 – 1 287 per ward) |
+| Weather forecast rows | 1 190 |
 | Lead interactions logged | 17 |
 | Test pastoralists (verified) | 1 |
 | Test leads (self-enrolled) | 2 |
@@ -91,8 +102,9 @@ before demo.
 
 ### 2.3 USSD self-enrollment (Jisajili) (5 min)
 
-1. In AT simulator's USSD tab, dial the service code
-   (`*384*NNNN#` — check current channel).
+1. In AT simulator's USSD tab, dial the service code (the AT test
+   channel our sandbox is bound to — check the current one before
+   the demo).
 2. Walk the 5-item menu:
    ```
    CON ArdaLink — Bula Pesa
@@ -102,11 +114,12 @@ before demo.
      4. Toka
      5. Jisajili / Register
    ```
-3. **Pick 5 (Jisajili).** Walk the enrollment:
-   - Screen 2: type a full name
-   - Screen 3: pick ward digit (1..5)
-   - Screen 4: pick language (Kiswahili / English)
-   - Screen 5: END confirmation + welcome SMS dispatched
+3. **Pick 5 (Jisajili).** Walk the 4-screen enrollment (screen 1 is
+   the menu itself; Jisajili adds four more screens on top):
+   - Screen 1 (Jisajili): type a full name
+   - Screen 2: pick ward digit (1..5)
+   - Screen 3: pick language (Kiswahili / English)
+   - Screen 4: END confirmation + welcome SMS dispatched
 4. Refresh dashboard **LeadsSection** — the new lead appears with
    status `lead`, verify + decline buttons.
 5. Click **Verify** on that lead. Watch:
@@ -116,12 +129,16 @@ before demo.
    - A welcome SMS dispatched via AT
    - LeadsSection now shows ✓ verified
 
-### 2.4 Voice pipeline (5 min — code walkthrough, not live)
+### 2.4 Voice pipeline (5 min — code + local loopback, not live-handset)
 
-Voice is fully implemented but the AT sandbox does not include
-voice product — Denis at AT support confirmed. Test number request
-pending (Applications → Voice → Phone number → Test Number).
-Everything below is verifiable from the code + prior local runs.
+Voice is fully implemented and **verified against sim requests hitting
+the local `/api/voice-callback` over the Cloudflare tunnel** — the
+XML flow, DTMF handling, and STT + summary-SMS chain all round-trip.
+The AT sandbox does not include the Voice product (Denis at AT
+support confirmed 2026-07-11), so we can't yet route a real handset
+through it. Test-number request is pending (Applications → Voice →
+Phone number → Test Number). Everything below is verifiable from the
+code + the tunnel-based loopback demo.
 
 1. Open `ardalink-api/src/routes/voice.ts` — deterministic 3-stage flow:
    - **Opener** — `<Say>` (Kiswahili opener from `voiceOpener()` +
@@ -154,19 +171,42 @@ Everything below is verifiable from the code + prior local runs.
    Open-Meteo per ward centroid, writes 14 days × 5 wards = 70 rows
    per pass to `weather_forecast`.
 
-3. **VCI backfill** — `POST /api/ops/vci-backfill` computed VCI
-   for 774/776 historic rows using the 11-year baseline. Now every
-   satellite_indices row has a persisted VCI value (0..100).
+3. **VCI backfill** — `POST /api/ops/vci-backfill` computed VCI for
+   774/776 historic rows using the 11-year baseline (2 rows skipped
+   for missing coverage). Combined with the 87 natively-computed
+   rows, **861 of 1 093 satellite_indices rows now have a persisted
+   VCI value** (0..100); the remaining 232 rows are current-month
+   pulls where the historical envelope isn't yet fully populated.
 
 4. **Herder ground-truth overlays WPDx** — WPDx's 2012 Isiolo
-   survey says every borehole is broken. When herders confirm
-   "working" via voice/SMS, `overlayStatusFromGroundTruth()` in
-   `wpdx.ts` updates the effective status in future briefs.
+   survey (14 years stale as of 2026) says every borehole is broken.
+   When herders confirm "working" via voice/SMS,
+   `overlayStatusFromGroundTruth()` in `wpdx.ts` updates the
+   effective status in future briefs. Ground-truth window default is
+   **90 days** (`recentWaterPointGroundTruth(90)`).
 
 5. **Peer signal** — `peerSignalForWard()` aggregates recent
-   ground_truth_calls + lead_interactions in the ward over 7 days.
-   Only surfaces when ≥ 2 other callers to avoid the herder's
-   own echo.
+   ground_truth_calls + lead_interactions in the ward. Window is
+   **7 days** — deliberately shorter than the 90-day water-point
+   window because peer mood/pasture data goes stale faster than
+   water-point functional status. Only surfaces when ≥ 2 other
+   callers to avoid the herder's own echo.
+
+6. **Per-cell drought signal (new, 2026-07-14)** — `wardCellStressSummary()`
+   aggregates the 2.36 M-row `satellite_cell_indices` table (see
+   §5.1) into a ward-level hotspot signal:
+   `wardStressedCellCount / wardCellCount` at the ~1 km resolution.
+   Wired into the herder brief so the opener can quantify patchy
+   stress ("487 of 1 287 patches in Oldonyiro are dry today") instead
+   of only the ward-mean NDVI.
+
+**Dual-write note on ground truth.** Every voice-report ingest
+inserts to two rows: `ground_truth_calls` on Supabase (source of
+truth, 2 rows today) AND `ground_truth_reports` on the local Postgres
+mirror (36 richer rows, retained for the pre-Supabase migration
+history). The local mirror is being retired for redundant satellite
++ climate tables (see §5) but stays live for ground truth until
+Supabase-primary catches up.
 
 ### 2.6 Loop-closure architecture (2 min)
 
@@ -194,7 +234,7 @@ production dashboards holding steady.
 | Backend | **Phase B — B1** | Set up `ardalink-engine/notebooks/ndvi_forecast.ipynb` in Colab. Read from Supabase, train CatBoost NDVI-forecast on 11yr panel, dump artifact JSON. | Wed–Thu |
 | Backend | **Phase B — B2** | `migration_corridor.ipynb` — Dijkstra over ward_neighbors with cost = distance − (dest NDVI forecast gain) − (dest rain probability). Deterministic (no ML). | Thu |
 | Frontend | **Dashboard viz** | WardMap gets layer toggles: forecast-NDVI overlay from artifact, migration corridor arrows from B2 output. | Wed–Fri |
-| Ops | **Cohort growth** | Field-agent SOP for onboarding 10 real pilot pastoralists (Isiolo Sub-County). No auto-writes — ops-added only. | Wed |
+| Ops | **Cohort growth** | Field-agent SOP for onboarding the first **10 real pilot pastoralists** (Isiolo Sub-County), scaling to 50 before the public launch. No auto-writes — ops-added only. | Wed |
 | All | **Demo prep** | Rehearse next Monday's walkthrough end-to-end using real (not synthetic) data. | Fri |
 
 ### Weekly ceremonies
@@ -245,10 +285,21 @@ first real pastoralists.
 ### 4.4 No real pilot cohort — **planned, not a blocker yet**
 
 Only test personas exist. Real enrollment starts when field-agent
-SOP + AT voice number are both in place. **This is planned**, not
-a blocker in the classical sense — but any presentation that says
-"herders using the system" needs to be corrected to "test personas
-exercising the system pre-launch".
+SOP + AT voice number are both in place. Target: **first 10 real
+pastoralists, scaling to 50 before public launch**. **This is
+planned**, not a blocker in the classical sense — but any
+presentation that says "herders using the system" needs to be
+corrected to "test personas exercising the system pre-launch".
+
+### 4.7 Open-Meteo licensing on paid tiers — **flag for legal review**
+
+Open-Meteo's free tier is CC-BY-NC (non-commercial). We're safe for
+the pre-launch pilot and for a county subscription positioned as
+public-service (NDMA-adjacent) rather than commercial resale. If we
+sell forecast data to a commercial reinsurer or agri-fintech, we
+either need Open-Meteo's commercial plan or a swap to a commercial
+provider (Meteomatics, Weather Company). Flagged for legal review
+before the first commercial MOU, not blocking today.
 
 ### 4.5 CI Node 20 deprecation warnings — **noise**
 
@@ -299,3 +350,51 @@ curl -s https://<tunnel>/api/wards/timeseries | jq '.wards[0] | .name, (.ndvi | 
 - Component diagram: system topology + data flow
 - Sequence diagram: USSD self-enrollment end-to-end
 - Use case diagram: actors + capabilities
+
+### D. Supabase source-of-truth alignment (2026-07-14)
+
+**Decision:** Supabase is the sole source of truth for reference +
+operational data. The local Postgres mirror is being retired for
+tables where Supabase has strictly-better coverage, and kept only
+for auth + tenancy scaffolding Supabase doesn't yet host.
+
+**Current state (row counts as of 2026-07-14):**
+
+| Object | Location | Rows | Status |
+|---|---|---|---|
+| `satellite_indices` (ward-monthly, 11 yr) | Supabase | 1 093 | Source of truth |
+| `satellite_cell_indices` (~1 km grid, 11 yr) | Supabase | **2 361 853** | **Wired in 2026-07-14** — was 0 src refs |
+| `ward_cells` | Supabase | 26 975 | Wired in 2026-07-14 |
+| `api_latest_cell_satellite_indices` (view) | Supabase | — | Wired in 2026-07-14 |
+| `api_ward_cell_latest_rollup` (view) | Supabase | — | Available, not yet consumed |
+| `weather_data` + `weather_forecast` | Supabase | 25 + 1 190 | Source of truth |
+| `ground_truth_calls` | Supabase | 2 (test) | Source of truth going forward |
+| `pastoralists` | Supabase | 1 (test) | Source of truth going forward |
+| `pastoralist_leads` + `lead_interactions` | Supabase | 2 + 17 | Source of truth |
+| `satellite_snapshots` | Local | 51 | **Retire** — duplicate of `satellite_indices` |
+| `climate_snapshots` | Local | 51 | **Retire** — duplicate of `weather_data` + `weather_forecast` |
+| `ground_truth_reports` | Local | 36 | Keep during dual-write until Supabase catches up |
+| `pastoralists` | Local | 16 | Keep during dual-write, reconcile up |
+| `admin_users`, `tenants`, `tenant_feature_flags` | Local | 4 + 3 + 12 | Keep — no Supabase counterpart yet |
+
+**Untapped Supabase server-side RPCs** (available, not yet called):
+`refresh_satellite_indices_latest`, `upsert_satellite_cell_indices`,
+`upsert_satellite_indices`, `upsert_weather_data`, `rebuild_ward_cells`.
+Moving current-side upsert logic into these RPCs is the next
+architectural step; not on this sprint's critical path.
+
+**ML implications of the cell grid.** With per-cell NDVI at ~1 km
+resolution, Phase B unlocks:
+1. **Per-pixel anomaly** — flag cells whose stress diverges from the
+   ward median (e.g. a single stressed patch inside an otherwise-OK
+   ward that's driving herder complaints).
+2. **Migration-corridor optimisation at cell resolution** — Dijkstra
+   over cell-adjacency instead of ward-adjacency; produces routes
+   that go around specific bad patches, not just neighbouring wards.
+3. **Water-point demand pressure modelling** — join
+   `satellite_cell_indices` × WPDx points via cell geometry; per-point
+   dry-season demand curve becomes a real signal.
+
+All three are Phase B notebook work, not this sprint's Colab tasks
+(NDVI forecast + ward-level corridor) — but they're the reason we
+wired the cell tables in now rather than later.

@@ -113,9 +113,12 @@ Walk the content calendar from `content-playbook.md §4`. Tomorrow
   engineering story in sync.
 - If a marketing claim ever contradicts what the code does, the
   code wins — file a comms revision, don't paper over it.
-- The `feedback_no_pilot_data_writes.md` memory (two-tier writes)
-  and `feedback_no_open_loops.md` (SMS handoff) apply to comms
-  content too — nothing goes out via a channel we can't opt-out of.
+- Two engineering rules apply to comms content too: (1) never write
+  to pilot-data tables from anywhere outside the ops-verified path
+  ("two-tier writes" — verified vs lead never confuses which table
+  gets what); (2) every action ends with an outbound SMS the caller
+  can opt out of ("no open loops"). Nothing goes out via a channel
+  the caller can't stop.
 
 ---
 
