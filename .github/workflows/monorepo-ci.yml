@@ -114,21 +114,27 @@ jobs:
             echo "::error::Live .env or .env.local file present. It must never be committed."
             exit 1
           fi
-      - name: Fail on Proprietary markers (project is MIT)
+      - name: Fail on Proprietary markers in code/config (project is MIT)
         run: |
           set -euo pipefail
-          # Use word boundaries so we catch bare 'Proprietary' in e.g.
-          # pyproject.toml (license = { text = "Proprietary" }) and not just
-          # the hyphenated 'Proprietary-License' form. Also catch the
-          # all-rights-reserved copyright line.
+          # Catch re-introduction of a Proprietary license in code/config:
+          #   - pyproject.toml:    license = "Proprietary"
+          #   - package.json:      "license": "Proprietary"
+          #   - LICENSE headers:   "Proprietary License" or "Proprietary-License"
+          #   - copyright lines:   "all rights reserved"
+          # Narrative mentions of the word "Proprietary" in changelogs, the
+          # CI workflow itself, and the SECURITY / RUNBOOK docs are allowed.
           HITS=$(grep -RIl --exclude-dir=.git --exclude-dir=.github \
                 --exclude-dir=node_modules --exclude-dir=.venv \
                 --exclude-dir=__pycache__ --exclude-dir=dist \
+                --exclude-dir=Arda-link-AI-Docs \
                 --exclude='INVENTORY.md' \
-                -E '\bProprietary\b|all rights reserved' \
-                . 2>/dev/null | grep -v 'INVENTORY.md' || true)
+                --exclude='CHANGELOG.md' \
+                --exclude='*-CHANGELOG.md' \
+                -E 'license[^A-Za-z][^.]*Proprietary|"license"[^,]*Proprietary|Proprietary[ -]+License|all rights reserved' \
+                . 2>/dev/null | grep -vE '(INVENTORY\.md|CHANGELOG\.md|/-CHANGELOG\.md)$' || true)
           if [ -n "$HITS" ]; then
-            echo "::error::Proprietary markers re-introduced. Project is MIT."
+            echo "::error::Proprietary license markers re-introduced. Project is MIT."
             echo "$HITS"
             exit 1
           fi
