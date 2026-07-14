@@ -51,6 +51,9 @@ import {
 import {
   recentWaterPointGroundTruth,
   peerSignalForWard,
+  nearestCellForCoordinates,
+  latestCellSnapshot,
+  wardCellStressSummary,
   type SbPeerSignal,
 } from "./supabase.js";
 
@@ -158,6 +161,19 @@ export interface HerderContext {
   vciDerived: number | null;
   worseThanYears: number | null;
   driestYearOnRecord: number | null;
+
+  // Cell-level intelligence (from Supabase satellite_cell_indices, ~1 km
+  // grid). Ward aggregate ("N of M patches stressed") is populated
+  // whenever wardId resolves. The nearest-cell fields require herder
+  // coordinates and fall back to the ward centroid when we only know
+  // the ward — a stand-in that will be replaced once Jisajili + Voice
+  // capture GPS.
+  wardCellCount: number | null;
+  wardStressedCellCount: number | null;
+  wardCellNdviMedian: number | null;
+  nearestCellId: string | null;
+  nearestCellNdvi: number | null;
+  nearestCellAnomaly: number | null;
 }
 
 function canonicalize(phone: string): string {
@@ -228,6 +244,12 @@ function baseContext(rawPhone: string, tenantId: string): HerderContext {
     vciDerived: null,
     worseThanYears: null,
     driestYearOnRecord: null,
+    wardCellCount: null,
+    wardStressedCellCount: null,
+    wardCellNdviMedian: null,
+    nearestCellId: null,
+    nearestCellNdvi: null,
+    nearestCellAnomaly: null,
   };
 }
 
@@ -246,6 +268,42 @@ async function overlayPeerSignal(ctx: HerderContext): Promise<HerderContext> {
     peerThinAnimalsCount: signal.thinAnimalsCount,
     peerBrokenWaterCount: signal.brokenWaterCount,
     peerWindowDays: signal.windowDays,
+  };
+}
+
+/**
+ * Overlay: per-cell stress signal for the caller's ward.
+ *   - Ward aggregate: how many of the ward's cells are stressed today,
+ *     and the median NDVI across all cells. Populated whenever the
+ *     ward has cells in Supabase.
+ *   - Nearest-cell: the cell closest to the herder's coordinates.
+ *     Until we capture herder GPS in Jisajili/voice, we fall back to
+ *     the ward centroid — which resolves to the geographic centre of
+ *     the ward, not the herder's actual location. Better than nothing
+ *     while GPS capture is on the roadmap.
+ */
+async function overlayCellStress(ctx: HerderContext): Promise<HerderContext> {
+  if (!ctx.wardId) return ctx;
+  const summary = await wardCellStressSummary(ctx.wardId);
+  const origin =
+    centroidForTenant(tenantForWardId(ctx.wardId)) ??
+    centroidForTenant("bula-pesa");
+  let cell = null as null | Awaited<ReturnType<typeof nearestCellForCoordinates>>;
+  let snapshot = null as null | Awaited<ReturnType<typeof latestCellSnapshot>>;
+  if (origin) {
+    cell = await nearestCellForCoordinates(origin.lat, origin.lon, ctx.wardId);
+    if (cell) {
+      snapshot = await latestCellSnapshot(cell.ward_cell_id);
+    }
+  }
+  return {
+    ...ctx,
+    wardCellCount: summary?.cellCount ?? null,
+    wardStressedCellCount: summary?.stressedCellCount ?? null,
+    wardCellNdviMedian: summary?.ndviMedian ?? null,
+    nearestCellId: cell?.ward_cell_id ?? null,
+    nearestCellNdvi: snapshot?.ndvi_mean ?? null,
+    nearestCellAnomaly: snapshot?.ndvi_anomaly ?? null,
   };
 }
 
@@ -620,6 +678,7 @@ export async function resolveHerderContext(
       ctx = await overlayNeighborAdvice(ctx);
       ctx = await overlayNearestWaterPoint(ctx);
       ctx = await overlayPeerSignal(ctx);
+      ctx = await overlayCellStress(ctx);
       // Backfill tenant/ward correlation when Supabase gave us a ward_id.
       if (ctx.wardId && !tenantForWardId(ctx.wardId)) {
         ctx.wardId = wardIdForTenant(tenantId);
@@ -635,6 +694,7 @@ export async function resolveHerderContext(
   ctx = await overlayNeighborAdvice(ctx);
   ctx = await overlayNearestWaterPoint(ctx);
   ctx = await overlayPeerSignal(ctx);
+  ctx = await overlayCellStress(ctx);
   return ctx;
 }
 

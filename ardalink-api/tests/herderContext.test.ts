@@ -60,6 +60,12 @@ vi.mock("../src/lib/supabase.js", () => ({
   // to reason about them. Dedicated tests can add fixtures.
   recentWaterPointGroundTruth: async () => [],
   peerSignalForWard: async () => null,
+  // Cell-level overlays — default to null so herderContext resolves
+  // without needing per-test cell fixtures. Cell helpers are covered
+  // in tests/supabase.test.ts.
+  wardCellStressSummary: async () => null,
+  nearestCellForCoordinates: async () => null,
+  latestCellSnapshot: async () => null,
 }));
 
 vi.mock("../src/lib/intelligence.js", () => ({
