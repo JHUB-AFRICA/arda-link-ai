@@ -1123,6 +1123,217 @@ export const recentLeadInteractions = (
   );
 };
 
+// ── Ward cells (grid geometry) + per-cell satellite indices ─────────────
+
+/**
+ * A single grid cell inside a ward. `cell_size_m` is typically 1000
+ * (a 1 km cell) but nothing in code assumes that — always read it
+ * from the row. Geometry is a MultiPolygon in EPSG:4326.
+ */
+export interface SbWardCell {
+  ward_cell_id: string;
+  ward_id: string;
+  cell_i: number;
+  cell_j: number;
+  cell_size_m: number;
+  area_ha: number;
+  centroid: {
+    type: "Point";
+    coordinates: [number, number];
+  } | null;
+}
+
+/**
+ * Latest per-cell satellite indices (view over ward_cells JOIN
+ * satellite_cell_indices, latest row per ward_cell_id). Flat shape
+ * lets us query without embedding.
+ */
+export interface SbLatestCellSatelliteIndex {
+  ward_cell_id: string;
+  ward_id: string;
+  cell_size_m: number;
+  area_ha: number;
+  centroid_lat: number;
+  centroid_lon: number;
+  period_start: string;
+  period_end: string;
+  calendar_month: number;
+  calendar_year: number;
+  ndvi_mean: number | null;
+  ndre_mean: number | null;
+  ndwi_mean: number | null;
+  ndmi_mean: number | null;
+  evi_mean: number | null;
+  savi_mean: number | null;
+  bsi_mean: number | null;
+  vci_value: number | null;
+  ndvi_anomaly: number | null;
+  ndre_anomaly: number | null;
+  moisture_anomaly: number | null;
+  prosopis_corrected: boolean;
+  prosopis_share: number | null;
+  grazing_condition_score: number | null;
+  movement_advisory_score: number | null;
+  source_collection: string | null;
+  updated_at: string;
+}
+
+/**
+ * List every cell in a ward. Cached — cell geometry is static.
+ * Small wards (Wabera=17, Bulla Pesa=21) return instantly; larger
+ * rural wards (Oldonyiro=1287, Ngare Mara=1116, Burat=833) fit
+ * comfortably in one PostgREST page. We cap at 2000 to be explicit.
+ */
+export const listWardCells = (
+  wardId: string,
+  mode: SupabaseMode = "batch",
+): Promise<SbWardCell[] | null> =>
+  sbGet<SbWardCell>(
+    `ward_cells?select=ward_cell_id,ward_id,cell_i,cell_j,cell_size_m,area_ha,centroid` +
+      `&ward_id=eq.${encodeURIComponent(wardId)}&order=ward_cell_id.asc&limit=2000`,
+    { cache: true, mode },
+  );
+
+/**
+ * Latest indices for every cell in a ward, from
+ * api_latest_cell_satellite_indices. One row per cell.
+ */
+export const latestCellIndicesForWard = (
+  wardId: string,
+  mode: SupabaseMode = "batch",
+): Promise<SbLatestCellSatelliteIndex[] | null> =>
+  sbGet<SbLatestCellSatelliteIndex>(
+    `api_latest_cell_satellite_indices?ward_id=eq.${encodeURIComponent(wardId)}` +
+      `&order=ward_cell_id.asc&limit=2000`,
+    { cache: true, mode },
+  );
+
+/** Latest indices for a single cell, uncached. */
+export const latestCellSnapshot = async (
+  wardCellId: string,
+  mode: SupabaseMode = "interactive",
+): Promise<SbLatestCellSatelliteIndex | null> => {
+  const rows = await sbGet<SbLatestCellSatelliteIndex>(
+    `api_latest_cell_satellite_indices?ward_cell_id=eq.${encodeURIComponent(
+      wardCellId,
+    )}&limit=1`,
+    { mode },
+  );
+  return rows?.[0] ?? null;
+};
+
+/**
+ * Nearest cell to (lat, lon), optionally scoped to a ward. Pulls the
+ * ward's cells from cache and picks the minimum-haversine centroid.
+ * PostgREST has no spatial-order primitive without a custom RPC, and
+ * we already cache ward_cells, so client-side is cheapest.
+ */
+export const nearestCellForCoordinates = async (
+  lat: number,
+  lon: number,
+  wardId: string,
+  mode: SupabaseMode = "interactive",
+): Promise<SbWardCell | null> => {
+  const cells = await listWardCells(wardId, mode);
+  if (!cells || cells.length === 0) return null;
+  let best: SbWardCell | null = null;
+  let bestKm = Number.POSITIVE_INFINITY;
+  for (const cell of cells) {
+    if (!cell.centroid) continue;
+    const [cLon, cLat] = cell.centroid.coordinates;
+    const km = haversineKm(lat, lon, cLat, cLon);
+    if (km < bestKm) {
+      bestKm = km;
+      best = cell;
+    }
+  }
+  return best;
+};
+
+function haversineKm(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+/**
+ * Ward-level cell stress summary. Aggregates per-cell latest NDVI +
+ * VCI + anomaly across every cell in the ward. `stressedCellCount`
+ * uses NDVI < 0.25 as a coarse dry-veg threshold — the same cut-off
+ * the WardMap heatmap will render red.
+ */
+export interface SbWardCellStressSummary {
+  ward_id: string;
+  cellCount: number;
+  cellsWithData: number;
+  stressedCellCount: number;
+  stressedFraction: number;
+  ndviMin: number | null;
+  ndviMax: number | null;
+  ndviMedian: number | null;
+  vciMedian: number | null;
+  anomalyMedian: number | null;
+  latestPeriodEnd: string | null;
+}
+
+export const wardCellStressSummary = async (
+  wardId: string,
+  mode: SupabaseMode = "batch",
+): Promise<SbWardCellStressSummary | null> => {
+  const rows = await latestCellIndicesForWard(wardId, mode);
+  if (!rows) return null;
+  const cellCount = rows.length;
+  const ndvi = rows
+    .map((r) => r.ndvi_mean)
+    .filter((v): v is number => v != null)
+    .sort((a, b) => a - b);
+  const vci = rows
+    .map((r) => r.vci_value)
+    .filter((v): v is number => v != null)
+    .sort((a, b) => a - b);
+  const anomaly = rows
+    .map((r) => r.ndvi_anomaly)
+    .filter((v): v is number => v != null)
+    .sort((a, b) => a - b);
+  const stressedCellCount = rows.filter(
+    (r) => r.ndvi_mean != null && r.ndvi_mean < 0.25,
+  ).length;
+  const latestPeriodEnd = rows
+    .map((r) => r.period_end)
+    .sort()
+    .pop() ?? null;
+  return {
+    ward_id: wardId,
+    cellCount,
+    cellsWithData: ndvi.length,
+    stressedCellCount,
+    stressedFraction: cellCount > 0 ? stressedCellCount / cellCount : 0,
+    ndviMin: ndvi[0] ?? null,
+    ndviMax: ndvi[ndvi.length - 1] ?? null,
+    ndviMedian: median(ndvi),
+    vciMedian: median(vci),
+    anomalyMedian: median(anomaly),
+    latestPeriodEnd,
+  };
+};
+
+function median(sorted: number[]): number | null {
+  const n = sorted.length;
+  if (n === 0) return null;
+  const mid = Math.floor(n / 2);
+  return n % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
 export function clearSupabaseCache(): void {
   cache.clear();
 }

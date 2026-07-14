@@ -183,4 +183,108 @@ describe("supabase client", () => {
     expect(headers.apikey).toBe(ENV_KEY);
     expect(headers.Authorization).toBe(`Bearer ${ENV_KEY}`);
   });
+
+  // ── Cell-level helpers ───────────────────────────────────────────────
+
+  it("listWardCells hits ward_cells with ward filter", async () => {
+    const { calls } = makeFetchMock([() => jsonRes([])]);
+    const { listWardCells } = await import("../src/lib/supabase.js");
+    await listWardCells("246");
+    expect(calls[0]?.url).toContain("/rest/v1/ward_cells?");
+    expect(calls[0]?.url).toContain("ward_id=eq.246");
+  });
+
+  it("latestCellSnapshot returns first row of api_latest_cell_satellite_indices", async () => {
+    makeFetchMock([
+      () =>
+        jsonRes([
+          {
+            ward_cell_id: "246_1000_1_1",
+            ward_id: "246",
+            ndvi_mean: 0.31,
+            ndvi_anomaly: -0.05,
+          },
+        ]),
+    ]);
+    const { latestCellSnapshot } = await import("../src/lib/supabase.js");
+    const row = await latestCellSnapshot("246_1000_1_1");
+    expect(row?.ndvi_mean).toBe(0.31);
+    expect(row?.ndvi_anomaly).toBe(-0.05);
+  });
+
+  it("nearestCellForCoordinates picks closest centroid via haversine", async () => {
+    makeFetchMock([
+      () =>
+        jsonRes([
+          {
+            ward_cell_id: "246_1000_far",
+            ward_id: "246",
+            cell_i: 0,
+            cell_j: 0,
+            cell_size_m: 1000,
+            area_ha: 100,
+            centroid: { type: "Point", coordinates: [37.9, 0.9] },
+          },
+          {
+            ward_cell_id: "246_1000_near",
+            ward_id: "246",
+            cell_i: 1,
+            cell_j: 1,
+            cell_size_m: 1000,
+            area_ha: 100,
+            centroid: { type: "Point", coordinates: [37.4785, 0.4375] },
+          },
+        ]),
+    ]);
+    const { nearestCellForCoordinates } = await import("../src/lib/supabase.js");
+    const cell = await nearestCellForCoordinates(0.4375, 37.4785, "246");
+    expect(cell?.ward_cell_id).toBe("246_1000_near");
+  });
+
+  it("nearestCellForCoordinates returns null when ward has no cells", async () => {
+    makeFetchMock([() => jsonRes([])]);
+    const { nearestCellForCoordinates } = await import("../src/lib/supabase.js");
+    const cell = await nearestCellForCoordinates(0.4375, 37.4785, "999");
+    expect(cell).toBeNull();
+  });
+
+  it("wardCellStressSummary aggregates min/max/median and stressed count", async () => {
+    makeFetchMock([
+      () =>
+        jsonRes([
+          {
+            ward_cell_id: "246_1", ward_id: "246", period_end: "2026-06-30",
+            ndvi_mean: 0.10, vci_value: 10, ndvi_anomaly: -0.2,
+          },
+          {
+            ward_cell_id: "246_2", ward_id: "246", period_end: "2026-06-30",
+            ndvi_mean: 0.20, vci_value: 30, ndvi_anomaly: -0.1,
+          },
+          {
+            ward_cell_id: "246_3", ward_id: "246", period_end: "2026-06-30",
+            ndvi_mean: 0.40, vci_value: 60, ndvi_anomaly: 0.05,
+          },
+          {
+            ward_cell_id: "246_4", ward_id: "246", period_end: "2026-06-30",
+            ndvi_mean: null, vci_value: null, ndvi_anomaly: null,
+          },
+        ]),
+    ]);
+    const { wardCellStressSummary } = await import("../src/lib/supabase.js");
+    const s = await wardCellStressSummary("246");
+    expect(s?.cellCount).toBe(4);
+    expect(s?.cellsWithData).toBe(3);
+    expect(s?.stressedCellCount).toBe(2);
+    expect(s?.ndviMin).toBe(0.10);
+    expect(s?.ndviMax).toBe(0.40);
+    expect(s?.ndviMedian).toBe(0.20);
+    expect(s?.latestPeriodEnd).toBe("2026-06-30");
+  });
+
+  it("wardCellStressSummary returns null when Supabase is unreachable", async () => {
+    makeFetchMock([() => jsonRes({}, 503)]);
+    const { wardCellStressSummary } = await import("../src/lib/supabase.js");
+    const s = await wardCellStressSummary("246");
+    expect(s).toBeNull();
+  });
 });
