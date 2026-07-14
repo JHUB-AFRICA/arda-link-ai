@@ -22,7 +22,7 @@
     "test:cov": "vitest run --coverage"
   },
   "dependencies": {
-    "@google/earthengine": "^1.7.28",
+    "@google/earthengine": "^1.7.35",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "cors": "^2.8.5",
@@ -46,11 +46,11 @@
     "@types/ws": "^8.5.13",
     "@vitest/coverage-v8": "^2.1.0",
     "drizzle-kit": "^0.31.9",
-    "esbuild": "^0.27.0",
+    "esbuild": "^0.28.1",
     "eslint": "^9.18.0",
-    "prettier": "^3.8.0",
+    "prettier": "^3.9.5",
     "supertest": "^7.0.0",
-    "tsx": "^4.21.0",
+    "tsx": "^4.23.1",
     "typescript": "~5.9.0",
     "vitest": "^2.1.0"
   }
