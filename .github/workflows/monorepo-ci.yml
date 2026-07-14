@@ -265,11 +265,20 @@ jobs:
         run: cd ardalink-engine && uv run ruff check .
       - name: pytest with coverage floor
         run: cd ardalink-engine && uv run pytest
-      - name: secrets scan
-        uses: gitleaks/gitleaks-action@v2
-        # continue-on-error removed — secrets-scan now GATES the build
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: secrets scan (gitleaks)
+        # Run the gitleaks CLI directly (Apache-2.0, no license gate) instead
+        # of the action. The action now requires a paid license for
+        # organization accounts; the CLI works on private + public repos.
+        # Pinned to v8.30.1 (latest stable as of 2026-03-21). The .gitleaks.toml
+        # in the repo root allowlists .env.example + docs.
+        run: |
+          set -euo pipefail
+          curl -sSL -o /tmp/gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz"
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+          gitleaks detect --config .gitleaks.toml --source . --redact --no-banner
       - name: vuln scan (pip-audit)
         run: |
           pip install pip-audit
@@ -310,11 +319,20 @@ jobs:
           cd ardalink-api && pnpm run build
           test -f dist/index.mjs || { echo "::error::dist/index.mjs missing"; exit 1; }
           test -s dist/index.mjs || { echo "::error::dist/index.mjs empty"; exit 1; }
-      - name: secrets scan
-        uses: gitleaks/gitleaks-action@v2
-        # continue-on-error removed — secrets-scan now GATES the build
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: secrets scan (gitleaks)
+        # Run the gitleaks CLI directly (Apache-2.0, no license gate) instead
+        # of the action. The action now requires a paid license for
+        # organization accounts; the CLI works on private + public repos.
+        # Pinned to v8.30.1 (latest stable as of 2026-03-21). The .gitleaks.toml
+        # in the repo root allowlists .env.example + docs.
+        run: |
+          set -euo pipefail
+          curl -sSL -o /tmp/gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz"
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+          gitleaks detect --config .gitleaks.toml --source . --redact --no-banner
 
   web:
     name: Web CI (dashboard + talk + api-client-react)
@@ -350,11 +368,20 @@ jobs:
           cd ardalink-web && pnpm run build
           test -f dashboard/dist/index.html || { echo "::error::dashboard/dist/index.html missing"; exit 1; }
           test -f talk/dist/index.html || { echo "::error::talk/dist/index.html missing"; exit 1; }
-      - name: secrets scan
-        uses: gitleaks/gitleaks-action@v2
-        # continue-on-error removed — secrets-scan now GATES the build
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: secrets scan (gitleaks)
+        # Run the gitleaks CLI directly (Apache-2.0, no license gate) instead
+        # of the action. The action now requires a paid license for
+        # organization accounts; the CLI works on private + public repos.
+        # Pinned to v8.30.1 (latest stable as of 2026-03-21). The .gitleaks.toml
+        # in the repo root allowlists .env.example + docs.
+        run: |
+          set -euo pipefail
+          curl -sSL -o /tmp/gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz"
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+          gitleaks detect --config .gitleaks.toml --source . --redact --no-banner
 
   marketing:
     name: Marketing site (jargon + brand)
