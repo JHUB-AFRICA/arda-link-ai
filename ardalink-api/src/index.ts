@@ -1,14 +1,35 @@
 // Env loading order: .env.local (developer-secrets, gitignored) → .env (legacy)
 // The bare `import "dotenv/config"` line below loads `.env` last so its values
 // win only when `.env.local` is absent (e.g. in CI).
+//
+// The loader walks upward from the running module until it finds either
+// .env.local or the package root (ardalink-api/), so the same code works
+// under `tsx src/index.ts` (module path is src/), the built dist/index.mjs
+// (module path is dist/), and any nested test runner. Without this walk,
+// resolving relative to the module path silently misses a .env.local that
+// lives at the package root — the exact failure mode this migration was
+// meant to prevent.
 import { config as loadEnv } from "dotenv";
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+function findEnvLocal(startDir: string): string | null {
+  let dir = startDir;
+  for (let i = 0; i < 5; i++) {
+    const candidate = resolve(dir, ".env.local");
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+  return null;
+}
+
 const here = resolve(fileURLToPath(import.meta.url), "..");
-if (existsSync(resolve(here, ".env.local"))) {
-  loadEnv({ path: resolve(here, ".env.local"), override: false });
+const envLocalPath = findEnvLocal(here);
+if (envLocalPath) {
+  loadEnv({ path: envLocalPath, override: false });
 }
 import "dotenv/config";
 
