@@ -18,9 +18,12 @@ import { logger } from "../lib/logger.js";
 import {
   isSupabaseConfigured,
   latestSatelliteFor,
+  latestCellIndicesForWard,
   listActiveWardsWithGeometry,
+  listWardCells,
   listWardNeighbors,
   fetchWardMonthlyBaseline,
+  wardCellStressSummary,
   computeVci,
   countWorseThanYears,
 } from "../lib/supabase.js";
@@ -313,6 +316,70 @@ router.get("/wards/timeseries", async (_req, res): Promise<void> => {
     logger.error({ err }, "[Wards] timeseries failed");
     res.status(500).json({ ready: false, reason: "query_failed", wards: [] });
   }
+});
+
+/**
+ * Per-cell latest satellite indices for a ward. Serves the dashboard
+ * heatmap layer (WardMap component) — one row per ~1 km cell with
+ * NDVI + centroid + geometry. Public read-only aggregate — same
+ * posture as /api/wards/map and /api/wards/timeseries.
+ *
+ *   GET /api/wards/:wardId/cells/latest?limit=N (default 2000, max 2000)
+ *   GET /api/wards/:wardId/cells/summary
+ *
+ * The `latest` endpoint returns the freshest per-cell NDVI. The
+ * `summary` endpoint returns the ward-level aggregate (min/max/median
+ * NDVI + stressed-cell count).
+ *
+ * Geometry is joined server-side: we hit ward_cells for the polygon +
+ * api_latest_cell_satellite_indices for the values, keyed by
+ * ward_cell_id.
+ */
+router.get("/wards/:wardId/cells/latest", async (req, res): Promise<void> => {
+  if (!isSupabaseConfigured()) {
+    res.json({ ready: false, reason: "supabase_not_configured", cells: [] });
+    return;
+  }
+  const limit = Math.min(Math.max(Number(req.query.limit) || 2000, 1), 2000);
+  const [rows, geometry] = await Promise.all([
+    latestCellIndicesForWard(req.params.wardId),
+    listWardCells(req.params.wardId),
+  ]);
+  if (!rows) {
+    res.json({ ready: false, reason: "supabase_unreachable", cells: [] });
+    return;
+  }
+  const geomById = new Map<string, unknown>();
+  for (const g of geometry ?? []) {
+    geomById.set(g.ward_cell_id, g);
+  }
+  const merged = rows.slice(0, limit).map((r) => {
+    const g = geomById.get(r.ward_cell_id) as
+      | { area_ha: number; centroid: unknown }
+      | undefined;
+    return {
+      ward_cell_id: r.ward_cell_id,
+      ward_id: r.ward_id,
+      cell_size_m: r.cell_size_m,
+      area_ha: g?.area_ha ?? null,
+      centroid_lat: r.centroid_lat,
+      centroid_lon: r.centroid_lon,
+      period_end: r.period_end,
+      ndvi_mean: r.ndvi_mean,
+      vci_value: r.vci_value,
+      ndvi_anomaly: r.ndvi_anomaly,
+    };
+  });
+  res.json({ ready: true, count: merged.length, cells: merged });
+});
+
+router.get("/wards/:wardId/cells/summary", async (req, res): Promise<void> => {
+  if (!isSupabaseConfigured()) {
+    res.json({ ready: false, reason: "supabase_not_configured", summary: null });
+    return;
+  }
+  const summary = await wardCellStressSummary(req.params.wardId);
+  res.json({ ready: true, summary });
 });
 
 export default router;

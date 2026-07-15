@@ -4,6 +4,16 @@ All notable changes are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- **WardMap per-cell heatmap layer** — toggle button in the map
+  header renders the ~3 300 Isiolo cells (`~1 km` grid) as centroid
+  dots coloured by NDVI, on top of outline-only ward polygons.
+  Consumes the new `GET /api/wards/:id/cells/latest` public endpoint.
+  Off by default — only fetches per-ward cell payloads when enabled
+  so first-paint cost is unchanged. Uses `useQueries` for parallel
+  per-ward fetch and shares the existing `ndviColour` palette.
+
 ## [0.2.0] - 2026-07-14
 
 ### Added
