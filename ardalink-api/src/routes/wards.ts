@@ -284,11 +284,19 @@ router.get("/wards/timeseries", async (_req, res): Promise<void> => {
           `${sbBase}/rest/v1/satellite_indices?ward_id=eq.${encodeURIComponent(w.ward_id)}` +
           `&period_end=gte.${encodeURIComponent(cutoff12mo.toISOString())}` +
           `&select=period_end,ndvi_mean,vci_value&order=period_end.asc&limit=24`;
+        // We over-fetch (14 dates × ~4 daily forecast runs × several
+        // days accumulated) and dedupe per (target_date) keeping the
+        // freshest generated_at. Without dedup the graph collapsed to
+        // a single point because `limit=14` returned 14 different
+        // generated_at rows all for today's date.
+        // limit=700 = 14 days × ~4 forecast runs/day × 12 days of
+        // retained history ≈ 672 rows worst-case. Actual duplicates
+        // depend on how long the ward's rows have been accumulating.
         const fcstUrl =
           `${sbBase}/rest/v1/weather_forecast?ward_id=eq.${encodeURIComponent(w.ward_id)}` +
           `&target_date=gte.${encodeURIComponent(cutoffFcst.toISOString().slice(0, 10))}` +
-          `&select=target_date,rainfall_mm_p50,rainfall_mm_p95,precipitation_probability,temperature_c_max` +
-          `&order=target_date.asc,generated_at.desc&limit=14`;
+          `&select=target_date,generated_at,rainfall_mm_p50,rainfall_mm_p95,precipitation_probability,temperature_c_max` +
+          `&order=target_date.asc,generated_at.desc&limit=700`;
         try {
           const [ndviRes, fcstRes] = await Promise.all([
             fetch(ndviUrl, { headers, signal: AbortSignal.timeout(4_000) }),
@@ -297,9 +305,28 @@ router.get("/wards/timeseries", async (_req, res): Promise<void> => {
           const ndvi = ndviRes.ok
             ? ((await ndviRes.json()) as unknown[])
             : [];
-          const forecast = fcstRes.ok
-            ? ((await fcstRes.json()) as unknown[])
+          interface RawFcst {
+            target_date: string;
+            generated_at: string;
+            rainfall_mm_p50: number;
+            rainfall_mm_p95: number;
+            precipitation_probability: number;
+            temperature_c_max: number | null;
+          }
+          const rawFcst = fcstRes.ok
+            ? ((await fcstRes.json()) as RawFcst[])
             : [];
+          const bestPerDate = new Map<string, RawFcst>();
+          for (const r of rawFcst) {
+            const prev = bestPerDate.get(r.target_date);
+            if (!prev || r.generated_at > prev.generated_at) {
+              bestPerDate.set(r.target_date, r);
+            }
+          }
+          const forecast = Array.from(bestPerDate.values())
+            .sort((a, b) => a.target_date.localeCompare(b.target_date))
+            .slice(0, 14)
+            .map(({ generated_at: _ga, ...rest }) => rest);
           return {
             ward_id: w.ward_id,
             name: w.name,
@@ -360,21 +387,32 @@ router.get("/wards/:wardId/cells/latest", async (req, res): Promise<void> => {
     res.json({ ready: false, reason: "supabase_unreachable", cells: [] });
     return;
   }
-  const geomById = new Map<string, unknown>();
+  // Centroid + area_ha now come from ward_cells only — the previous
+  // response sourced them from api_latest_cell_satellite_indices, but
+  // that view times out on the large wards (245/246/247) so we skip
+  // it entirely in latestCellIndicesForWard. See supabase.ts helper.
+  interface Geom {
+    cell_size_m: number;
+    area_ha: number;
+    centroid: {
+      type: "Point";
+      coordinates: [number, number];
+    } | null;
+  }
+  const geomById = new Map<string, Geom>();
   for (const g of geometry ?? []) {
-    geomById.set(g.ward_cell_id, g);
+    geomById.set(g.ward_cell_id, g as Geom);
   }
   const merged = rows.slice(0, limit).map((r) => {
-    const g = geomById.get(r.ward_cell_id) as
-      | { area_ha: number; centroid: unknown }
-      | undefined;
+    const g = geomById.get(r.ward_cell_id);
+    const coords = g?.centroid?.coordinates;
     return {
       ward_cell_id: r.ward_cell_id,
       ward_id: r.ward_id,
-      cell_size_m: r.cell_size_m,
+      cell_size_m: g?.cell_size_m ?? null,
       area_ha: g?.area_ha ?? null,
-      centroid_lat: r.centroid_lat,
-      centroid_lon: r.centroid_lon,
+      centroid_lat: coords ? coords[1] : null,
+      centroid_lon: coords ? coords[0] : null,
       period_end: r.period_end,
       ndvi_mean: r.ndvi_mean,
       vci_value: r.vci_value,
