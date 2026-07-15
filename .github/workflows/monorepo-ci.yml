@@ -11,9 +11,9 @@ name: Monorepo CI
 
 on:
   pull_request:
-    branches: [master, staging]
+    branches: [master, staging, dev]
   push:
-    branches: [master, staging]
+    branches: [master, staging, dev]
   workflow_dispatch: {}
 
 permissions:
