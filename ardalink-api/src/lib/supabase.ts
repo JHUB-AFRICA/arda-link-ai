@@ -643,6 +643,20 @@ export const latestWeatherFor = async (
 };
 
 /**
+ * Latest weather for every ward in one call. Backs the dashboard
+ * timeseries panel so we can render 5 wards without 5 parallel
+ * fetches. Cached — the underlying view refreshes when the
+ * forecast job upserts weather_data.
+ */
+export const latestWeatherAll = (
+  mode: SupabaseMode = "batch",
+): Promise<SbLatestWeather[] | null> =>
+  sbGet<SbLatestWeather>(
+    `api_latest_weather_data?select=*&order=ward_id.asc&limit=50`,
+    { cache: true, mode },
+  );
+
+/**
  * Pastoralist lookup by canonical phone. NOT cached — profile edits
  * should be visible instantly, and the volume is small.
  */
