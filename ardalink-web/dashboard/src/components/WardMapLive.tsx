@@ -6,6 +6,7 @@ import {
   CircleMarker,
   Tooltip,
   LayersControl,
+  LayerGroup,
 } from "react-leaflet";
 import { useQueries } from "@tanstack/react-query";
 import {
@@ -368,7 +369,7 @@ export function WardMapLive({
         })}
 
         <LayersControl.Overlay checked name="Landmarks (OSM)">
-          <>
+          <LayerGroup>
             {BULA_PESA_MAP_LANDMARKS.map((l) => {
               const styles: Record<
                 MapLandmarkCategory,
@@ -417,7 +418,7 @@ export function WardMapLive({
                 </CircleMarker>
               );
             })}
-          </>
+          </LayerGroup>
         </LayersControl.Overlay>
 
         {PLACES.map((p) => {
@@ -465,7 +466,7 @@ export function WardMapLive({
               : `Drought heatmap · ${cells.length} cells`
           }
         >
-          <>
+          <LayerGroup>
             {cells.map((c) => (
               <CircleMarker
                 key={c.ward_cell_id}
@@ -494,7 +495,7 @@ export function WardMapLive({
                 </Tooltip>
               </CircleMarker>
             ))}
-          </>
+          </LayerGroup>
         </LayersControl.Overlay>
 
         {/* Pastoralist pins */}
@@ -502,7 +503,7 @@ export function WardMapLive({
           checked
           name={`Pastoralists (${pastoralists.length})`}
         >
-          <>
+          <LayerGroup>
             {placedPins.map((p) => {
               const hasRecent = p.lastContactAt
                 ? Date.now() - new Date(p.lastContactAt).getTime() <
@@ -566,7 +567,7 @@ export function WardMapLive({
                 </CircleMarker>
               );
             })}
-          </>
+          </LayerGroup>
         </LayersControl.Overlay>
       </MapContainer>
 
