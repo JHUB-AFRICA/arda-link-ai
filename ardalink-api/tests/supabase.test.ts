@@ -287,4 +287,61 @@ describe("supabase client", () => {
     const s = await wardCellStressSummary("246");
     expect(s).toBeNull();
   });
+
+  // ── RPC wrappers ─────────────────────────────────────────────────────
+
+  it("refreshSatelliteIndicesLatest POSTs to /rpc/... with no args", async () => {
+    const { calls } = makeFetchMock([
+      () =>
+        jsonRes({
+          ok: true,
+          run_id: "sync_20260715",
+          upserted: 5,
+          latest_period_end: "2026-06-30",
+        }),
+    ]);
+    const { refreshSatelliteIndicesLatest } = await import("../src/lib/supabase.js");
+    const result = await refreshSatelliteIndicesLatest();
+    expect(result?.ok).toBe(true);
+    expect(result?.upserted).toBe(5);
+    expect(calls[0]?.url).toContain("/rest/v1/rpc/refresh_satellite_indices_latest");
+    expect(calls[0]?.init?.method).toBe("POST");
+    expect(calls[0]?.init?.body).toBe("{}");
+  });
+
+  it("upsertWeatherData passes p_* args verbatim", async () => {
+    const { calls } = makeFetchMock([() => jsonRes({ weather_data_id: 42 })]);
+    const { upsertWeatherData } = await import("../src/lib/supabase.js");
+    await upsertWeatherData({
+      p_ward_id: "242",
+      p_observed_date: "2026-06-30",
+      p_rainfall_mm_30d: 12.5,
+      p_humidity_pct: 55,
+      p_temperature_c: 28.1,
+      p_evapotranspiration_mm: 4.2,
+      p_source: "open-meteo",
+    });
+    expect(calls[0]?.url).toContain("/rest/v1/rpc/upsert_weather_data");
+    const body = JSON.parse(calls[0]?.init?.body as string);
+    expect(body.p_ward_id).toBe("242");
+    expect(body.p_rainfall_mm_30d).toBe(12.5);
+    expect(body.p_source).toBe("open-meteo");
+  });
+
+  it("rebuildWardCells passes the cell size parameter", async () => {
+    const { calls } = makeFetchMock([
+      () => jsonRes({ ok: true, cell_size_m: 500, upserted: 100 }),
+    ]);
+    const { rebuildWardCells } = await import("../src/lib/supabase.js");
+    await rebuildWardCells(500);
+    const body = JSON.parse(calls[0]?.init?.body as string);
+    expect(body.p_cell_size_m).toBe(500);
+  });
+
+  it("sbRpc returns null on non-2xx so callers can fall back", async () => {
+    makeFetchMock([() => jsonRes({ code: "42883" }, 404)]);
+    const { refreshSatelliteIndicesLatest } = await import("../src/lib/supabase.js");
+    const result = await refreshSatelliteIndicesLatest();
+    expect(result).toBeNull();
+  });
 });

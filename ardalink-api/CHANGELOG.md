@@ -4,6 +4,20 @@ All notable changes are documented here. Format: [Keep a Changelog](https://keep
 
 ## [Unreleased]
 
+### Added
+
+- Typed wrappers around the Supabase server-side RPCs that had 0 code
+  refs: `refreshSatelliteIndicesLatest`, `upsertSatelliteIndices`,
+  `upsertSatelliteCellIndices`, `upsertWeatherData`, `rebuildWardCells`.
+  Signatures pulled directly from the PostgREST OpenAPI; every `p_*`
+  arg name matches the RPC parameter exactly. Paved path for future
+  writers that need server-side upsert semantics (RLS + idempotency
+  are enforced at the RPC boundary rather than the client).
+- `forecastJob` now calls `refreshSatelliteIndicesLatest` at the end
+  of each 6 h cycle so the `api_latest_satellite_indices` materialised
+  view stays current. The endpoint is idempotent — safe to invoke on
+  every cycle even when no new satellite rows landed.
+
 ## [0.2.0] - 2026-07-14
 
 ### Added
