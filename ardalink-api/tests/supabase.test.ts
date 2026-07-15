@@ -194,8 +194,8 @@ describe("supabase client", () => {
     expect(calls[0]?.url).toContain("ward_id=eq.246");
   });
 
-  it("latestCellSnapshot returns first row of api_latest_cell_satellite_indices", async () => {
-    makeFetchMock([
+  it("latestCellSnapshot returns first row of satellite_cell_indices (base table, no view)", async () => {
+    const { calls } = makeFetchMock([
       () =>
         jsonRes([
           {
@@ -210,6 +210,43 @@ describe("supabase client", () => {
     const row = await latestCellSnapshot("246_1000_1_1");
     expect(row?.ndvi_mean).toBe(0.31);
     expect(row?.ndvi_anomaly).toBe(-0.05);
+    // Must hit the base table, not the broken view.
+    expect(calls[0]?.url).toContain("/rest/v1/satellite_cell_indices?");
+    expect(calls[0]?.url).not.toContain("api_latest_cell_satellite_indices");
+  });
+
+  it("latestCellIndicesForWard first fetches period_end, then paginates the base table", async () => {
+    const { calls } = makeFetchMock([
+      // Step 1: latest period_end lookup
+      () => jsonRes([{ period_end: "2026-06-30" }]),
+      // Step 2: page 1 (returns < 1000 rows so no page 2 fires)
+      () =>
+        jsonRes([
+          { ward_cell_id: "246_a", ward_id: "246", period_end: "2026-06-30", ndvi_mean: 0.31 },
+          { ward_cell_id: "246_b", ward_id: "246", period_end: "2026-06-30", ndvi_mean: 0.28 },
+        ]),
+    ]);
+    const { latestCellIndicesForWard } = await import("../src/lib/supabase.js");
+    const rows = await latestCellIndicesForWard("246");
+    expect(rows).toHaveLength(2);
+    // Step 1 URL — period_end lookup on the base table
+    expect(calls[0]?.url).toContain("satellite_cell_indices?");
+    expect(calls[0]?.url).toContain("period_end&order=period_end.desc&limit=1");
+    // Step 2 URL — full-period fetch scoped by period_end + Range header
+    expect(calls[1]?.url).toContain("period_end=eq.2026-06-30");
+    const rangeHdr = (calls[1]?.init?.headers as Record<string, string>)["Range"];
+    expect(rangeHdr).toBe("0-999");
+    // The broken view must never be hit
+    for (const c of calls) {
+      expect(c.url).not.toContain("api_latest_cell_satellite_indices");
+    }
+  });
+
+  it("latestCellIndicesForWard returns empty when the ward has no cell history", async () => {
+    makeFetchMock([() => jsonRes([])]);
+    const { latestCellIndicesForWard } = await import("../src/lib/supabase.js");
+    const rows = await latestCellIndicesForWard("999");
+    expect(rows).toEqual([]);
   });
 
   it("nearestCellForCoordinates picks closest centroid via haversine", async () => {

@@ -349,21 +349,32 @@ router.get("/wards/:wardId/cells/latest", async (req, res): Promise<void> => {
     res.json({ ready: false, reason: "supabase_unreachable", cells: [] });
     return;
   }
-  const geomById = new Map<string, unknown>();
+  // Centroid + area_ha now come from ward_cells only — the previous
+  // response sourced them from api_latest_cell_satellite_indices, but
+  // that view times out on the large wards (245/246/247) so we skip
+  // it entirely in latestCellIndicesForWard. See supabase.ts helper.
+  interface Geom {
+    cell_size_m: number;
+    area_ha: number;
+    centroid: {
+      type: "Point";
+      coordinates: [number, number];
+    } | null;
+  }
+  const geomById = new Map<string, Geom>();
   for (const g of geometry ?? []) {
-    geomById.set(g.ward_cell_id, g);
+    geomById.set(g.ward_cell_id, g as Geom);
   }
   const merged = rows.slice(0, limit).map((r) => {
-    const g = geomById.get(r.ward_cell_id) as
-      | { area_ha: number; centroid: unknown }
-      | undefined;
+    const g = geomById.get(r.ward_cell_id);
+    const coords = g?.centroid?.coordinates;
     return {
       ward_cell_id: r.ward_cell_id,
       ward_id: r.ward_id,
-      cell_size_m: r.cell_size_m,
+      cell_size_m: g?.cell_size_m ?? null,
       area_ha: g?.area_ha ?? null,
-      centroid_lat: r.centroid_lat,
-      centroid_lon: r.centroid_lon,
+      centroid_lat: coords ? coords[1] : null,
+      centroid_lon: coords ? coords[0] : null,
       period_end: r.period_end,
       ndvi_mean: r.ndvi_mean,
       vci_value: r.vci_value,
