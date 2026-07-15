@@ -1151,10 +1151,15 @@ export interface SbWardCell {
 export interface SbLatestCellSatelliteIndex {
   ward_cell_id: string;
   ward_id: string;
-  cell_size_m: number;
-  area_ha: number;
-  centroid_lat: number;
-  centroid_lon: number;
+  // cell_size_m, area_ha, and centroid all live in ward_cells (the
+  // geometry table). This shape used to include them because the view
+  // materialised the join; now that we skip the view (see
+  // latestCellIndicesForWard), callers must merge with listWardCells
+  // for cell geometry.
+  cell_size_m?: number;
+  area_ha?: number;
+  centroid_lat?: number;
+  centroid_lon?: number;
   period_start: string;
   period_end: string;
   calendar_month: number;
@@ -1195,28 +1200,86 @@ export const listWardCells = (
   );
 
 /**
- * Latest indices for every cell in a ward, from
- * api_latest_cell_satellite_indices. One row per cell.
+ * Latest indices for every cell in a ward.
+ *
+ * We deliberately do NOT read the `api_latest_cell_satellite_indices`
+ * view — it does a per-cell DISTINCT ON join across 2.36 M rows and
+ * blows past Supabase's statement-timeout for any ward with more than
+ * ~100 cells (245 / 246 / 247 all fail). Instead:
+ *
+ *   1. Find the ward's most-recent period_end via a light query on
+ *      `satellite_cell_indices`.
+ *   2. Fetch every row for that period in Range-paginated pages
+ *      (PostgREST caps individual responses at 1 000 rows regardless
+ *      of ?limit=). Biggest ward is Oldonyiro at ~1 287 cells, so we
+ *      cap at 3 pages (3 000 cells) with a defensive break-on-empty.
+ *
+ * Rows lack centroid_lat / centroid_lon (those live in `ward_cells`);
+ * callers that need the geometry should merge in listWardCells result.
  */
-export const latestCellIndicesForWard = (
+export const latestCellIndicesForWard = async (
   wardId: string,
   mode: SupabaseMode = "batch",
-): Promise<SbLatestCellSatelliteIndex[] | null> =>
-  sbGet<SbLatestCellSatelliteIndex>(
-    `api_latest_cell_satellite_indices?ward_id=eq.${encodeURIComponent(wardId)}` +
-      `&order=ward_cell_id.asc&limit=2000`,
-    { cache: true, mode },
-  );
+): Promise<SbLatestCellSatelliteIndex[] | null> => {
+  const wardFilter = `ward_id=eq.${encodeURIComponent(wardId)}`;
+  const latestUrl =
+    `satellite_cell_indices?${wardFilter}` +
+    `&select=period_end&order=period_end.desc&limit=1`;
+  const latest = await sbGet<{ period_end: string }>(latestUrl, {
+    cache: true,
+    mode,
+  });
+  if (!latest) return null;
+  if (latest.length === 0) return [];
+  const period = latest[0].period_end;
 
-/** Latest indices for a single cell, uncached. */
+  // Columns that actually live on satellite_cell_indices. cell_size_m /
+  // area_ha / centroid are on ward_cells (the geometry table); callers
+  // merge them in from listWardCells.
+  const PAGE = 1000;
+  const MAX_PAGES = 3;
+  const cols =
+    "ward_cell_id,ward_id,period_start,period_end,calendar_month," +
+    "calendar_year,ndvi_mean,ndre_mean,ndwi_mean,ndmi_mean,evi_mean,savi_mean," +
+    "bsi_mean,vci_value,ndvi_anomaly,ndre_anomaly,moisture_anomaly," +
+    "prosopis_corrected,prosopis_share,grazing_condition_score," +
+    "movement_advisory_score,source_collection,updated_at";
+  const rows: SbLatestCellSatelliteIndex[] = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const from = page * PAGE;
+    const to = from + PAGE - 1;
+    const res = await sbFetch(
+      `satellite_cell_indices?${wardFilter}` +
+        `&period_end=eq.${encodeURIComponent(period)}` +
+        `&select=${cols}&order=ward_cell_id.asc`,
+      {
+        sbMode: mode,
+        headers: { Range: `${from}-${to}`, "Range-Unit": "items" },
+      },
+    );
+    if (!res.ok) {
+      logger.warn(
+        { status: res.status, wardId, page },
+        "[Supabase] cell-indices page fetch failed",
+      );
+      break;
+    }
+    const chunk = (await res.json()) as SbLatestCellSatelliteIndex[];
+    for (const r of chunk) rows.push(r);
+    if (chunk.length < PAGE) break;
+  }
+  return rows;
+};
+
+/** Latest indices for a single cell, uncached. Queries the base table
+ *  directly (see latestCellIndicesForWard for why we skip the view). */
 export const latestCellSnapshot = async (
   wardCellId: string,
   mode: SupabaseMode = "interactive",
 ): Promise<SbLatestCellSatelliteIndex | null> => {
   const rows = await sbGet<SbLatestCellSatelliteIndex>(
-    `api_latest_cell_satellite_indices?ward_cell_id=eq.${encodeURIComponent(
-      wardCellId,
-    )}&limit=1`,
+    `satellite_cell_indices?ward_cell_id=eq.${encodeURIComponent(wardCellId)}` +
+      `&order=period_end.desc&limit=1`,
     { mode },
   );
   return rows?.[0] ?? null;
