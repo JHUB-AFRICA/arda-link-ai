@@ -327,7 +327,6 @@ export function WardMapLive({
               maxZoom={15}
             />
           </LayersControl.BaseLayer>
-        </LayersControl>
 
         {(["NW", "NE", "SW", "SE"] as const).map((q) => {
           const pct = quadrants[q] ?? 0;
@@ -569,6 +568,7 @@ export function WardMapLive({
             })}
           </LayerGroup>
         </LayersControl.Overlay>
+        </LayersControl>
       </MapContainer>
 
       {/* Live ribbon */}
