@@ -28,6 +28,7 @@ import { logger } from "../lib/logger.js";
 import {
   isSupabaseConfigured,
   listActiveWards,
+  refreshSatelliteIndicesLatest,
 } from "../lib/supabase.js";
 
 // 5 Isiolo Sub-County ward centroids. Duplicated from wpdx.ts's
@@ -266,11 +267,18 @@ export async function runForecastJob(): Promise<void> {
       wardsOk += 1;
     }
   }
+  // Piggy-back the materialised-view refresh onto the forecast job
+  // so `api_latest_satellite_indices` stays current. Idempotent, and
+  // sending it every 6 h matches the forecast cadence — cheap enough
+  // to run in the same loop rather than a separate scheduler entry.
+  const refresh = await refreshSatelliteIndicesLatest();
   logger.info(
     {
       wardsOk,
       totalWards: wards.length,
       totalRows,
+      latestViewUpserted: refresh?.upserted ?? null,
+      latestPeriodEnd: refresh?.latest_period_end ?? null,
       durationMs: Date.now() - startedAt,
     },
     "[ForecastJob] Refresh completed",
