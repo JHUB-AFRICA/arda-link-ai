@@ -9,6 +9,15 @@
  * because they don't correspond to Supabase wards; use `ngare-mara`
  * and `burat` instead.
  *
+ * **Ward 244 Cherab is intentionally excluded.** Supabase's
+ * `dormant_wards` view lists 244 Cherab as a real Isiolo ward with
+ * populated geometry + satellite_cell_indices, but the pilot cohort
+ * is scoped to the 5 wards above (confirmed by the product owner,
+ * 2026-07-15). If Cherab is later brought into the pilot, add it
+ * both here AND to Supabase's `active_wards` view definition — the
+ * two must stay in sync or the dashboard map + herder briefs will
+ * drift.
+ *
  * This module is the single place that knows the mapping so
  * herderContext, deterministic pipeline, USSD, SMS and voice all agree.
  */
