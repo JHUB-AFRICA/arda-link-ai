@@ -37,20 +37,24 @@ personalised briefs and outbound alerts.
   language-routed per caller preference
 - No open loops — every completed action ends with an outbound SMS
 
-**Numbers (all live from the running system):**
+**Numbers (all live from the running system, updated 2026-07-15):**
 
 | Metric | Count |
 |---|---|
-| Git commits | 120 |
-| API routes | 89 |
-| Passing tests | 265 / 265 |
-| Satellite indices rows — ward-monthly (11 yr) | 1 093 (861 with VCI populated; 232 recent rows without a full historical baseline yet) |
-| Satellite cell indices rows — ~1 km grid, 11 yr | 2 361 853 |
+| Git commits since 0.1.0 | 130+ |
+| API routes | 91 |
+| Passing tests | 271 / 271 (api) + 29 / 29 (dashboard) |
+| Merged PRs (this alignment sprint) | 16 |
+| Satellite indices rows — ward-monthly (11 yr) | 1 093 (861 with VCI populated) |
+| Satellite cell indices rows — ~1 km grid, 11 yr | **2 361 853** |
 | Ward cells — Isiolo grid | 26 975 (17 – 1 287 per ward) |
-| Weather forecast rows | 1 190 |
+| Weather forecast rows | 3 080 (dedup fix in PR #28 collapses ~34 duplicate forecasts per day → 1 per date per ward) |
+| Weather data rows — daily observations | 30 (growing daily via `upsertWeatherData` RPC, PR #29) |
 | Lead interactions logged | 17 |
 | Test pastoralists (verified) | 1 |
 | Test leads (self-enrolled) | 2 |
+
+**What shipped in this sprint (2026-07-14 → 15):** 16 PRs merged incl. dashboard heatmap layers (both Ground Truth SVG + Map tab Leaflet overlay), cell-endpoint bypass of a timing-out Supabase view, forecast dedup fix, `.env.local` loader path fix, RPC wrapper library, weather-observation daily upsert job, CI hardening. See PR list on GitHub for the full record.
 
 ---
 
@@ -169,7 +173,13 @@ code + the tunnel-based loopback demo.
 
 2. **Weather forecast** — `forecastJob.ts` runs every 6 h, hits
    Open-Meteo per ward centroid, writes 14 days × 5 wards = 70 rows
-   per pass to `weather_forecast`.
+   per pass to `weather_forecast`. **Since PR #29 (2026-07-15)** it
+   also fetches 30 days of past observation, upserts a single
+   `weather_data` row per ward via the `upsert_weather_data` RPC
+   (previously 0 code refs), and calls `refresh_satellite_indices_latest`
+   to keep the materialised view current. The `/api/wards/timeseries`
+   payload now dedupes stale forecast rows so the dashboard rainfall
+   chart shows 14 real dates instead of collapsing on one (PR #28).
 
 3. **VCI backfill** — `POST /api/ops/vci-backfill` computed VCI for
    774/776 historic rows using the 11-year baseline (2 rows skipped
@@ -192,13 +202,35 @@ code + the tunnel-based loopback demo.
    water-point functional status. Only surfaces when ≥ 2 other
    callers to avoid the herder's own echo.
 
-6. **Per-cell drought signal (new, 2026-07-14)** — `wardCellStressSummary()`
-   aggregates the 2.36 M-row `satellite_cell_indices` table (see
-   §5.1) into a ward-level hotspot signal:
-   `wardStressedCellCount / wardCellCount` at the ~1 km resolution.
-   Wired into the herder brief so the opener can quantify patchy
-   stress ("487 of 1 287 patches in Oldonyiro are dry today") instead
-   of only the ward-mean NDVI.
+6. **Per-cell drought signal (2026-07-14 → 15)** — `wardCellStressSummary()`
+   aggregates the 2.36 M-row `satellite_cell_indices` table into a
+   ward-level hotspot signal at the ~1 km resolution. Wired into the
+   herder brief so the opener can quantify patchy stress ("1 014 of
+   1 116 patches in Ngare Mara are dry today, 91 %") instead of only
+   the ward-mean NDVI. **Two dashboard surfaces render the grid:**
+   the compact SVG map on the Ground Truth tab (PR #23) with a
+   **Cells: on/off** toggle, and the full Leaflet map on the Map tab
+   (PR #30) with a **Drought heatmap** overlay in the layers control.
+   Both are backed by `/api/wards/:id/cells/latest` — the endpoint
+   bypasses a timing-out Supabase view (PR #28) and Range-paginates
+   the PostgREST 1 000-row cap.
+
+7. **Live stress today (2026-07-15):**
+
+| Ward | Cells | Stressed (NDVI < 0.25) | Cell NDVI range |
+|---|---:|---:|---|
+| 241 Wabera | 17 | 1 (6 %) | 0.23 – 0.45 |
+| 242 Bulla Pesa | 21 | 9 (43 %) | 0.21 – 0.31 |
+| 245 Ngare Mara | 1 116 | **1 014 (91 %)** | 0.10 – 0.52 |
+| 246 Burat | 833 | 683 (82 %) | 0.10 – 0.49 |
+| 247 Oldonyiro | 1 287 | 948 (74 %) | 0.08 – 0.76 |
+| **Total** | **3 274** | **2 655 (81 %)** | — |
+
+   The urban wards (Wabera, Bulla Pesa) sit in the wetter southeast;
+   the rural wards are broad, mixed-stress landscapes. Ngare Mara's
+   91 % cell-level stress is a signal the ward-mean NDVI (0.19) hides —
+   the mean masks how uniformly the pattern is spread. **This is the
+   value of the cell grid.**
 
 **Dual-write note on ground truth.** Every voice-report ingest
 inserts to two rows: `ground_truth_calls` on Supabase (source of
@@ -233,7 +265,7 @@ production dashboards holding steady.
 | Backend | **Named tunnel** | Replace Cloudflare quick-tunnel with named tunnel bound to a domain — stop URL rotation that keeps invalidating AT callback config. | Tue |
 | Backend | **Phase B — B1** | Set up `ardalink-engine/notebooks/ndvi_forecast.ipynb` in Colab. Read from Supabase, train CatBoost NDVI-forecast on 11yr panel, dump artifact JSON. | Wed–Thu |
 | Backend | **Phase B — B2** | `migration_corridor.ipynb` — Dijkstra over ward_neighbors with cost = distance − (dest NDVI forecast gain) − (dest rain probability). Deterministic (no ML). | Thu |
-| Frontend | **Dashboard viz** | WardMap gets layer toggles: forecast-NDVI overlay from artifact, migration corridor arrows from B2 output. | Wed–Fri |
+| Frontend | **Dashboard viz** | ~~WardMap gets layer toggles~~ **✅ shipped** (PR #23 Ground Truth SVG heatmap + PR #30 Map-tab Leaflet heatmap). Migration-corridor arrows still pending B2. | Wed–Fri |
 | Ops | **Cohort growth** | Field-agent SOP for onboarding the first **10 real pilot pastoralists** (Isiolo Sub-County), scaling to 50 before the public launch. No auto-writes — ops-added only. | Wed |
 | All | **Demo prep** | Rehearse next Monday's walkthrough end-to-end using real (not synthetic) data. | Fri |
 
@@ -313,7 +345,153 @@ build; a free license fetch + repo secret update kills the warning.
 
 ---
 
-## 5. Quick appendices
+## 5. ML potential — how ArdaLink learns from its data
+
+The system is designed as a **data flywheel**: more herders → more
+ground-truth → better models → better briefs → more herder trust →
+more herders. That's the compounding asset. The moat isn't the code
+(all open-source stack); it's the labeled data. This section maps the
+concrete models the current schema unlocks, ordered by how much herder
+data each one needs.
+
+### 5.1 What the data landscape looks like today
+
+We have ~30 million observation data points (satellite × time × cell)
+and effectively zero behavioural labels (2 ground-truth calls, 17
+lead interactions — all pre-launch test personas). That shapes what
+is trainable **today** vs what waits for **pilot launch**.
+
+| Table | Rows | Signal type |
+|---|---:|---|
+| `satellite_cell_indices` | **2 361 853** | Per-cell monthly NDVI + Prosopis correction + 8 derived indices, 11 yr history |
+| `satellite_indices` | 1 093 | Ward-monthly NDVI + VCI (0..100), 11 yr history |
+| `ward_cells` | 26 975 | Spatial grid geometry (~1 km cells) |
+| `weather_forecast` | 3 080 | Growing daily (Open-Meteo 14-day ensemble × 5 wards × 4 runs/day) |
+| `weather_data` | 30 | Daily observations, growing since 2026-07-15 (PR #29) |
+| `ward_neighbors` | 28 | Adjacency graph for corridor optimisation |
+| `ground_truth_calls` | 2 | **The bottleneck.** Real herder reports fill this only after pilot launch |
+| `pastoralist_leads` + `lead_interactions` | 2 + 17 | Enrolment + AT-surface audit trail |
+
+### 5.2 Tier 1 — Trainable today (no herder data needed)
+
+**T1.1 Cell-level VCI backfill — the single biggest unlock.** The
+2.36 M cell rows have raw NDVI but `vci_value` is null. Same maths as
+the ward-level backfill we already ran (774/776 rows in PR #28's
+predecessor). Applied at cell resolution it turns every cell into a
+labelled dry/wet observation per month across 11 years. Persist via
+`upsert_satellite_cell_indices` (RPC wired in PR #25). **~1 day of
+compute.** Every downstream ML task depends on this.
+
+**T1.2 NDVI forecast (per-ward, 1–3 months out).** 11 years × 12
+months × 5 wards = 660 monthly data points. Small but tractable with
+LightGBM/CatBoost + walk-forward CV. Features: prior 12 NDVI values,
+prior 6 rainfall values, month-of-year, neighbour-ward NDVI, public
+ENSO / IOD proxies. Deliverable:
+`ardalink-engine/notebooks/ndvi_forecast.ipynb` + artifact JSON +
+`POST /api/ops/forecast/refresh` reload endpoint. **~1 day.**
+
+**T1.3 Cell-level anomaly detection.** Once T1.1 lands, run per-cell
+z-score against its historical envelope (or Isolation Forest). Flag
+cells >2 σ below their month's baseline. Nightly job → new
+`cell_anomalies` column. Dashboard renders as red hotspot markers on
+the heatmap layer. **Turns the 2.36 M-row grid from decoration into
+alerts.** ~2 days.
+
+**T1.4 Prosopis (invasive tree) spread tracking.** The
+`prosopis_share` + `prosopis_corrected` columns already exist on
+every satellite_cell_indices row. Nobody watches them. A simple
+year-over-year per-cell delta surfaces where prosopis is expanding —
+a real ecological KPI county governments care about. **~1 day.**
+
+### 5.3 Tier 2 — Waits for pilot data volume (weeks–months post-launch)
+
+**T2.1 Herder response propensity.** Given brief content, timing,
+herd size, and prior response history, predict reply probability.
+Trains on `lead_interactions × ground_truth_calls`. Enables channel
+routing: SMS vs voice vs skip. **First real ML that touches the
+herder-facing loop.**
+
+**T2.2 Water-point functional-status forecast.** Given seasonality,
+recent ground-truth reports, nearby herder activity, predict whether
+borehole X is likely working today. **Beats WPDx (14-year stale) by
+orders of magnitude.** This is the flagship model — the piece nobody
+else can build without ArdaLink's ground-truth stream.
+
+**T2.3 Kiswahili content quality RL loop.** Track which brief
+templates get replies vs opt-outs. Reinforcement-learning-from-herder-
+response over the variance pool in `voiceCopy.ts`. Content improves
+week over week without engineer intervention.
+
+### 5.4 Tier 3 — Novel with the cell grid
+
+**T3.1 Migration-corridor optimiser (deterministic, no ML).** Build a
+graph from `ward_cells` (cell_i, cell_j implicitly encode adjacency).
+Dijkstra with edge weight = distance + NDVI-forecast-deficit + water
+availability + herd-crossing difficulty. **Deterministic + explainable
+— no black-box ML** — but transformational for the herder-facing
+question "where should I move stock this week?".
+
+**T3.2 Herd-carrying-capacity model.** Per-cell forage estimate
+(NDVI × biomass conversion) × herd size → suggested stocking rate.
+Livelihood advisory: "your ward can support X animals through the dry
+season". Fits the county-planning use case.
+
+**T3.3 Spatiotemporal cell-graph transformer (research).** Each cell
+= token with temporal + spatial features. ~100 M params fine-tunable
+on our data. Long-horizon research angle for county partners
+positioned as "we run our own regional AI".
+
+### 5.5 Becoming a data gem
+
+What makes ArdaLink's data actually unique:
+
+1. **Paired satellite × community-verified ground truth in ASAL Kenya.**
+   Almost no other dataset exists at this granularity. WPDx is 14
+   years stale; NDMA aggregates by county not community.
+2. **Kiswahili pastoralist drought vocabulary.** Natural register,
+   tested with a native audience. Small but genuinely novel NLP corpus.
+3. **Cell-resolution intra-ward drought variance.** 3 274 cells across
+   5 wards — no other publicly-known dataset has this granularity for
+   ASAL Kenya.
+4. **Consented, opt-outable per-herder migration + water-point
+   interaction traces.** Once pilot ingests, this is data reinsurers
+   would pay for (parametric livestock insurance triggers).
+
+Data products the platform could offer (tiered by consent + partner
+MOU):
+
+| Product | Consumer | Access |
+|---|---|---|
+| Ward-level NDVI + VCI aggregate (11 yr + live) | Researchers | Open API, CC-BY-NC |
+| Cell-level drought heatmap (aggregate) | County govts, NDMA | County-subscription API |
+| Ground-truth water-point status feed | NGOs (Mercy Corps, ILRI) | MOU + fee |
+| Migration corridor traces (anonymised) | Reinsurers, agri-fintech | Commercial MOU, per-query |
+| Kiswahili content corpus + reply-labelled dataset | AI/NLP researchers | Academic license |
+
+### 5.6 Recommended sequencing
+
+1. **Merge remaining doc + heatmap PRs (this week).**
+2. **Ship T1.1 cell VCI backfill** — foundation for everything else.
+3. **Ship T1.2 NDVI forecast notebook + T1.3 anomaly detection.**
+4. **Publish a `data.md` product catalog** (one page per Tier row above:
+   what it is, who it's for, MOU template placeholder).
+5. **Pilot launch — the actual bottleneck for Tier 2 and 3.** Every
+   Tier 2 model depends on ground-truth volume that only real herders
+   generate.
+6. **First Tier 2 model within 4 weeks of pilot's first 20 verified
+   herders.** Water-point functional-status forecast (T2.2) is the
+   clearest win to ship first — it validates the whole flywheel.
+
+**One-line pitch for the ML story:** *"We already have 2.36 million
+per-cell satellite observations covering 11 years. Every real herder
+call adds a ground-truth label satellite alone can't infer. Model
+quality compounds with cohort size — the pilot isn't testing a
+product, it's minting the training set that makes ArdaLink
+unreproducible."*
+
+---
+
+## 6. Quick appendices
 
 ### A. How to run the demo (checklist)
 
