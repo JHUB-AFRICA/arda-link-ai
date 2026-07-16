@@ -7,7 +7,7 @@ always beats a memorised script.
 
 ---
 
-## 30-second pitch (elevator / cold intro)
+## Short pitch (cold intro)
 
 > ArdaLink is a drought-intelligence system for Isiolo pastoralists.
 > Every day it pulls satellite data, weather forecasts, and
@@ -19,11 +19,10 @@ always beats a memorised script.
 > pastoralist enrollment starts once Africa's Talking activates our
 > voice channel.
 
-*(≈ 76 words, ~30 seconds spoken at conversational pace.)*
 
 ---
 
-## 2-minute pitch (partnership meeting, huddle, board slot)
+## Standard pitch (partnership meeting, huddle, board slot)
 
 > ArdaLink is a satellite-plus-AI-plus-SMS system that puts drought
 > intelligence into the hands of the pastoralist who's actually
@@ -66,11 +65,10 @@ always beats a memorised script.
 > a single county subscription in the $250 – 400/month range covers
 > full opex before any other revenue.
 
-*(≈ 279 words, ~2:00 spoken at moderate pace.)*
 
 ---
 
-## 5-minute pitch (investor / partner deep-dive)
+## Deep-dive pitch (investor / partner)
 
 > Let me start with a number: **10**. That's how many water points
 > exist in the WPDx open-data snapshot for Isiolo County. All 10
@@ -181,7 +179,6 @@ always beats a memorised script.
 > collaboration on the Kiswahili content library and the
 > ground-truth flywheel.
 
-*(≈ 664 words, ~4:30 spoken at deliberate pace — pad with a personal anecdote to reach the 5-min slot if needed.)*
 
 ---
 
@@ -306,12 +303,11 @@ weather until the community layer thickens.
 
 ---
 
-## Pitch-selection cheat sheet
+## Which pitch when
 
-- **30 sec** → cold intro at events, LinkedIn DM, WhatsApp intro
-- **2 min** → partnership meeting opener, huddle slot, board
-  update, university guest talk
-- **5 min** → investor first-meeting, funder Q&A opener,
-  conference lightning talk
-- **FAQ** → keep open during any of the above; use as ready-made
-  responses when the room asks
+| Room | Use |
+|---|---|
+| Event booth · LinkedIn DM · WhatsApp intro | **Short** |
+| Partnership meeting · board update · guest talk | **Standard** |
+| Investor first meeting · funder Q&A · conference lightning talk | **Deep-dive** |
+| Any of the above, when the room asks questions | **FAQ** |

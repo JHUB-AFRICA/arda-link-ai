@@ -6,12 +6,11 @@ could be read as "real herders using ArdaLink" is explicitly framed
 as "test personas exercising the pipeline pre-launch".
 
 This vault contains what the audit reviewer asks for:
-- Non-technical readable **project profile** so a partner or funder
-  understands ArdaLink's real-world value in under 3 minutes
+- Non-technical **project profile** so a partner or funder
+  understands ArdaLink at a glance
 - **Content playbook** — editorial calendar, story drafts, social
   copy library, visual asset plan
-- **Pitch library** — 30-second / 2-minute / 5-minute versions +
-  FAQ
+- **Pitch library** — short / standard / deep-dive versions + FAQ
 
 The Mass Comm teammate presents from these materials at the huddle.
 Nothing here needs their name — everything is drop-in scaffolding
@@ -25,17 +24,17 @@ they own and iterate on.
 |---|---|---|
 | [`project-profile.md`](./project-profile.md) | Non-technical one-pager. What ArdaLink is, who it helps, why now. | Partners, funders, visiting stakeholders |
 | [`content-playbook.md`](./content-playbook.md) | Editorial calendar, story drafts, social copy, visual asset plan. | Comms lead, designer, whoever handles the socials |
-| [`pitch-library.md`](./pitch-library.md) | 30s / 2min / 5min pitches + FAQ. | Anyone talking about ArdaLink to a non-technical audience |
+| [`pitch-library.md`](./pitch-library.md) | Short / standard / deep-dive pitches + FAQ. | Anyone talking about ArdaLink to a non-technical audience |
 | [`README.md`](./README.md) | This file. Index + comms slot script for the huddle. | Presenter |
 
 ---
 
-## Comms slot for the huddle (~15 minutes)
+## Comms slot for the huddle
 
 Structure the Mass Comm slot around three questions the audit
 brief calls out:
 
-### 1. What are we saying? (5 min)
+### 1. What are we saying?
 
 Open with the project profile in one sentence:
 
@@ -55,7 +54,7 @@ Then walk one of the story angles from `content-playbook.md §3`:
 Pick one angle for tomorrow. The other two stay in the playbook for
 later channels.
 
-### 2. Who are we saying it to? (5 min)
+### 2. Who are we saying it to?
 
 Show the audience map from `content-playbook.md §2`. Six segments,
 each with a channel + a message register:
@@ -73,7 +72,7 @@ each with a channel + a message register:
 6. **Insurance + agri-fintech** → Executive summaries, data-sample
    demos
 
-### 3. What are we shipping this week? (5 min)
+### 3. What are we shipping this week?
 
 Walk the content calendar from `content-playbook.md §4`. Tomorrow
 (Monday) → Friday goals:
@@ -126,7 +125,7 @@ Walk the content calendar from `content-playbook.md §4`. Tomorrow
 
 Before dropping the Notion link in the group chat, verify:
 
-- [ ] `project-profile.md` reads cleanly in under 3 minutes
+- [ ] `project-profile.md` reads cleanly at a scan
 - [ ] `content-playbook.md` has at least 3 story drafts + 5
   social posts + 5 visual assets identified
 - [ ] `pitch-library.md` has 30s / 2min / 5min variants
