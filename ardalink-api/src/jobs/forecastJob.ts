@@ -29,6 +29,7 @@ import {
   isSupabaseConfigured,
   listActiveWards,
   refreshSatelliteIndicesLatest,
+  upsertWeatherData,
 } from "../lib/supabase.js";
 
 // 5 Isiolo Sub-County ward centroids. Duplicated from wpdx.ts's
@@ -203,6 +204,81 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+/**
+ * Fetch today's observation summary for a ward: 30-day rolling
+ * rainfall + latest temperature / humidity / ET0. Open-Meteo returns
+ * both past and forecast in one response — we request `past_days=30`
+ * and slice the past portion for the rolling sum. Falls through to
+ * null on non-2xx so the caller can carry on.
+ */
+async function fetchWardObservation(
+  wardId: string,
+  centroid: { lat: number; lon: number },
+): Promise<{
+  ward_id: string;
+  observed_date: string;
+  rainfall_mm_30d: number;
+  humidity_pct: number;
+  temperature_c: number;
+  evapotranspiration_mm: number;
+} | null> {
+  const params = new URLSearchParams({
+    latitude: String(centroid.lat),
+    longitude: String(centroid.lon),
+    daily:
+      "precipitation_sum,temperature_2m_mean,relative_humidity_2m_mean," +
+      "et0_fao_evapotranspiration",
+    past_days: "30",
+    forecast_days: "1",
+    timezone: "auto",
+  });
+  const url = `${OPEN_METEO_URL}?${params.toString()}`;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) {
+      logger.warn(
+        { wardId, status: res.status },
+        "[ForecastJob] observation fetch non-2xx",
+      );
+      return null;
+    }
+    const data = (await res.json()) as OpenMeteoEnsembleResponse;
+    const days = data.daily?.time;
+    if (!days || days.length === 0) return null;
+    // The last 30 entries (index 0..29) are past; index 30 is today
+    // (forecast). Rainfall_mm_30d = sum of the past 30 including today.
+    const rainArr = data.daily?.["precipitation_sum"];
+    let rainSum = 0;
+    if (Array.isArray(rainArr)) {
+      for (const v of rainArr) {
+        const n = Number(v);
+        if (Number.isFinite(n)) rainSum += n;
+      }
+    }
+    // Latest day (today, position -1 in the array) for the point readings.
+    const lastIdx = days.length - 1;
+    const observedDate = days[lastIdx] ?? new Date().toISOString().slice(0, 10);
+    const temp = numberAt(data.daily ?? {}, "temperature_2m_mean", lastIdx) ?? 0;
+    const humidity =
+      numberAt(data.daily ?? {}, "relative_humidity_2m_mean", lastIdx) ?? 0;
+    const et0 = numberAt(data.daily ?? {}, "et0_fao_evapotranspiration", lastIdx) ?? 0;
+    return {
+      ward_id: wardId,
+      observed_date: observedDate,
+      rainfall_mm_30d: round2(rainSum),
+      humidity_pct: round2(humidity),
+      temperature_c: round2(temp),
+      evapotranspiration_mm: round2(et0),
+    };
+  } catch (err) {
+    logger.warn(
+      { err: String(err), wardId },
+      "[ForecastJob] observation fetch failed",
+    );
+    return null;
+  }
+}
+
 async function persistForecast(rows: ForecastRow[]): Promise<boolean> {
   const url = `${(process.env.SUPABASE_URL ?? "").replace(/\/$/, "")}/rest/v1/weather_forecast`;
   const key = (process.env.SUPABASE_SECRET_KEY ?? "").trim();
@@ -250,6 +326,7 @@ export async function runForecastJob(): Promise<void> {
   const startedAt = Date.now();
   let totalRows = 0;
   let wardsOk = 0;
+  let observationsWritten = 0;
   for (const w of wards) {
     const centroid = WARD_CENTROIDS_BY_ID[w.ward_id];
     if (!centroid) {
@@ -266,6 +343,22 @@ export async function runForecastJob(): Promise<void> {
       totalRows += rows.length;
       wardsOk += 1;
     }
+    // Also upsert today's observation summary so weather_data stays
+    // fresh (previously stale by 7+ days). Runs after persistForecast
+    // so a forecast-side failure doesn't block observation writes.
+    const obs = await fetchWardObservation(w.ward_id, centroid);
+    if (obs) {
+      const wrote = await upsertWeatherData({
+        p_ward_id: obs.ward_id,
+        p_observed_date: obs.observed_date,
+        p_rainfall_mm_30d: obs.rainfall_mm_30d,
+        p_humidity_pct: obs.humidity_pct,
+        p_temperature_c: obs.temperature_c,
+        p_evapotranspiration_mm: obs.evapotranspiration_mm,
+        p_source: "open-meteo",
+      });
+      if (wrote != null) observationsWritten += 1;
+    }
   }
   // Piggy-back the materialised-view refresh onto the forecast job
   // so `api_latest_satellite_indices` stays current. Idempotent, and
@@ -277,6 +370,7 @@ export async function runForecastJob(): Promise<void> {
       wardsOk,
       totalWards: wards.length,
       totalRows,
+      observationsWritten,
       latestViewUpserted: refresh?.upserted ?? null,
       latestPeriodEnd: refresh?.latest_period_end ?? null,
       durationMs: Date.now() - startedAt,

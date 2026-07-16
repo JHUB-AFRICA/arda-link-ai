@@ -19,6 +19,7 @@ import {
   isSupabaseConfigured,
   latestSatelliteFor,
   latestCellIndicesForWard,
+  latestWeatherAll,
   listActiveWardsWithGeometry,
   listWardCells,
   listWardNeighbors,
@@ -269,6 +270,14 @@ router.get("/wards/timeseries", async (_req, res): Promise<void> => {
     const cutoffFcst = new Date();
     cutoffFcst.setHours(0, 0, 0, 0);
 
+    // Pre-fetch all 5 wards' latest weather in one call (api view).
+    // Attached per-ward below so the dashboard can render an
+    // observation chip next to the forecast without a second round-trip.
+    const weatherRows = (await latestWeatherAll()) ?? [];
+    const weatherByWard = new Map(
+      weatherRows.map((w) => [w.ward_id, w] as const),
+    );
+
     const perWard = await Promise.all(
       wards.map(async (w) => {
         const ndviUrl =
@@ -323,6 +332,7 @@ router.get("/wards/timeseries", async (_req, res): Promise<void> => {
             name: w.name,
             ndvi,
             forecast,
+            weather: weatherByWard.get(w.ward_id) ?? null,
           };
         } catch (err) {
           logger.warn(
@@ -334,6 +344,7 @@ router.get("/wards/timeseries", async (_req, res): Promise<void> => {
             name: w.name,
             ndvi: [],
             forecast: [],
+            weather: weatherByWard.get(w.ward_id) ?? null,
           };
         }
       }),
