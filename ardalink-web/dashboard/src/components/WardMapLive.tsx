@@ -6,11 +6,53 @@ import {
   CircleMarker,
   Tooltip,
   LayersControl,
+  LayerGroup,
 } from "react-leaflet";
+import { useQueries } from "@tanstack/react-query";
 import {
   BULA_PESA_MAP_LANDMARKS,
   type MapLandmarkCategory,
 } from "../data/bulaPesaLandmarks";
+
+// Isiolo Sub-County pilot ward ids. Kept inline here rather than
+// imported from the api workspace so the dashboard stays self-contained.
+const ISIOLO_WARD_IDS = ["241", "242", "245", "246", "247"] as const;
+
+interface CellRow {
+  ward_cell_id: string;
+  ward_id: string;
+  centroid_lat: number | null;
+  centroid_lon: number | null;
+  ndvi_mean: number | null;
+  vci_value: number | null;
+  ndvi_anomaly: number | null;
+}
+interface CellsResponse {
+  ready: boolean;
+  count: number;
+  cells: CellRow[];
+}
+
+// NDVI colour scale — brown (dry) → yellow → green (healthy). Same
+// palette + breakpoints as the SVG WardMap in the Ground Truth tab so
+// the two views encode the same signal identically.
+function ndviColour(ndvi: number | null): string {
+  if (ndvi == null) return "#374151";
+  const clamped = Math.max(0.1, Math.min(0.5, ndvi));
+  const t = (clamped - 0.1) / 0.4;
+  if (t < 0.5) {
+    const s = t / 0.5;
+    const r = Math.round(0x78 + s * (0xea - 0x78));
+    const g = Math.round(0x35 + s * (0xb3 - 0x35));
+    const b = Math.round(0x0f + s * (0x08 - 0x0f));
+    return `rgb(${r},${g},${b})`;
+  }
+  const s = (t - 0.5) / 0.5;
+  const r = Math.round(0xea + s * (0x22 - 0xea));
+  const g = Math.round(0xb3 + s * (0xc5 - 0xb3));
+  const b = Math.round(0x08 + s * (0x5e - 0x08));
+  return `rgb(${r},${g},${b})`;
+}
 
 export interface PastoralistPin {
   id: number;
@@ -220,6 +262,32 @@ export function WardMapLive({
     (p) => resolvePastoralistCoords(p.location).mapped,
   ).length;
 
+  // Fetch per-cell NDVI for the 5 Isiolo wards. We render the result
+  // inside a Leaflet LayersControl overlay that starts unchecked, so
+  // the ~3 300-cell payload only downloads once the operator asks for
+  // it. Each ward gets its own query for parallelism + independent
+  // cache invalidation. staleTime 30 min because cell NDVI is monthly.
+  const cellQueries = useQueries({
+    queries: ISIOLO_WARD_IDS.map((wardId) => ({
+      queryKey: ["ward-cells-live", wardId] as const,
+      staleTime: 30 * 60_000,
+      queryFn: async (): Promise<CellsResponse> => {
+        const res = await fetch(`/api/wards/${wardId}/cells/latest?limit=2000`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return (await res.json()) as CellsResponse;
+      },
+    })),
+  });
+  const cells: CellRow[] = [];
+  for (const q of cellQueries) {
+    if (q.data?.ready) {
+      for (const c of q.data.cells) {
+        if (c.centroid_lat != null && c.centroid_lon != null) cells.push(c);
+      }
+    }
+  }
+  const cellsLoading = cellQueries.some((q) => q.isLoading);
+
   const snapshot = timestamp
     ? new Date(timestamp).toLocaleString(undefined, {
         month: "short",
@@ -259,7 +327,6 @@ export function WardMapLive({
               maxZoom={15}
             />
           </LayersControl.BaseLayer>
-        </LayersControl>
 
         {(["NW", "NE", "SW", "SE"] as const).map((q) => {
           const pct = quadrants[q] ?? 0;
@@ -301,7 +368,7 @@ export function WardMapLive({
         })}
 
         <LayersControl.Overlay checked name="Landmarks (OSM)">
-          <>
+          <LayerGroup>
             {BULA_PESA_MAP_LANDMARKS.map((l) => {
               const styles: Record<
                 MapLandmarkCategory,
@@ -350,7 +417,7 @@ export function WardMapLive({
                 </CircleMarker>
               );
             })}
-          </>
+          </LayerGroup>
         </LayersControl.Overlay>
 
         {PLACES.map((p) => {
@@ -386,12 +453,56 @@ export function WardMapLive({
           );
         })}
 
+        {/* Drought heatmap — per-cell NDVI at ~1 km resolution across
+            all 5 Isiolo wards (~3 300 cells). Unchecked by default —
+            operator toggles via Leaflet's built-in layers control
+            (top-right of the map). Cells extend well beyond the Bula
+            Pesa bounding box; zoom out to see the full pattern. */}
+        <LayersControl.Overlay
+          name={
+            cellsLoading
+              ? "Drought heatmap · loading…"
+              : `Drought heatmap · ${cells.length} cells`
+          }
+        >
+          <LayerGroup>
+            {cells.map((c) => (
+              <CircleMarker
+                key={c.ward_cell_id}
+                center={[c.centroid_lat as number, c.centroid_lon as number]}
+                radius={3}
+                pathOptions={{
+                  color: "transparent",
+                  fillColor: ndviColour(c.ndvi_mean),
+                  fillOpacity: 0.75,
+                  weight: 0,
+                }}
+              >
+                <Tooltip
+                  direction="top"
+                  offset={[0, -3]}
+                  opacity={0.95}
+                  className="ward-place-label"
+                >
+                  <div className="text-[10px] leading-tight font-mono">
+                    <div>{c.ward_cell_id}</div>
+                    <div>
+                      NDVI {c.ndvi_mean == null ? "—" : c.ndvi_mean.toFixed(3)}
+                      {c.vci_value != null && ` · VCI ${c.vci_value.toFixed(0)}`}
+                    </div>
+                  </div>
+                </Tooltip>
+              </CircleMarker>
+            ))}
+          </LayerGroup>
+        </LayersControl.Overlay>
+
         {/* Pastoralist pins */}
         <LayersControl.Overlay
           checked
           name={`Pastoralists (${pastoralists.length})`}
         >
-          <>
+          <LayerGroup>
             {placedPins.map((p) => {
               const hasRecent = p.lastContactAt
                 ? Date.now() - new Date(p.lastContactAt).getTime() <
@@ -455,8 +566,9 @@ export function WardMapLive({
                 </CircleMarker>
               );
             })}
-          </>
+          </LayerGroup>
         </LayersControl.Overlay>
+        </LayersControl>
       </MapContainer>
 
       {/* Live ribbon */}

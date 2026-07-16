@@ -181,9 +181,17 @@ export function WardMap() {
     );
     if (!bounds) return null;
 
-    const WIDTH = 400;
-    const HEIGHT = 260;
+    // The 5 Isiolo wards' union bbox is ~1.4° wide × 0.57° tall
+    // (aspect 2.4). A fixed 400×260 viewBox (aspect 1.54) leaves
+    // ~30 % dead space vertically and squeezes Wabera / Bulla Pesa
+    // into invisible pixels. Sizing the viewBox to match the actual
+    // bbox aspect (with a floor so it doesn't collapse to a strip)
+    // gives every ward a fair share of pixels.
     const pad = 12;
+    const WIDTH = 500;
+    const bboxAspect =
+      (bounds.maxLon - bounds.minLon) / (bounds.maxLat - bounds.minLat);
+    const HEIGHT = Math.round((WIDTH - pad * 2) / bboxAspect) + pad * 2;
     const scaleX = (WIDTH - pad * 2) / (bounds.maxLon - bounds.minLon);
     const scaleY = (HEIGHT - pad * 2) / (bounds.maxLat - bounds.minLat);
     const scale = Math.min(scaleX, scaleY);
@@ -266,7 +274,7 @@ export function WardMap() {
       <div className="p-4 flex flex-col items-center">
         <svg
           viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
-          className="w-full max-w-md"
+          className="w-full max-w-2xl"
           role="img"
           aria-label="Isiolo Sub-County active ward polygons coloured by NDVI"
         >
