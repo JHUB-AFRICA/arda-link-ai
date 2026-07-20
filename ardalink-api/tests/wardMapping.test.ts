@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { execSync } from "node:child_process";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_WARD_ID,
@@ -134,6 +137,66 @@ describe("wardMapping", () => {
     it("returns null when the location has no known alias", () => {
       expect(wardIdFromLocationText("Nairobi")).toBeNull();
       expect(wardIdFromLocationText("some random place")).toBeNull();
+    });
+  });
+
+  describe("regression guard — retired tenant strings must not appear in prod code", () => {
+    // Guard against re-introducing the retired demo tenants as identifiers
+    // in production code. Docs and archived migrations are allowed to name
+    // them (they document the retirement). We grep for exact word matches
+    // and let tests reference them freely.
+    const REPO_ROOT = path.resolve(__dirname, "..", "..");
+    const RETIRED_TOKENS = ["garbatulla", "merti", "kinna"];
+
+    for (const token of RETIRED_TOKENS) {
+      it(`no non-test, non-doc code references '${token}'`, () => {
+        // `git grep -l` limits the search to tracked files, which avoids
+        // scanning node_modules or build output.
+        let hits: string[];
+        try {
+          // wardMapping.ts is the canonical file that documents the
+          // retirement, so it must be allowed to reference the tokens.
+          const out = execSync(
+            `git grep -l -w "${token}" -- ` +
+              `':(exclude)*.md' ` +
+              `':(exclude)docs/**' ` +
+              `':(exclude)**/docs/**' ` +
+              `':(exclude)**/*.test.ts' ` +
+              `':(exclude)**/tests/**' ` +
+              `':(exclude)**/seed-data/**' ` +
+              `':(exclude)**/migrations/**' ` +
+              `':(exclude)**/CHANGELOG.md' ` +
+              // Files that intentionally *document* the retirement.
+              `':(exclude)ardalink-api/src/lib/wardMapping.ts' ` +
+              `':(exclude)ardalink-engine/ardalink_engine/src/api/satellite.py'`,
+            { cwd: REPO_ROOT, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] },
+          );
+          hits = out.trim().split("\n").filter(Boolean);
+        } catch (err: unknown) {
+          // git grep exits 1 when it finds nothing — treat as success.
+          const status = (err as { status?: number }).status;
+          if (status === 1) hits = [];
+          else throw err;
+        }
+
+        expect(
+          hits,
+          `Retired token '${token}' reappeared in production code:\n${hits.join("\n")}`,
+        ).toEqual([]);
+      });
+    }
+
+    it("seed-demo.sql explicitly retires garbatulla and merti", () => {
+      // The seed is allowed to mention retired tenants because it deletes
+      // them on replay. This assertion just confirms the DELETE is still
+      // there — if a future refactor removes it, this test fails loudly.
+      const seed = readFileSync(
+        path.join(REPO_ROOT, "ardalink-api", "docs", "local-dev", "seed-data", "seed-demo.sql"),
+        "utf8",
+      );
+      expect(seed).toMatch(/garbatulla/);
+      expect(seed).toMatch(/merti/);
+      expect(seed.toLowerCase()).toMatch(/delete\s+from/);
     });
   });
 });

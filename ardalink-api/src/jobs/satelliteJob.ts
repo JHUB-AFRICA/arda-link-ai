@@ -10,12 +10,14 @@
 
 import { triggerSatelliteRefresh, type SatelliteTriggerResponse } from "../lib/engine.js";
 import { logger } from "../lib/logger.js";
+import { knownWardIds, tenantForWardId } from "../lib/wardMapping.js";
 
 // Mirrors the engine's DEMO_WARDS in ardalink_engine/src/api/satellite.py.
 // Used for logging only — the engine decides which wards its /trigger route
-// iterates. Merti Sub-County operator (tenant slug "merti") lives in Sericho
-// ward and is out of the satellite demo loop; Kinna is the third demo ward.
-const DEMO_WARDS = ["bula-pesa", "garbatulla", "kinna"] as const;
+// iterates. Sourced from wardMapping so it can't drift from the canonical
+// Isiolo Sub-County set (241 Wabera, 242 Bulla Pesa, 245 Ngare Mara,
+// 246 Burat, 247 Oldonyiro).
+const DEMO_WARDS = knownWardIds().map(tenantForWardId);
 
 /**
  * Determine if we're currently in dry season or wet season.

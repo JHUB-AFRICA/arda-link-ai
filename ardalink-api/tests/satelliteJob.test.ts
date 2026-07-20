@@ -9,12 +9,14 @@ vi.mock("../src/lib/engine", () => ({
   triggerSatelliteRefresh: vi.fn(() =>
     Promise.resolve({
       status: "success",
-      wards: ["bula-pesa", "garbatulla", "merti"],
+      wards: ["wabera", "bula-pesa", "ngare-mara", "burat", "oldonyiro"],
       started_at: new Date().toISOString(),
       results: {
-        "bula-pesa": { vci: 22.1, ndvi_now: 0.17, ndvi_min: 0.08, ndvi_max: 0.45 },
-        "garbatulla": { vci: 35.5, ndvi_now: 0.22, ndvi_min: 0.10, ndvi_max: 0.48 },
-        "merti": { vci: 28.3, ndvi_now: 0.19, ndvi_min: 0.09, ndvi_max: 0.42 },
+        "wabera":     { vci: 40.2, ndvi_now: 0.29, ndvi_min: 0.12, ndvi_max: 0.51 },
+        "bula-pesa":  { vci: 22.1, ndvi_now: 0.17, ndvi_min: 0.08, ndvi_max: 0.45 },
+        "ngare-mara": { vci: 18.4, ndvi_now: 0.14, ndvi_min: 0.07, ndvi_max: 0.44 },
+        "burat":      { vci: 19.9, ndvi_now: 0.15, ndvi_min: 0.08, ndvi_max: 0.46 },
+        "oldonyiro":  { vci: 21.3, ndvi_now: 0.16, ndvi_min: 0.09, ndvi_max: 0.47 },
       },
       error: null,
     }),
