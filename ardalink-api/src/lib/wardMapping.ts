@@ -59,6 +59,40 @@ export function knownWardIds(): string[] {
 }
 
 /**
+ * The canonical tenant slug set — reverse of TENANT_TO_WARD_ID with
+ * legacy aliases stripped. Used by `isKnownTenant()`.
+ */
+const CANONICAL_TENANTS = new Set(Object.values(WARD_ID_TO_TENANT));
+
+/**
+ * True when `slug` is one of the 5 canonical Isiolo Sub-County tenants
+ * (`wabera`, `bula-pesa`, `ngare-mara`, `burat`, `oldonyiro`). The
+ * legacy double-L alias `bulla-pesa` is also accepted for backward
+ * compatibility with the earlier seed data. Unknown / retired slugs
+ * (`isiolo`, `garbatulla`, `merti`, `kinna`, …) return false.
+ */
+export function isKnownTenant(slug: string | null | undefined): boolean {
+  if (!slug) return false;
+  const s = slug.toLowerCase().trim();
+  return CANONICAL_TENANTS.has(s) || s === "bulla-pesa";
+}
+
+/**
+ * Throw when `slug` is not a canonical tenant. Use this at every
+ * DB-write boundary that stamps `tenant_id` on a row — it catches
+ * pre-Isiolo-retirement leftovers (`isiolo`, `garbatulla`, `merti`)
+ * before they land in Postgres and start polluting analytics.
+ */
+export function assertKnownTenant(slug: string | null | undefined): void {
+  if (!isKnownTenant(slug)) {
+    throw new Error(
+      `Refusing to write with non-canonical tenant slug ${JSON.stringify(slug)}. ` +
+        `Valid slugs: ${[...CANONICAL_TENANTS].join(", ")}.`,
+    );
+  }
+}
+
+/**
  * Free-text location → ward_id.
  *
  * Herders name places in USSD ("uko wapi?" — "Kambi Garba" / "Ngare Mara" /

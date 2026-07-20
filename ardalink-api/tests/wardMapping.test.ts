@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_WARD_ID,
+  assertKnownTenant,
+  isKnownTenant,
   knownWardIds,
   tenantForWardId,
   wardIdForTenant,
@@ -58,6 +60,42 @@ describe("wardMapping", () => {
     const ids = knownWardIds();
     expect(ids).toHaveLength(5);
     expect(new Set(ids)).toEqual(new Set(["241", "242", "245", "246", "247"]));
+  });
+
+  describe("isKnownTenant / assertKnownTenant", () => {
+    it("accepts every canonical tenant slug", () => {
+      for (const slug of ["wabera", "bula-pesa", "ngare-mara", "burat", "oldonyiro"]) {
+        expect(isKnownTenant(slug)).toBe(true);
+        expect(() => assertKnownTenant(slug)).not.toThrow();
+      }
+    });
+
+    it("accepts the legacy double-L alias 'bulla-pesa'", () => {
+      expect(isKnownTenant("bulla-pesa")).toBe(true);
+      expect(() => assertKnownTenant("bulla-pesa")).not.toThrow();
+    });
+
+    it("tolerates whitespace and case", () => {
+      expect(isKnownTenant("  BULA-PESA ")).toBe(true);
+      expect(() => assertKnownTenant("  BULA-PESA ")).not.toThrow();
+    });
+
+    it("rejects retired tenants and the pseudo-tenant 'isiolo'", () => {
+      for (const slug of ["isiolo", "garbatulla", "merti", "kinna", "cherab"]) {
+        expect(isKnownTenant(slug)).toBe(false);
+        expect(() => assertKnownTenant(slug)).toThrow(
+          /Refusing to write.*non-canonical tenant/,
+        );
+      }
+    });
+
+    it("rejects null, undefined, and empty inputs", () => {
+      expect(isKnownTenant(null)).toBe(false);
+      expect(isKnownTenant(undefined)).toBe(false);
+      expect(isKnownTenant("")).toBe(false);
+      expect(() => assertKnownTenant(null)).toThrow();
+      expect(() => assertKnownTenant(undefined)).toThrow();
+    });
   });
 
   describe("wardIdFromLocationText", () => {
