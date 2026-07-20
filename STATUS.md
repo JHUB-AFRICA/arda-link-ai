@@ -9,11 +9,16 @@
 > This document focuses on the *strategic* view — the gap from current
 > to production, the vendor matrix, and the implementation roadmap.**
 
-> **Tenant vs. ward terminology**: Bulla Pesa, Garbatulla, and Merti are the
-> three demo *operator tenants*. The satellite VCI demo iterates over three
-> *wards* — Bulla Pesa, Garbatulla, and Kinna — because `merti` is a Sub-County
-> (its operator's home ward is Sericho). We keep both distinctions because
-> both are real: `merti` is a real tenant slug, `kinna` is a real ward.
+> **Tenant vs. ward terminology (2026-07 refresh)**: since 2026-07-08 every
+> tenant slug maps 1:1 to a real Isiolo Sub-County ward in Supabase's
+> `active_wards` view. The canonical five are Wabera (241), Bulla Pesa (242),
+> Ngare Mara (245), Burat (246), and Oldonyiro (247). The earlier demo
+> tenants `garbatulla`, `merti`, and the demo ward `kinna` were retired
+> because they don't correspond to `active_wards` rows — any code, seed,
+> or doc that still names them is a leftover to be cleaned up. The
+> canonical mapping is enforced in `ardalink-api/src/lib/wardMapping.ts`;
+> jobs and scripts should import `knownWardIds()` from there rather than
+> hard-coding the slug list.
 
 ---
 

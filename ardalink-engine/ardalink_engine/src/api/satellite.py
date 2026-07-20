@@ -35,9 +35,11 @@ router = APIRouter(prefix="/api/v1/satellite", tags=["satellite"])
 # canonical "Bulla Pesa" (double-L) and 404'd every trigger.
 DEMO_WARDS = ["bulla-pesa", "wabera", "ngare-mara", "burat", "oldonyiro"]
 
-# Canonical slug → WARDS display-name lookup. Covers the 5 active
-# tenants plus the two retired ones (garbatulla, merti) as aliases so
-# in-flight callers don't fail cold.
+# Canonical slug → WARDS display-name lookup. Restricted to the 5 active
+# Isiolo Sub-County wards. Retired demo tenants (garbatulla, merti) and
+# non-active neighbouring wards (kinna, chari, cherab, sericho) were
+# dropped 2026-07-21 — any caller still naming them will 404, which is
+# preferable to silently returning data for a ward not in active_wards.
 _SLUG_TO_NAME: dict[str, str] = {
     "bulla-pesa": "Bulla Pesa",
     "bula-pesa": "Bulla Pesa",  # legacy single-L spelling
@@ -46,12 +48,6 @@ _SLUG_TO_NAME: dict[str, str] = {
     "burat": "Burat",
     "oldonyiro": "Oldonyiro",
     "oldo-nyiro": "Oldonyiro",
-    "garbatulla": "Garbatulla",
-    "merti": "Merti",
-    "kinna": "Kinna",
-    "chari": "Chari",
-    "cherab": "Cherab",
-    "sericho": "Sericho",
 }
 
 
