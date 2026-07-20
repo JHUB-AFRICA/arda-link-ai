@@ -266,11 +266,12 @@ GEE_PROJECT=<your-gcp-project-id>
 
 ### Legacy / Migration
 
-```bash
-# Cosmos DB (being migrated to PostgreSQL — set if backfill needed)
-COSMOS_DB_ENDPOINT=https://<account>.documents.azure.com:443/
-COSMOS_DB_PRIMARY_KEY=<your-key>
-```
+Cosmos DB was retired 2026-07. Historical NDVI/NDRE baselines now live
+in the engine's Postgres (`gis_engine.baseline_aggregate` and
+`gis_engine.baseline_pixel`), populated by
+`ardalink-engine/scripts/populate_baseline.py`. Nothing in the codebase
+reads `COSMOS_DB_ENDPOINT` or `COSMOS_DB_PRIMARY_KEY` any more; drop
+them from any live `.env` files.
 
 ---
 

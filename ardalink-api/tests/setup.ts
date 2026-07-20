@@ -1,7 +1,7 @@
 /**
  * Vitest global setup — set fake env vars so module-load-time assertions
- * (DATABASE_URL, COSMOS_DB_*, AZURE_OPENAI_*, AFRICASTALKING_*) don't crash
- * during test collection.
+ * (DATABASE_URL, AZURE_OPENAI_*, AFRICASTALKING_*) don't crash during
+ * test collection.
  */
 
 process.env.NODE_ENV = "test";
@@ -9,8 +9,6 @@ process.env.LOG_LEVEL = "silent";
 process.env.PORT = "0";
 process.env.DATABASE_URL =
   "postgresql://test:test@localhost:5432/ardalink_test";
-process.env.COSMOS_DB_ENDPOINT = "https://test.documents.azure.com:443/";
-process.env.COSMOS_DB_PRIMARY_KEY = "test-key";
 process.env.AZURE_OPENAI_ENDPOINT = "https://test.openai.azure.com/";
 process.env.AZURE_OPENAI_API_KEY = "test-key";
 process.env.AZURE_OPENAI_CHAT_DEPLOYMENT = "gpt-4o";
