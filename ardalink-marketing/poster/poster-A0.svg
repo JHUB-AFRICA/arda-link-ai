@@ -133,9 +133,9 @@
 <text x="670.4" y="982" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="500" fill="#F5F5F4">to ground truth</text>
 <text x="32" y="1008" text-anchor="start" font-family="Inter, system-ui, sans-serif" font-size="10" font-weight="800" fill="#F59E0B" letter-spacing="3">WHAT'S BUILT  ·  WHAT'S NEXT</text>
 <rect x="32.0" y="1026" width="147.4" height="64" rx="8" ry="8" fill="#15151F"/>
-<text x="105.7" y="1052" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="800" fill="#F59E0B">3</text>
-<text x="105.7" y="1068" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="600" fill="#F5F5F4">demo wards</text>
-<text x="105.7" y="1082" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="8.5" font-weight="500" fill="#A8A29E">bula-pesa · garbatulla · merti</text>
+<text x="105.7" y="1052" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="800" fill="#F59E0B">5</text>
+<text x="105.7" y="1068" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="600" fill="#F5F5F4">Isiolo wards</text>
+<text x="105.7" y="1082" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="7" font-weight="500" fill="#A8A29E">wabera · bula-pesa · ngare-mara · burat · oldonyiro</text>
 <rect x="189.4" y="1026" width="147.4" height="64" rx="8" ry="8" fill="#15151F"/>
 <text x="263.1" y="1052" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="800" fill="#84CC16">134</text>
 <text x="263.1" y="1068" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="10.5" font-weight="600" fill="#F5F5F4">tests pass</text>

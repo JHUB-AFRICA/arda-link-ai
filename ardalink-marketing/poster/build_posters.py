@@ -343,8 +343,8 @@ def poster_a0() -> str:
                     size=10, weight=800, fill=PRIMARY, letter_spacing=3))
     y += 18
     kpis = [
-        ("3",      "demo wards",                     PRIMARY,
-         "bula-pesa · garbatulla · merti"),
+        ("5",      "Isiolo wards",                   PRIMARY,
+         "wabera · bula-pesa · ngare-mara · burat · oldonyiro"),
         ("134",    "tests pass",                     OK,
          "api + web + engine"),
         ("$0.12",  "per herder / month",             ACCENT,
