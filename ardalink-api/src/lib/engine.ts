@@ -126,7 +126,7 @@ export interface BaselinePixelResponse {
 export async function fetchBaselineAggregate(
   wardIdOrName: string,
   month: number,
-  tenantId: string = "isiolo",
+  tenantId: string = "bula-pesa",
 ): Promise<BaselineAggregateRow | null> {
   // The engine accepts both ward_id (code) and ward_name (display). Default
   // to ward_id for backward compat; if the value doesn't look like a digit
@@ -155,7 +155,7 @@ export async function fetchBaselinePixel(
   wardIdOrName: string,
   month: number,
   band: "ndvi" | "ndre" | "red_edge" = "ndvi",
-  tenantId: string = "isiolo",
+  tenantId: string = "bula-pesa",
 ): Promise<BaselinePixelCell[] | null> {
   const qs = new URLSearchParams({
     tenant_id: tenantId,
@@ -223,7 +223,7 @@ export interface SatelliteTriggerResponse {
  */
 export async function fetchSatelliteVCI(
   wardId: string,
-  tenantId: string = "isiolo",
+  tenantId: string = "bula-pesa",
 ): Promise<VCISnapshot | null> {
   // Live GEE composite fetch — takes 15–30 s. Use the long timeout so
   // the api doesn't cut off before the engine responds.
@@ -240,7 +240,7 @@ export async function fetchSatelliteVCI(
  */
 export async function triggerSatelliteRefresh(
   dryRun = false,
-  tenantId: string = "isiolo",
+  tenantId: string = "bula-pesa",
 ): Promise<SatelliteTriggerResponse | null> {
   // Non-dry-run iterates all 5 active wards and pays the GEE cost for
   // each; ~90 s ceiling is a soft budget that still catches genuine

@@ -101,7 +101,7 @@ const WARD_MEAN_THRESHOLD = -15;
 export async function getMonthlyBaseline(
   month: number,
   wardId: string,
-  tenantId: string = "isiolo",
+  tenantId: string = "bula-pesa",
 ): Promise<MonthlyBaseline> {
   const name = MONTH_NAMES[month - 1];
 
