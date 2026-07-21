@@ -6,9 +6,16 @@ ArdaLink gives pastoralist communities in Isiolo County a low-bandwidth, multi-c
 early-warning and decision-support system for drought stress. Herders reach it through
 USSD (`*123*8#`), SMS, browser voice, or an operator dashboard. Three independent services
 ingest open satellite + climate data, run biophysical models, and surface actionable
-summaries scoped to a single ward (Bulla Pesa, Garbatulla, Kinna — with the
-Merti Sub-County operator also live as a tenant) — with strict tenant
-isolation enforced at the database boundary.
+summaries scoped to one of five Isiolo Sub-County wards — Wabera (241),
+Bulla Pesa (242), Ngare Mara (245), Burat (246), and Oldonyiro (247) —
+with strict tenant isolation enforced at the database boundary.
+
+Fake demo pastoralists / ground-truth reports are gated behind an
+opt-in `SEED_DEMO_DATA=1` flag in `start-local.sh`; the default
+bring-up produces a real-data-only DB where herder rows land only via
+the USSD/SMS/voice interaction pipeline. See [`LOCAL_SETUP.md`](./LOCAL_SETUP.md)
+for the bring-up flow and [`STATUS.md`](./STATUS.md)'s "Audit
+remediation" section for the recent audit closure.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/Node-24-339933?logo=node.js&logoColor=white)](https://nodejs.org)

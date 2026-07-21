@@ -200,13 +200,26 @@ This script:
 1. Stops any previous stack (idempotent).
 2. Starts Postgres in Docker on `127.0.0.1:15432`.
 3. Starts Redis in Docker on `127.0.0.1:6379`.
-4. Applies migrations (`0000`, `0001_public`, `0001_gis_engine`).
+4. Applies migrations `0000` → `0004`. Notable:
+   - `0003_realign_local_mirror` — canonical 5-ward Isiolo tenants + 7
+     Supabase mirror tables (`pastoralist_leads`, `lead_interactions`,
+     `ward_cells`, `satellite_indices`, `weather_data`,
+     `ground_truth_calls`, `weather_forecast`).
+   - `0004_bootstrap_operator_accounts` — the 5 tenant operator logins
+     (`wabera@`, `bula-pesa@`, `ngare-mara@`, `burat@`, `oldonyiro@`)
+     + super-admin + per-tenant feature flags. **Structural, always
+     applied.**
 5. Creates the `ardalink_app` role with `NOSUPERUSER, NOBYPASSRLS`.
-6. Seeds 3 demo tenants + 36 ground-truth reports + 15 pastoralists.
+6. **Optional fake data (opt-in):** by default the DB comes up with
+   zero pastoralists and zero ground-truth reports — a real-data-only
+   state. Real herder rows land via USSD/SMS/voice. Set
+   `SEED_DEMO_DATA=1 make up` to also insert 15 fake pastoralists +
+   36 fake ground-truth reports (bula-pesa/ngare-mara/burat) so the
+   dashboard renders as if the pilot had been running for a month.
 7. Starts the engine on `127.0.0.1:5001`.
 8. Starts the API on `127.0.0.1:3000`.
 9. Starts the web server on `127.0.0.1:8080` (dashboard + talk).
-10. Prints three demo JWTs — copy them.
+10. Prints demo JWTs for the primary tenants — copy them.
 
 Expected last lines:
 
@@ -238,8 +251,8 @@ Expected:
 
 ```
 == Services ==          ✓ 4/4
-== Database ==          ✓ 3 tenants, RLS on
-== Auth + Multi-tenant ==  ✓ RLS isolation 12 == 12
+== Database ==          ✓ 5 tenants, RLS on
+== Auth + Multi-tenant ==  ✓ RLS isolation
 == Tests ==             ✓ api + web + engine
 READY: 22/27 passed (5 expected warnings)
 ```

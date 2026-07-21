@@ -150,11 +150,20 @@ for m in "$PUBLIC_DIR"/migrations/*.up.sql; do
   ok "$(basename "$m") applied"
 done
 
-step "Seed demo data"
-psql -v ON_ERROR_STOP=1 -f "$PUBLIC_DIR/seed-data/seed-demo.sql" \
-  > "$RUN_DIR/seed.log" 2>&1 \
-  || { err "seed failed"; tail -30 "$RUN_DIR/seed.log"; exit 1; }
-ok "demo data seeded"
+# The 0004 bootstrap migration already ran above as part of the
+# migrations loop — it inserts the 5 canonical tenant operators plus
+# per-tenant feature flags. Fake pastoralists / ground-truth reports
+# only land when the caller opts in via SEED_DEMO_DATA=1 (default off,
+# so `run stack` produces a real-data-only DB by default).
+if [ "${SEED_DEMO_DATA:-0}" = "1" ]; then
+  step "Seed demo data (SEED_DEMO_DATA=1)"
+  psql -v ON_ERROR_STOP=1 -f "$PUBLIC_DIR/seed-data/seed-demo.sql" \
+    > "$RUN_DIR/seed.log" 2>&1 \
+    || { err "seed failed"; tail -30 "$RUN_DIR/seed.log"; exit 1; }
+  ok "demo data seeded (fake pastoralists + GT reports)"
+else
+  ok "SEED_DEMO_DATA unset — skipping fake pastoralists/GT reports"
+fi
 
 # ---------------------------------------------------------------------------
 # 4. Engine
