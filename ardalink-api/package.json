@@ -19,7 +19,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:cov": "vitest run --coverage"
+    "test:cov": "vitest run --coverage",
+    "vci-backfill": "tsx scripts/run-vci-backfill.ts"
   },
   "dependencies": {
     "@google/earthengine": "^1.7.28",

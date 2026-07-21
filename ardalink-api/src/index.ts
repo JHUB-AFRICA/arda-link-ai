@@ -18,7 +18,11 @@ import { logger } from "./lib/logger.js";
 import { handleVoiceStream } from "./lib/voiceStream.js";
 import { handleBrowserVoiceStream } from "./lib/voiceStreamBrowser.js";
 import { startScheduler } from "./lib/scheduler.js";
-import { startSatelliteJob, startForecastJob } from "./jobs/index.js";
+import {
+  startSatelliteJob,
+  startForecastJob,
+  startVciBackfillJob,
+} from "./jobs/index.js";
 import { consumeToken } from "./lib/callTokens.js";
 import { isTrustedOrigin } from "./lib/originGuard.js";
 
@@ -81,6 +85,15 @@ const httpServer = app.listen(port, (err) => {
     startForecastJob();
   } catch (err) {
     logger.error({ err }, "Forecast job bootstrap failed");
+  }
+
+  // Start the hourly VCI backfill (fills vci_value on any
+  // satellite_indices row that has ndvi_mean but no VCI yet).
+  // Idempotent + scoped to the 5 canonical Isiolo wards.
+  try {
+    startVciBackfillJob();
+  } catch (err) {
+    logger.error({ err }, "VCI backfill job bootstrap failed");
   }
 });
 

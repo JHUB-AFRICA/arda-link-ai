@@ -19,3 +19,12 @@ export {
   stopForecastJob,
   isForecastJobEnabled,
 } from "./forecastJob.js";
+
+export {
+  runVciBackfill,
+  startVciBackfillJob,
+  stopVciBackfillJob,
+  isVciBackfillJobEnabled,
+  type BackfillResult,
+  type RunVciBackfillOptions,
+} from "./vciBackfillJob.js";
