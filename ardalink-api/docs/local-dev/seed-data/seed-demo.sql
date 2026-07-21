@@ -5,12 +5,16 @@
 --
 -- Tenant model (2026-07-08 onward): aligned with Supabase's active_wards.
 -- Each tenant slug maps 1:1 to a Supabase ward_id via lib/wardMapping.ts.
--- Isiolo Sub-County has 5 finished wards; we seed 3 as demo tenants:
---   bula-pesa   ↔ 242  (Bulla Pesa)
---   ngare-mara  ↔ 245  (Ngare Mara)
---   burat       ↔ 246  (Burat)
--- The other two wards (wabera 241, oldonyiro 247) are known to
--- lib/wardMapping.ts but not seeded here — add rows as needed.
+-- Isiolo Sub-County has 5 canonical wards — all seeded here:
+--   wabera       ↔ 241  (Wabera)
+--   bula-pesa    ↔ 242  (Bulla Pesa)
+--   ngare-mara   ↔ 245  (Ngare Mara)
+--   burat        ↔ 246  (Burat)
+--   oldonyiro    ↔ 247  (Oldonyiro)
+-- Pastoralists + feature flags are seeded for the three primary demo
+-- tenants (bula-pesa, ngare-mara, burat); wabera and oldonyiro get a
+-- tenants row + admin_users login so the dashboard tenant selector
+-- surfaces every canonical ward.
 -- =============================================================================
 
 BEGIN;
@@ -19,9 +23,11 @@ BEGIN;
 -- 1. Tenants (already in 0001 migration, but harmless to repeat)
 -- ---------------------------------------------------------------------------
 INSERT INTO public.tenants (tenant_id, display_name, region) VALUES
+  ('wabera',      'Wabera Ward',      'Isiolo County'),
   ('bula-pesa',   'Bula Pesa Ward',   'Isiolo County'),
   ('ngare-mara',  'Ngare Mara Ward',  'Isiolo County'),
-  ('burat',       'Burat Ward',       'Isiolo County')
+  ('burat',       'Burat Ward',       'Isiolo County'),
+  ('oldonyiro',   'Oldonyiro Ward',   'Isiolo County')
 ON CONFLICT (tenant_id) DO UPDATE SET
   display_name = EXCLUDED.display_name,
   region       = EXCLUDED.region,
