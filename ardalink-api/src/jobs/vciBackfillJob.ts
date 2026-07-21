@@ -24,6 +24,7 @@ import {
   fetchWardMonthlyBaseline,
   isSupabaseConfigured,
 } from "../lib/supabase.js";
+import { knownWardIds } from "../lib/wardMapping.js";
 
 interface BackfillRow {
   ward_id: string;
@@ -34,7 +35,7 @@ interface BackfillRow {
   ndvi_mean: number;
 }
 
-interface BackfillResult {
+export interface BackfillResult {
   scanned: number;
   updated: number;
   skippedNoBaseline: number;
@@ -42,7 +43,27 @@ interface BackfillResult {
   errors: number;
 }
 
-export async function runVciBackfill(): Promise<BackfillResult> {
+export interface RunVciBackfillOptions {
+  /**
+   * Ward IDs to backfill. When omitted, defaults to the 5 canonical
+   * Isiolo wards (`knownWardIds()`) so we don't waste compute filling
+   * VCI for rows that belong to retired / non-active wards.
+   *
+   * Pass an empty array to disable the filter (rare — usually a bug).
+   */
+  wardIds?: readonly string[];
+}
+
+function buildWardFilter(wardIds: readonly string[] | undefined): string {
+  const ids = wardIds ?? knownWardIds();
+  if (ids.length === 0) return "";
+  const list = ids.map((w) => encodeURIComponent(w)).join(",");
+  return `&ward_id=in.(${list})`;
+}
+
+export async function runVciBackfill(
+  opts: RunVciBackfillOptions = {},
+): Promise<BackfillResult> {
   const result: BackfillResult = {
     scanned: 0,
     updated: 0,
@@ -65,6 +86,8 @@ export async function runVciBackfill(): Promise<BackfillResult> {
     Accept: "application/json",
   };
 
+  const wardFilter = buildWardFilter(opts.wardIds);
+
   // Fetch every row where vci_value is null AND ndvi_mean is present.
   // Paginate via Range headers so we don't cap at Supabase's default 1000.
   const rows: BackfillRow[] = [];
@@ -72,6 +95,7 @@ export async function runVciBackfill(): Promise<BackfillResult> {
   for (let offset = 0; ; offset += pageSize) {
     const url =
       `${sbBase}/rest/v1/satellite_indices?vci_value=is.null&ndvi_mean=not.is.null` +
+      wardFilter +
       `&select=ward_id,period_start,period_end,calendar_year,calendar_month,ndvi_mean` +
       `&order=ward_id.asc,calendar_year.asc,calendar_month.asc`;
     try {
@@ -173,4 +197,60 @@ export async function runVciBackfill(): Promise<BackfillResult> {
 
   logger.info(result, "[VciBackfill] Complete");
   return result;
+}
+
+// ── Scheduler ──────────────────────────────────────────────────────────────
+//
+// The GEE writer lands new NDVI rows once a day (~03:10 UTC per the
+// `sync_YYYYMMDD_*` cadence observed in Supabase). Running the backfill
+// on an hourly interval means a fresh row's VCI is filled within an
+// hour of landing — cheap because the job is idempotent + paginated
+// and skips rows where vci_value is already set.
+
+const HOURLY_MS = 60 * 60 * 1000;
+
+let vciBackfillTimer: NodeJS.Timeout | null = null;
+let vciBackfillEnabled =
+  process.env.VCI_BACKFILL_JOB_ENABLED !== "false";
+
+export function startVciBackfillJob(): void {
+  if (vciBackfillTimer) {
+    logger.warn(
+      "[VciBackfill] Job already running — stopping previous timer",
+    );
+    stopVciBackfillJob();
+  }
+  vciBackfillEnabled = process.env.VCI_BACKFILL_JOB_ENABLED !== "false";
+  if (!vciBackfillEnabled) {
+    logger.info("[VciBackfill] Job disabled via VCI_BACKFILL_JOB_ENABLED=false");
+    return;
+  }
+  const intervalMs = Number(
+    process.env.VCI_BACKFILL_INTERVAL_MS ?? HOURLY_MS,
+  );
+  // Run once on boot, then on the interval.
+  void runVciBackfill().catch((err) =>
+    logger.error({ err }, "[VciBackfill] boot run crashed"),
+  );
+  vciBackfillTimer = setInterval(() => {
+    void runVciBackfill().catch((err) =>
+      logger.error({ err }, "[VciBackfill] interval run crashed"),
+    );
+  }, intervalMs);
+  logger.info(
+    { intervalMs },
+    "[VciBackfill] Scheduled — filling null vci_value for canonical wards",
+  );
+}
+
+export function stopVciBackfillJob(): void {
+  if (vciBackfillTimer) {
+    clearInterval(vciBackfillTimer);
+    vciBackfillTimer = null;
+    logger.info("[VciBackfill] Job stopped");
+  }
+}
+
+export function isVciBackfillJobEnabled(): boolean {
+  return vciBackfillEnabled;
 }
