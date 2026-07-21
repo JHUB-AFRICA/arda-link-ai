@@ -1,8 +1,22 @@
 # ArdaLink — System Status
 
-**Author**: Lead Software Engineer · **Date**: 2026-07-07
+**Author**: Lead Software Engineer · **Last refreshed**: 2026-07-21
 **Audience**: Engineering team + funders + partners
 **Scope**: Current production state, what's deployed and operational, what's in progress, and what remains to be built.
+
+> **2026-07-21 audit-and-remediation snapshot**: after a full read-through
+> of the Supabase-local write paths, the following flags were closed:
+> retired-ward references removed with a CI regression guard (#38);
+> orphan `tenant_id='isiolo'` writes stopped at the source with an
+> `assertKnownTenant()` boundary check (#39); dead Cosmos DB env vars
+> + scripts dropped (#40); the missing VCI backfill job is now
+> scheduled hourly plus available as a CLI (#41); local Postgres was
+> realigned to the 5 canonical Isiolo wards and gained the 7 Supabase
+> mirror tables via migration `0003` (#42); operator accounts + feature
+> flags moved into structural migration `0004` so `SEED_DEMO_DATA=1`
+> is the only path to fake pastoralists / GT reports. See the
+> "Audit remediation — Phase 1 + 2" section near the bottom for the
+> full punch-list state.
 
 > **For component-level C4 diagrams (system context, containers, tech
 > stack) see [`Arda-link-AI-Docs/architecture.md`](./Arda-link-AI-Docs/architecture.md).
@@ -578,11 +592,39 @@ For Phase 4 (field-grade):
 
 ---
 
-*Maintained by the Lead Software Engineer. Last updated 2026-07-05.*
-*Landed this cycle*:
+*Maintained by the Lead Software Engineer. Last updated 2026-07-21.*
+
+## Audit remediation — Phase 1 + Phase 2 (2026-07-21)
+
+Full audit of Supabase-local write paths found 6 severe drifts, all now closed on `dev`.
+
+**Phase 1 (code-only, low risk) — merged:**
+
+- **#38 `fix(retired-wards)`** — killed `garbatulla` / `merti` / `kinna` references across `satelliteJob.ts`, its test, engine `_SLUG_TO_NAME`, marketing poster copy, and the operator login demo passwords. Rotated the ngare-mara / burat operator scrypt hashes to their own tenant slugs. Added a `git grep` regression guard in `wardMapping.test.ts` that fails CI if any of the retired slugs reappear in production code.
+- **#39 `fix(tenant-defaults)`** — snapshotCache.ts and engine/baseline.ts no longer fall back to the pseudo-tenant `"isiolo"`. New `isKnownTenant()` / `assertKnownTenant()` helpers reject non-canonical slugs at the DB-write boundary so a future regression fails loudly instead of silently orphaning rows.
+- **#40 `chore(env)`** — removed dead Cosmos DB env vars from three `.env.example` files, `docker-compose.yml`, `start-local.sh`, and `tests/setup.ts`. Deleted the two Node scripts (`sync-ee-to-cosmos.cjs`, `fix-stats.cjs`) that still required `@azure/cosmos` after it had been dropped from `package.json`.
+
+**Phase 2 (schema + data) — merged:**
+
+- **#41 `fix(vci)`** — the existing `runVciBackfill()` job was wired to `POST /api/ops/vci-backfill` but had never been triggered; every fresh `satellite_indices` row from the daily GEE writer landed with `vci_value=NULL`. This PR added: (a) a `wardIds` filter defaulting to the 5 canonical Isiolo wards so retired-ward orphans aren't wastefully filled, (b) an hourly scheduler (`startVciBackfillJob()`) that runs at API boot, and (c) a CLI wrapper `pnpm --filter ardalink-api run vci-backfill` for on-demand backfills without needing the API up. Historical NDVI envelope is read from the `MULTI_SENSOR_CASCADE` baseline in Supabase.
+- **#42 `fix(local-mirror)`** — migration `0003_realign_local_mirror` retires 10 pastoralist rows + 24 GT-report rows + 76 satellite_snapshot orphans + 126 climate_snapshot orphans, adds the 4 canonical Isiolo wards that had never been seeded (wabera, ngare-mara, burat, oldonyiro), and creates the 7 mirror tables (`pastoralist_leads`, `lead_interactions`, `ward_cells`, `satellite_indices`, `weather_data`, `ground_truth_calls`, `weather_forecast`) as prerequisites for the Supabase → local sync job. Column shapes mirror Supabase; PostGIS-typed columns use JSONB (GeoJSON) so the migration doesn't require the postgis extension. Ships with `0003.down.sql` (partial rollback: schema-only, does not restore the purged rows) and `scripts/dryrun-migration-0003.sh` (dumps live public schema, restores into an ephemeral container on `:15433`, applies, diffs).
+
+**Docs pass — this branch:**
+
+- Migration `0004_bootstrap_operator_accounts.up.sql` — moves the 5 tenant operator logins + super-admin + per-tenant feature flags out of `seed-demo.sql` into a proper structural migration. Runs unconditionally on every stack bring-up.
+- `seed-demo.sql` — now only contains **optional** demo data (15 fake pastoralists + 36 fake GT reports) and is gated behind `SEED_DEMO_DATA=1` in `start-local.sh`. Default bring-up is real-data-only.
+- `RUNBOOK.md` + `LOCAL_SETUP.md` updated to reflect the migrations-only bootstrap and the `SEED_DEMO_DATA` opt-in.
+
+**Still ahead (Phase 2 → Phase 3):**
+
+- **#TBD `feat/dual-write-completion`** — wire USSD/SMS lead upsert, `lead_interactions`, `weather_data`, and `weather_forecast` to also mirror to local (Supabase-primary + local best-effort).
+- **#TBD `feat/ground-truth-backfill`** — one-shot script + nightly reconciliation job that replays local `ground_truth_reports` into Supabase `ground_truth_calls` where missing.
+- **#TBD `feat/supabase-to-local-sync`** — background job that pulls Supabase-primary tables into local mirror every N minutes so local can serve reads during a Supabase outage.
+- **Post-pilot backlog**: `docs/gee-script-ownership` (get the out-of-tree GEE writer into git), `fix/interaction-writer-liveness` (diagnose the 2026-07-12 lead_interactions silence), `chore/retired-ward-cleanup-supabase` (prune ward 243/244/249 rows from Supabase `satellite_indices`).
+
+*Prior cycle (2026-07-07 baseline)*:
 * Satellite API routes + scheduler (`feature/satellite-api-route`, `feature/satellite-scheduler`).
 * Engine ↔ api tenant attestation (HMAC-SHA256 over `TENANT_ATTESTATION_SECRET`) and full Postgres RLS enforcement on `gis_engine.baseline_aggregate`, `gis_engine.baseline_pixel` via `set_tenant()`.
 * SMS + USSD route stubs (`/api/sms`, `/api/ussd`) waiting on live Africa's Talking credentials.
-* Ward/tenant terminology alignment: Bulla Pesa, Garbatulla, Merti are the three tenants; Bulla Pesa, Garbatulla, Kinna are the three demo wards. Doc drift fixed across README, RUNBOOK, LOCAL_SETUP, and API/UI copy.
 
-*Next*: live Africa's Talking key + short-code registration; Sentry / Grafana observability wiring.
+*Next*: live Africa's Talking key + short-code registration; Sentry / Grafana observability wiring; ship Phase 2's remaining three PRs.
