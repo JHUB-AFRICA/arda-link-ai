@@ -28,3 +28,18 @@ export {
   type BackfillResult,
   type RunVciBackfillOptions,
 } from "./vciBackfillJob.js";
+
+export {
+  runHeartbeat,
+  startHeartbeatJob,
+  stopHeartbeatJob,
+  isHeartbeatJobEnabled,
+  getLastHeartbeat,
+  DEFAULT_CHECKS,
+  type HeartbeatSnapshot,
+  type TableHeartbeat,
+  type TableCheck,
+  type TableStatus,
+  type PipelineStatus,
+  type Role,
+} from "./heartbeatJob.js";
