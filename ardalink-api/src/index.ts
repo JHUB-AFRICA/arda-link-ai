@@ -23,6 +23,7 @@ import {
   startForecastJob,
   startVciBackfillJob,
   startSyncJob,
+  startHeartbeatJob,
 } from "./jobs/index.js";
 import { consumeToken } from "./lib/callTokens.js";
 import { isTrustedOrigin } from "./lib/originGuard.js";
@@ -104,6 +105,15 @@ const httpServer = app.listen(port, (err) => {
     startSyncJob();
   } catch (err) {
     logger.error({ err }, "Sync job bootstrap failed");
+  }
+
+  // Start the 15-minute heartbeat probe (populates /api/healthz with
+  // per-table freshness so silent writer failures are caught before
+  // they corrupt pilot signal).
+  try {
+    startHeartbeatJob();
+  } catch (err) {
+    logger.error({ err }, "Heartbeat job bootstrap failed");
   }
 });
 
