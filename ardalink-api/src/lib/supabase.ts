@@ -18,6 +18,12 @@
  */
 
 import { logger } from "./logger.js";
+import {
+  mirrorLeadInteraction,
+  mirrorPastoralistLead,
+  mirrorWeatherData,
+} from "./localMirror.js";
+import { type InsertLeadInteraction } from "@workspace/db";
 
 const CACHE_TTL_MS = parseInt(
   process.env.SUPABASE_CACHE_TTL_MS ?? "60000",
@@ -879,9 +885,35 @@ export const upsertPastoralistLead = async (
       return null;
     }
     const rows = (await res.json()) as SbPastoralistLead[];
-    return rows[0] ?? null;
+    const primary = rows[0] ?? null;
+    // Local mirror. Best-effort; runs even if the Supabase branch
+    // above returned null so a Supabase outage doesn't drop the lead.
+    await mirrorPastoralistLead({
+      phoneNumber: row.phone_number,
+      fullName: row.full_name ?? undefined,
+      preferredLanguage: row.preferred_language ?? undefined,
+      wardId: row.ward_id ?? undefined,
+      herdSize: row.herd_size ?? undefined,
+      enrollmentSource: row.enrollment_source ?? undefined,
+      status: row.status ?? undefined,
+      alertsEnabled: row.alerts_enabled ?? undefined,
+      notes: row.notes ?? undefined,
+    });
+    return primary;
   } catch (err) {
     logger.warn({ err }, "[Supabase] pastoralist_leads upsert crashed");
+    // Still attempt the local mirror on Supabase-side crash.
+    await mirrorPastoralistLead({
+      phoneNumber: row.phone_number,
+      fullName: row.full_name ?? undefined,
+      preferredLanguage: row.preferred_language ?? undefined,
+      wardId: row.ward_id ?? undefined,
+      herdSize: row.herd_size ?? undefined,
+      enrollmentSource: row.enrollment_source ?? undefined,
+      status: row.status ?? undefined,
+      alertsEnabled: row.alerts_enabled ?? undefined,
+      notes: row.notes ?? undefined,
+    });
     return null;
   }
 };
@@ -1081,9 +1113,10 @@ export interface SbLeadInteractionInsert {
 
 /**
  * Fire-and-forget log write. Never blocks — the caller's AT
- * response has already been formulated. Only touches Supabase; the
- * local mirror isn't used because interactions are analytics data,
- * not source-of-truth. Failures are warn-logged and swallowed.
+ * response has already been formulated. Dual-writes: Supabase primary
+ * (source of truth) + local Postgres mirror (best-effort, keeps the
+ * audit trail alive during a Supabase outage). Both failures are
+ * warn-logged and swallowed.
  */
 export const logLeadInteraction = async (
   row: SbLeadInteractionInsert,
@@ -1105,6 +1138,21 @@ export const logLeadInteraction = async (
   } catch (err) {
     logger.warn({ err, channel: row.channel }, "[Supabase] lead_interactions insert crashed");
   }
+  // Local mirror runs regardless of Supabase outcome — if Supabase is
+  // down we still capture the interaction; if the local pool is down
+  // Supabase still has the row.
+  await mirrorLeadInteraction({
+    phoneNumber: row.phone_number,
+    tier: row.tier,
+    channel: row.channel,
+    sessionId: row.session_id ?? null,
+    keyword: row.keyword ?? null,
+    inputText: row.input_text ?? null,
+    replyText: row.reply_text ?? null,
+    wardId: row.ward_id ?? null,
+    rawBody: (row.raw_body ?? null) as InsertLeadInteraction["rawBody"],
+    tenantId: null,
+  });
 };
 
 /**
@@ -1522,8 +1570,33 @@ export interface UpsertWeatherDataArgs {
   p_evapotranspiration_mm: number;
   p_source?: string;
 }
-export const upsertWeatherData = (args: UpsertWeatherDataArgs) =>
-  sbRpc<{ weather_data_id?: number } | null>("upsert_weather_data", args);
+export const upsertWeatherData = async (
+  args: UpsertWeatherDataArgs,
+): Promise<{ weather_data_id?: number } | null> => {
+  const primary = await sbRpc<{ weather_data_id?: number } | null>(
+    "upsert_weather_data",
+    args,
+  );
+  // Local mirror. Runs regardless of Supabase outcome so the forecast
+  // job keeps local `weather_data` warm during a Supabase outage.
+  await mirrorWeatherData({
+    wardId: args.p_ward_id,
+    observedDate: args.p_observed_date,
+    rainfallMm30d:
+      args.p_rainfall_mm_30d != null ? String(args.p_rainfall_mm_30d) : null,
+    humidityPct:
+      args.p_humidity_pct != null ? String(args.p_humidity_pct) : null,
+    temperatureC:
+      args.p_temperature_c != null ? String(args.p_temperature_c) : null,
+    evapotranspirationMm:
+      args.p_evapotranspiration_mm != null
+        ? String(args.p_evapotranspiration_mm)
+        : null,
+    source: args.p_source ?? null,
+    tenantId: null,
+  });
+  return primary;
+};
 
 /** Rebuild the `ward_cells` grid (~1 km default). Ops-only — recomputes
  *  ~27 k rows in one call. Do not fire in a request path. */

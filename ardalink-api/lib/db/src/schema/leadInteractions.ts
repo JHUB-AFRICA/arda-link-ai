@@ -27,8 +27,11 @@ export const leadInteractionsTable = pgTable(
   {
     interactionId: uuid("interaction_id").primaryKey().defaultRandom(),
     phoneNumber: text("phone_number").notNull(),
-    tier: text("tier").$type<LeadInteractionTier>(),
-    channel: text("channel").$type<LeadInteractionChannel>().notNull(),
+    // `tier` and `channel` are plain text at the drizzle level; the
+    // union types below are for callers to narrow their inputs. Not
+    // wired via .$type so createInsertSchema keeps them zod.string().
+    tier: text("tier"),
+    channel: text("channel").notNull(),
     sessionId: text("session_id"),
     keyword: text("keyword"),
     inputText: text("input_text"),

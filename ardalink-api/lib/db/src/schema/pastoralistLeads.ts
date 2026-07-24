@@ -34,7 +34,8 @@ export const pastoralistLeadsTable = pgTable(
     fullName: text("full_name"),
     preferredLanguage: text("preferred_language"),
     wardId: text("ward_id"),
-    location: jsonb("location").$type<GeoJsonPoint>(),
+    // JSON GeoPoint at runtime; callers narrow to GeoJsonPoint themselves.
+    location: jsonb("location"),
     herdSize: integer("herd_size"),
     enrollmentSource: text("enrollment_source"),
     status: text("status").notNull().default("lead"),
