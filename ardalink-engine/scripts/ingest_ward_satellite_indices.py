@@ -34,7 +34,6 @@ Usage:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import sys
@@ -205,9 +204,9 @@ def main() -> int:
         sys.exit("GEE_PRIVATE_KEY is not set.")
 
     # Initialise the engine's GEE connection (lazy, thread-safe).
+    from ardalink_engine.src.geo.wards import WARDS
     from ardalink_engine.src.pipeline.gee import ensure_initialized
     from ardalink_engine.src.pipeline.satellite import fetch_vegetation_index
-    from ardalink_engine.src.geo.wards import WARDS
 
     ensure_initialized()
 
