@@ -1622,3 +1622,112 @@ export async function sbQuery<T>(
 ): Promise<T[] | null> {
   return sbGet<T>(path, { mode: opts.mode ?? "batch" });
 }
+
+// ── satellite_indices VCI snapshot write ───────────────────────────────────
+
+export interface SatelliteVciSnapshotArgs {
+  periodStart: string;    // "YYYY-MM-01"
+  periodEnd: string;      // "YYYY-MM-DD"
+  calendarMonth: number;
+  calendarYear: number;
+  ndviMean: number | null;
+  ndviMin: number | null;
+  ndviMax: number | null;
+  vciValue: number | null;
+  prosopisCorrected: boolean;
+  runId: string;
+}
+
+/**
+ * Persist a live GEE VCI snapshot to `satellite_indices` with
+ * `vci_value` already computed — so the hourly backfill job has
+ * nothing to patch on its next run.
+ *
+ * Strategy: GET the existing row first.
+ *   • Exists + has vci_value → skip (idempotent).
+ *   • Exists + vci_value null → PATCH the two known columns.
+ *   • Missing → INSERT a minimal row with the columns GEE provides.
+ *
+ * Columns not available from the live trigger (ndre_mean, ndwi_mean,
+ * etc.) are left NULL in the INSERT path — the full upsert_satellite_indices
+ * RPC fills them when the comprehensive ingest script runs.
+ */
+export async function persistSatelliteVciSnapshot(
+  wardId: string,
+  args: SatelliteVciSnapshotArgs,
+): Promise<boolean> {
+  if (args.vciValue == null) return false;
+  try {
+    // Check for an existing row this period.
+    const existing = await sbGet<{
+      satellite_index_id: number;
+      vci_value: number | null;
+    }>(
+      `satellite_indices?ward_id=eq.${encodeURIComponent(wardId)}&period_start=eq.${encodeURIComponent(args.periodStart)}&select=satellite_index_id,vci_value&limit=1`,
+      { mode: "batch" },
+    );
+
+    if (existing && existing.length > 0) {
+      if (existing[0]!.vci_value != null) return true; // already set
+      const patchRes = await sbFetch(
+        `satellite_indices?ward_id=eq.${encodeURIComponent(wardId)}&period_start=eq.${encodeURIComponent(args.periodStart)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            vci_value: args.vciValue,
+            ndvi_mean: args.ndviMean,
+          }),
+          headers: { Prefer: "return=minimal" },
+          sbMode: "batch",
+        },
+      );
+      if (!patchRes.ok) {
+        const body = await patchRes.text().catch(() => "");
+        logger.warn(
+          { status: patchRes.status, wardId, body: body.slice(0, 200) },
+          "[Supabase] satellite_indices VCI patch non-2xx",
+        );
+        return false;
+      }
+      return true;
+    }
+
+    // Insert new row with the columns the live trigger provides.
+    const payload: Record<string, unknown> = {
+      ward_id: wardId,
+      period_start: args.periodStart,
+      period_end: args.periodEnd,
+      calendar_month: args.calendarMonth,
+      calendar_year: args.calendarYear,
+      ndvi_mean: args.ndviMean,
+      vci_value: args.vciValue,
+      prosopis_corrected: args.prosopisCorrected,
+      source_collection: "MODIS/061/MOD13Q1",
+      run_id: args.runId,
+    };
+    if (args.ndviMin != null) payload.ndvi_min = args.ndviMin;
+    if (args.ndviMax != null) payload.ndvi_max = args.ndviMax;
+
+    const insertRes = await sbFetch("satellite_indices", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: { Prefer: "return=minimal" },
+      sbMode: "batch",
+    });
+    if (!insertRes.ok) {
+      const body = await insertRes.text().catch(() => "");
+      logger.warn(
+        { status: insertRes.status, wardId, body: body.slice(0, 300) },
+        "[Supabase] satellite_indices VCI insert non-2xx",
+      );
+      return false;
+    }
+    return true;
+  } catch (err) {
+    logger.warn(
+      { err: String(err), wardId },
+      "[Supabase] satellite_indices VCI snapshot write crashed",
+    );
+    return false;
+  }
+}
