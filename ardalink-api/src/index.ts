@@ -22,6 +22,7 @@ import {
   startSatelliteJob,
   startForecastJob,
   startVciBackfillJob,
+  startSyncJob,
 } from "./jobs/index.js";
 import { consumeToken } from "./lib/callTokens.js";
 import { isTrustedOrigin } from "./lib/originGuard.js";
@@ -94,6 +95,15 @@ const httpServer = app.listen(port, (err) => {
     startVciBackfillJob();
   } catch (err) {
     logger.error({ err }, "VCI backfill job bootstrap failed");
+  }
+
+  // Start the 5-min Supabase → local sync (pastoralist_leads +
+  // weather_data). Keeps local mirror current for read fallbacks
+  // during Supabase outages.
+  try {
+    startSyncJob();
+  } catch (err) {
+    logger.error({ err }, "Sync job bootstrap failed");
   }
 });
 

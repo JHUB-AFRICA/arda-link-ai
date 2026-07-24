@@ -28,3 +28,13 @@ export {
   type BackfillResult,
   type RunVciBackfillOptions,
 } from "./vciBackfillJob.js";
+
+export {
+  runSyncCycle,
+  startSyncJob,
+  stopSyncJob,
+  isSyncJobEnabled,
+  getLastSyncResult,
+  type SyncCycleResult,
+  type SyncTableResult,
+} from "./syncJob.js";

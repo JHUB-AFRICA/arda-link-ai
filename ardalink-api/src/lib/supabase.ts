@@ -1609,3 +1609,16 @@ export const rebuildWardCells = (cellSizeM = 1000) =>
 export function clearSupabaseCache(): void {
   cache.clear();
 }
+
+/**
+ * Generic PostgREST GET for internal batch consumers (sync workers,
+ * backfill jobs). Always uses the `batch` timeout; never caches.
+ * Returns `null` on network error or non-2xx so callers can skip and
+ * retry on the next cycle.
+ */
+export async function sbQuery<T>(
+  path: string,
+  opts: { mode?: SupabaseMode } = {},
+): Promise<T[] | null> {
+  return sbGet<T>(path, { mode: opts.mode ?? "batch" });
+}
