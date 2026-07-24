@@ -19,7 +19,6 @@ import {
   formatWaterPointUsageBlock,
 } from "../lib/memory.js";
 import { droughtLabel, maiLabel } from "../lib/climate.js";
-import { captureChatGroundTruth } from "../lib/chatGroundTruth.js";
 
 const QUAD_TO_PLACE: Record<"NW" | "NE" | "SW" | "SE", string> = {
   NW: "the pastures toward Wabera (northwest)",
@@ -410,19 +409,6 @@ router.post("/talk-chat", async (req, res): Promise<void> => {
       },
       "[TalkChat] reply generated",
     );
-
-    // Fire-and-forget: extract indicators from the full chat transcript and
-    // upsert one row per session into ground_truth_reports. Never awaited —
-    // chat latency is what the user feels. If extraction fails, the chat
-    // reply is unaffected.
-    if (sessionId) {
-      const fullTurns = [
-        ...trimmedHistory.map((h) => ({ role: h.role, content: h.content })),
-        { role: "user" as const, content: message },
-        { role: "assistant" as const, content: reply },
-      ];
-      void captureChatGroundTruth({ sessionId, phone, turns: fullTurns });
-    }
 
     res.json({
       reply,

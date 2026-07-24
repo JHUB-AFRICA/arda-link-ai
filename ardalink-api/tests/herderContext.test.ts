@@ -10,6 +10,7 @@ interface Fixture {
     latestSatellite: unknown;
     latestWeather: unknown;
     neighborAdvice: unknown;
+    recentGroundTruthCalls: unknown[] | null;
   };
   local: {
     pastoralist: unknown;
@@ -27,6 +28,7 @@ const fx: Fixture = {
     latestSatellite: null,
     latestWeather: null,
     neighborAdvice: null,
+    recentGroundTruthCalls: null,
   },
   local: {
     pastoralist: null,
@@ -60,6 +62,10 @@ vi.mock("../src/lib/supabase.js", () => ({
   // to reason about them. Dedicated tests can add fixtures.
   recentWaterPointGroundTruth: async () => [],
   peerSignalForWard: async () => null,
+  // Recent ground_truth_calls — used by enrichFromLocalMirror to
+  // backfill lastBcsScore when the Supabase call-context path didn't
+  // supply it. Null means "no rows" (empty array) by default.
+  recentGroundTruthCalls: async () => fx.supabase.recentGroundTruthCalls ?? [],
   // Cell-level overlays — default to null so herderContext resolves
   // without needing per-test cell fixtures. Cell helpers are covered
   // in tests/supabase.test.ts.
@@ -108,11 +114,6 @@ vi.mock("../src/lib/tenancy-context.js", () => ({
 
 vi.mock("@workspace/db", () => ({
   pastoralistsTable: { phone: "phone", tenantId: "tenant_id" },
-  groundTruthReportsTable: {
-    phone: "phone",
-    tenantId: "tenant_id",
-    createdAt: "created_at",
-  },
 }));
 
 vi.mock("drizzle-orm", async () => {
@@ -121,8 +122,6 @@ vi.mock("drizzle-orm", async () => {
   return {
     ...actual,
     eq: (_c: unknown, _v: unknown) => ({}),
-    and: (..._exprs: unknown[]) => ({}),
-    desc: (_c: unknown) => ({}),
   };
 });
 
@@ -133,6 +132,7 @@ beforeEach(() => {
   fx.supabase.latestSatellite = null;
   fx.supabase.latestWeather = null;
   fx.supabase.neighborAdvice = null;
+  fx.supabase.recentGroundTruthCalls = null;
   fx.local.pastoralist = null;
   fx.local.lastReport = null;
   fx.local.throwOnRead = false;
@@ -215,14 +215,20 @@ describe("resolveHerderContext", () => {
       waterSource: "Bulla Pesa dam",
       lastContactAt: new Date("2026-07-07T12:00:00Z"),
     };
-    fx.local.lastReport = {
-      bcsScore: 2.7,
-      bcsSpecies: "cattle",
-      actionTag: "livestock_stress",
-      reportedLocation: "Bulla Pesa",
-      reportedQuadrant: "SW",
-      createdAt: new Date("2026-06-22T01:11:17Z"),
-    };
+    // Last BCS comes from Supabase ground_truth_calls (local ground_truth_reports dropped).
+    // bcsSpecies and actionTag are not on ground_truth_calls — they return null.
+    fx.supabase.recentGroundTruthCalls = [
+      {
+        call_id: "call-abc-123",
+        bcs_score: 2.7,
+        created_at: "2026-06-22T01:11:17Z",
+        mortality_rate: null,
+        water_point_status: null,
+        supplementary_feeding: null,
+        trust_score: null,
+        transcript: null,
+      },
+    ];
 
     const { resolveHerderContext } = await import(
       "../src/lib/herderContext.js"
@@ -230,14 +236,15 @@ describe("resolveHerderContext", () => {
     const ctx = await resolveHerderContext("+254712000004", "bula-pesa");
 
     expect(ctx.source).toBe("supabase");
-    // Species breakdown comes from local (Supabase has only herd_size).
+    // Species breakdown comes from local pastoralists table.
     expect(ctx.cattle).toBe(60);
     expect(ctx.goats).toBe(40);
     expect(ctx.waterSource).toBe("Bulla Pesa dam");
-    // Last report detail comes from local ground_truth_reports.
+    // Last BCS comes from Supabase ground_truth_calls.
     expect(ctx.lastBcsScore).toBe(2.7);
-    expect(ctx.lastBcsSpecies).toBe("cattle");
-    expect(ctx.lastActionTag).toBe("livestock_stress");
+    // bcsSpecies and actionTag are not on ground_truth_calls — null.
+    expect(ctx.lastBcsSpecies).toBeNull();
+    expect(ctx.lastActionTag).toBeNull();
   });
 
   it("falls back to local-only when Supabase has no match", async () => {

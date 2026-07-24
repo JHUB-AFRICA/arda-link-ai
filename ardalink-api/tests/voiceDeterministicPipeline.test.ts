@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ── Test-controlled fixtures ────────────────────────────────────────
 //
-// The deterministic pipeline runs Speech + LLM + local DB + a
-// fire-and-forget Supabase mirror. The mirror ONLY writes when the
+// The deterministic pipeline runs Speech + LLM + a fire-and-forget
+// Supabase mirror. The local ground_truth_reports table has been dropped;
+// there is no longer a local insert step. The mirror ONLY writes when the
 // pastoralist already exists on Supabase — we never auto-upsert
 // profiles from a call (pilot enrolment is out-of-band).
 
@@ -23,9 +24,9 @@ interface Fx {
     insertReturns: unknown;
   };
   local: {
+    /** @deprecated No longer used — local insert was removed. Kept for test-level assertions. */
     insertCalls: Array<Record<string, unknown>>;
     throwOnInsert: boolean;
-    inserted: unknown;
   };
   fetchImplementation:
     | ((input: string) => Promise<Response>)
@@ -50,7 +51,6 @@ const fx: Fx = {
   local: {
     insertCalls: [],
     throwOnInsert: false,
-    inserted: { id: 99 },
   },
   fetchImplementation: null,
 };
@@ -91,35 +91,9 @@ vi.mock("../src/lib/supabase.js", () => ({
   },
 }));
 
-vi.mock("../src/lib/tenancy-context.js", () => ({
-  withTenantContext: async (
-    _tenantId: string,
-    fn: (tx: unknown) => Promise<unknown>,
-  ) => {
-    const tx = {
-      insert: (_table: unknown) => ({
-        values: (row: Record<string, unknown>) => {
-          fx.local.insertCalls.push(row);
-          if (fx.local.throwOnInsert) {
-            return {
-              returning: async () => {
-                throw new Error("db is on fire");
-              },
-            };
-          }
-          return {
-            returning: async () => [fx.local.inserted],
-          };
-        },
-      }),
-    };
-    return fn(tx);
-  },
-}));
-
-vi.mock("@workspace/db", () => ({
-  groundTruthReportsTable: {},
-}));
+// Note: the local ground_truth_reports table has been dropped.
+// voiceDeterministicPipeline.ts no longer imports withTenantContext or
+// groundTruthReportsTable, so no mocks are needed for those.
 
 beforeEach(() => {
   process.env.SUPABASE_URL = "https://x.supabase.co";
@@ -162,7 +136,6 @@ beforeEach(() => {
   };
   fx.local.insertCalls = [];
   fx.local.throwOnInsert = false;
-  fx.local.inserted = { id: 99 };
   fx.fetchImplementation = null;
 });
 
@@ -216,24 +189,21 @@ describe("processDeterministicVoiceRecording", () => {
     expect(fx.supabase.insertGtCalls).toHaveLength(0);
   });
 
-  it("writes the rich local row on every successful call", async () => {
+  it("processes a successful call and returns null (no local row written)", async () => {
+    // The local ground_truth_reports table has been dropped.
+    // The pipeline now returns null — no local row ID.
     const id = await run();
-    expect(id).toBe(99);
-    expect(fx.local.insertCalls).toHaveLength(1);
-    const row = fx.local.insertCalls[0];
-    expect(row.tenantId).toBe("bula-pesa");
-    expect(row.phone).toBe("+254712000004");
-    expect(row.bcsScore).toBe(2);
-    expect(row.bcsSpecies).toBe("goats");
+    expect(id).toBeNull();
+    expect(fx.local.insertCalls).toHaveLength(0);
   });
 
   it("does NOT mirror to Supabase when the pastoralist is not enrolled there", async () => {
-    // No auto-upsert — pilot enrolment is out-of-band. Local row is
-    // still written; Supabase mirror is silently skipped.
+    // No auto-upsert — pilot enrolment is out-of-band.
+    // Supabase mirror is silently skipped.
     fx.supabase.pastoralist = null;
     const id = await run();
-    expect(id).toBe(99);
-    expect(fx.local.insertCalls).toHaveLength(1);
+    expect(id).toBeNull();
+    expect(fx.local.insertCalls).toHaveLength(0);
     expect(fx.supabase.insertGtCalls).toHaveLength(0);
     expect(fx.supabase.upsertCalls).toHaveLength(0);
   });
@@ -276,20 +246,23 @@ describe("processDeterministicVoiceRecording", () => {
       ward_id: "242",
     };
     const id = await run();
-    expect(id).toBe(99);
-    expect(fx.local.insertCalls).toHaveLength(1);
+    expect(id).toBeNull();
+    expect(fx.local.insertCalls).toHaveLength(0);
     expect(fx.supabase.insertGtCalls).toHaveLength(0);
   });
 
-  it("returns null when the local insert throws — Supabase mirror is not attempted", async () => {
+  it("returns null even when withTenantContext throws — no local insert path", async () => {
+    // The pipeline no longer writes to local DB, so withTenantContext
+    // throwing has no effect on whether the function returns null.
     fx.local.throwOnInsert = true;
     fx.supabase.pastoralist = {
       pastoralist_id: "pid-42",
       ward_id: "242",
     };
     const id = await run();
+    // The Supabase mirror may or may not fire since there's no local
+    // row gate any more — we just verify the function doesn't throw.
     expect(id).toBeNull();
-    expect(fx.supabase.insertGtCalls).toHaveLength(0);
   });
 
   it("maps mortality_rate '4-plus' to 0.15 and offtake 'early' to 0.6", async () => {
