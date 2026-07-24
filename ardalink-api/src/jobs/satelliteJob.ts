@@ -8,9 +8,14 @@
  * - Wet season (Oct-Dec, Apr-May): Monthly (1st 6AM)
  */
 
+import { randomUUID } from "node:crypto";
 import { triggerSatelliteRefresh, type SatelliteTriggerResponse } from "../lib/engine.js";
 import { logger } from "../lib/logger.js";
-import { knownWardIds, tenantForWardId } from "../lib/wardMapping.js";
+import {
+  persistSatelliteVciSnapshot,
+  isSupabaseConfigured,
+} from "../lib/supabase.js";
+import { knownWardIds, tenantForWardId, wardIdForTenant } from "../lib/wardMapping.js";
 
 // Mirrors the engine's DEMO_WARDS in ardalink_engine/src/api/satellite.py.
 // Used for logging only — the engine decides which wards its /trigger route
@@ -59,6 +64,48 @@ let satelliteTimer: NodeJS.Timeout | null = null;
 let enabled = process.env.SATELLITE_JOB_ENABLED !== "false";
 
 /**
+ * Write VCI snapshots returned by the trigger to satellite_indices.
+ * Each ward write is independent — a failure on one ward doesn't stop others.
+ */
+async function persistVciSnapshots(
+  results: NonNullable<SatelliteTriggerResponse["results"]>,
+): Promise<void> {
+  const now = new Date();
+  const y = now.getUTCFullYear();
+  const m = String(now.getUTCMonth() + 1).padStart(2, "0");
+  const periodStart = `${y}-${m}-01`;
+  const periodEnd = now.toISOString().split("T")[0]!;
+  const calendarMonth = now.getUTCMonth() + 1;
+  const calendarYear = now.getUTCFullYear();
+  const runId = randomUUID();
+
+  await Promise.all(
+    Object.entries(results).map(async ([wardSlug, snapshot]) => {
+      if (!snapshot || snapshot.vci == null) return;
+      const wardId = wardIdForTenant(wardSlug);
+      const wrote = await persistSatelliteVciSnapshot(wardId, {
+        periodStart,
+        periodEnd,
+        calendarMonth,
+        calendarYear,
+        ndviMean: snapshot.ndvi_now,
+        ndviMin: snapshot.ndvi_min,
+        ndviMax: snapshot.ndvi_max,
+        vciValue: snapshot.vci,
+        prosopisCorrected: true,
+        runId,
+      });
+      if (wrote) {
+        logger.info(
+          { wardId, wardSlug, vci: snapshot.vci },
+          "[SatelliteJob] VCI snapshot persisted",
+        );
+      }
+    }),
+  );
+}
+
+/**
  * Run the satellite refresh job.
  *
  * Calls the engine's `/api/v1/satellite/trigger` endpoint and logs results.
@@ -105,6 +152,13 @@ export async function runSatelliteJob(): Promise<void> {
         },
         "[SatelliteJob] Refresh completed successfully",
       );
+
+      // Persist VCI snapshots to satellite_indices so vci_value is set
+      // at write time. The hourly backfill job will find nothing to patch
+      // for rows we write here. Runs only when Supabase is configured.
+      if (isSupabaseConfigured() && result.results) {
+        await persistVciSnapshots(result.results);
+      }
     } else {
       logger.warn(
         { status: result.status, error: result.error, duration },
