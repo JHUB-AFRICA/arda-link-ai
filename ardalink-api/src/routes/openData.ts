@@ -2,7 +2,6 @@ import { Router, type IRouter, type Request } from "express";
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { gte } from "drizzle-orm";
 import {
   fetchYearOverYearClimate,
   fetchAirQualitySnapshot,
@@ -479,44 +478,43 @@ router.get("/open-data/geo/report-pins", async (req, res): Promise<void> => {
   const slice = parseSlice(String(req.query.slice ?? "30d").toLowerCase());
   try {
     const { resolvePlaceName, timeSliceStart } = await import("../lib/geoHelpers.js");
+    const { isSupabaseConfigured, recentGroundTruthCalls } = await import("../lib/supabase.js");
     const since = timeSliceStart(slice);
-    const rows = await withTenantContext(tenantId, async (tx) => {
-      const { groundTruthReportsTable } = await import("@workspace/db");
-      const q = tx
-        .select({
-          id: groundTruthReportsTable.id,
-          createdAt: groundTruthReportsTable.createdAt,
-          reportedLocation: groundTruthReportsTable.reportedLocation,
-          reportedQuadrant: groundTruthReportsTable.reportedQuadrant,
-          bcsScore: groundTruthReportsTable.bcsScore,
-          mortalityRate: groundTruthReportsTable.mortalityRate,
-          waterPointStatus: groundTruthReportsTable.waterPointStatus,
-          waterPointName: groundTruthReportsTable.waterPointName,
-          ndviVsBaselinePercent: groundTruthReportsTable.ndviVsBaselinePercent,
-          actionTag: groundTruthReportsTable.actionTag,
-        })
-        .from(groundTruthReportsTable);
-      return since
-        ? q.where(gte(groundTruthReportsTable.createdAt, since))
-        : q;
-    });
-    const pins = rows.map((r) => {
-      const geo = resolvePlaceName(r.reportedLocation);
+    // Read from Supabase ground_truth_calls. Fields not present on Supabase
+    // (reportedLocation, reportedQuadrant, waterPointName, ndviVsBaselinePercent,
+    // actionTag) are returned as null. reportedLocation resolves to the Isiolo
+    // centre ("unmapped") since no location is available.
+    const sbRows = isSupabaseConfigured()
+      ? ((await recentGroundTruthCalls(500)) ?? [])
+      : [];
+    const filteredRows = since
+      ? sbRows.filter((r) => new Date(r.created_at).getTime() >= since.getTime())
+      : sbRows;
+    const mortalityLabel = (rate: number | null): string | null => {
+      if (rate == null) return null;
+      if (rate >= 0.1) return "4-plus";
+      if (rate >= 0.02) return "1-3";
+      return "none";
+    };
+    const pins = filteredRows.map((r) => {
+      // reportedLocation is not available on ground_truth_calls; resolve
+      // to unmapped (Isiolo centre).
+      const geo = resolvePlaceName(null);
       return {
-        id: r.id,
+        id: r.call_id,
         lat: geo.lat,
         lon: geo.lon,
         placeName: geo.placeName,
         ward: geo.ward,
-        quadrant: r.reportedQuadrant,
-        mapped: geo.mapped,
-        bcsScore: r.bcsScore,
-        mortalityRate: r.mortalityRate,
-        waterPointStatus: r.waterPointStatus,
-        waterPointName: r.waterPointName,
-        ndviVsBaselinePercent: r.ndviVsBaselinePercent,
-        actionTag: r.actionTag,
-        createdAt: r.createdAt.toISOString(),
+        quadrant: null,
+        mapped: false,
+        bcsScore: r.bcs_score ?? null,
+        mortalityRate: mortalityLabel(r.mortality_rate ?? null),
+        waterPointStatus: r.water_point_status ?? null,
+        waterPointName: null,
+        ndviVsBaselinePercent: null,
+        actionTag: null,
+        createdAt: r.created_at,
       };
     });
     res.json({

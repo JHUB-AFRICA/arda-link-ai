@@ -1,7 +1,5 @@
 import WebSocket from "ws";
 import { logger } from "./logger.js";
-import { groundTruthReportsTable } from "@workspace/db";
-import { withTenantContext } from "./tenancy-context.js";
 
 const BROWSER_TENANT_ID = process.env.DETERMINISTIC_TENANT_ID ?? "bula-pesa";
 import { getLastResult } from "./intelligence.js";
@@ -883,63 +881,16 @@ async function endBrowserCall(
       endReason,
     });
 
-    const [report] = await withTenantContext(BROWSER_TENANT_ID, (tx) => tx
-      .insert(groundTruthReportsTable)
-      .values({
-        tenantId: BROWSER_TENANT_ID,
-        phone: phone ?? "browser-webrtc",
-        month,
-        timestamp: new Date(),
-        satelliteMetrics: last?.delta ?? null,
-        aiQuestion: "(Browser WebRTC demo)",
-        userFeedback: fullTranscript,
-        actionTag,
-        recordingUrl: null,
-        durationSeconds: null,
-        bcsScore: ind?.bcs_score ?? null,
-        bcsRawResponse: ind?.bcs_raw_response ?? null,
-        bcsSpecies: ind?.bcs_species ?? null,
-        bcsConfidence: ind?.bcs_confidence ?? null,
-        bcsFlagFollowup: ind?.bcs_flag_followup ?? null,
-        offtakeRate: ind?.offtake_rate ?? null,
-        offtakeRawResponse: ind?.offtake_raw_response ?? null,
-        mortalityRate: ind?.mortality_rate ?? null,
-        mortalityRawResponse: ind?.mortality_raw_response ?? null,
-        milkProduction: ind?.milk_production ?? null,
-        milkRawResponse: ind?.milk_raw_response ?? null,
-        waterTrekkingDistance: ind?.water_trekking_distance ?? null,
-        waterTrekkingRaw: ind?.water_trekking_raw ?? null,
-        waterPointName: ind?.water_point_name ?? null,
-        waterPointStatus: ind?.water_point_status ?? null,
-        waterPointRawResponse: ind?.water_point_raw_response ?? null,
-        supplementaryFeeding: ind?.supplementary_feeding ?? null,
-        supplementaryRawResponse: ind?.supplementary_raw_response ?? null,
-        reportedQuadrant: ind?.reported_quadrant ?? null,
-        reportedLocation: ind?.reported_location ?? null,
-        ndviScore: ndvi,
-        ndviVsBaselinePercent: ndviPct,
-        rainfall30dayMm: rainfall,
-        soilMoistureIndex: soilMoisture,
-        evaporationRate: et0,
-        rainfallEvapRatio: ratio,
-        indicatorsCollected: ind?.indicators_collected ?? null,
-        dataCompletenessPercent: completenessPct,
-        callDurationSeconds: callDurationSeconds || null,
-        trustScore: trust.score,
-        trustFlags: trust.flags,
-      })
-      .returning());
-    logTrustScore(phone, report?.id ?? null, trust);
+    logTrustScore(phone, null, trust);
     logger.info(
       {
-        id: report.id,
         actionTag,
         bcs: ind?.bcs_score,
         collected: ind?.indicators_collected,
         trustScore: trust.score,
         endReason,
       },
-      "[Ground Truth Saved] Browser session stored with structured indicators",
+      "[Ground Truth Processed] Browser session indicators extracted",
     );
   } catch (err) {
     logger.error({ err }, "Failed to save browser ground truth");

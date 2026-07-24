@@ -16,12 +16,15 @@
  * dashboard can render a "?" marker instead of a real position.
  */
 
-import { sql, avg, count, gte } from "drizzle-orm";
 import { withTenantContext } from "./tenancy-context.js";
 import {
-  groundTruthReportsTable,
   pastoralistsTable,
 } from "@workspace/db";
+import {
+  isSupabaseConfigured,
+  recentGroundTruthCalls,
+  type SbGroundTruthCallRead,
+} from "./supabase.js";
 
 export interface ResolvedLocation {
   lat: number;
@@ -156,8 +159,6 @@ export async function computeWardAggregates(
   const tenantIds = wantsAdmin
     ? ["bula-pesa", "ngare-mara", "burat"]
     : [tenantId];
-  const { timeSliceStart: tss } = await import("./openData.js");
-  const since = tss(slice);
   // Always load every pastoralist + report once; we resolve the
   // place name to a ward in JS rather than in SQL (no GIS function
   // for our hand-curated place-name table).
@@ -169,12 +170,10 @@ export async function computeWardAggregates(
     camels: number;
   };
   type ReportRow = {
-    id: number;
-    createdAt: Date;
-    reportedLocation: string | null;
+    reportedLocation: null;
     bcsScore: number | null;
     mortalityRate: string | null;
-    ndviVsBaselinePercent: number | null;
+    ndviVsBaselinePercent: null;
   };
   const allPastoralists: PastoralistRow[] = [];
   const allReports: ReportRow[] = [];
@@ -190,21 +189,28 @@ export async function computeWardAggregates(
         })
         .from(pastoralistsTable);
       allPastoralists.push(...ps);
-      const q = tx
-        .select({
-          id: groundTruthReportsTable.id,
-          createdAt: groundTruthReportsTable.createdAt,
-          reportedLocation: groundTruthReportsTable.reportedLocation,
-          bcsScore: groundTruthReportsTable.bcsScore,
-          mortalityRate: groundTruthReportsTable.mortalityRate,
-          ndviVsBaselinePercent: groundTruthReportsTable.ndviVsBaselinePercent,
-        })
-        .from(groundTruthReportsTable);
-      const rows = since
-        ? await q.where(gte(groundTruthReportsTable.createdAt, since))
-        : await q;
-      allReports.push(...rows);
     });
+  }
+  // Read from Supabase ground_truth_calls — no reportedLocation or
+  // ndviVsBaselinePercent available; those fields return null.
+  if (isSupabaseConfigured()) {
+    const sbRows = await recentGroundTruthCalls(500);
+    for (const r of sbRows ?? []) {
+      const mortalityLabel =
+        r.mortality_rate == null
+          ? null
+          : r.mortality_rate >= 0.1
+            ? "4-plus"
+            : r.mortality_rate >= 0.02
+              ? "1-3"
+              : "none";
+      allReports.push({
+        reportedLocation: null,
+        bcsScore: r.bcs_score ?? null,
+        mortalityRate: mortalityLabel,
+        ndviVsBaselinePercent: null,
+      });
+    }
   }
 
   switch (metric) {

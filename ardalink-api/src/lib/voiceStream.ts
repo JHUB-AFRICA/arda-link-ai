@@ -16,7 +16,6 @@ import {
 } from "./openai.js";
 import { computeTrustScore, logTrustScore } from "./trustScore.js";
 import { logger } from "./logger.js";
-import { db, groundTruthReportsTable } from "@workspace/db";
 import type { VegetationDelta } from "./baseline.js";
 import { droughtLabel, maiLabel } from "./climate.js";
 import { isSpeechConfigured, textToSpeech } from "./speech.js";
@@ -752,62 +751,16 @@ async function endCall(
       endReason: "unknown",
     });
 
-    const [report] = await db
-      .insert(groundTruthReportsTable)
-      .values({
-        phone: phone || null,
-        month,
-        timestamp: new Date(),
-        satelliteMetrics: session?.delta ?? null,
-        aiQuestion: session?.question ?? null,
-        userFeedback: fullTranscript,
-        actionTag,
-        recordingUrl: null,
-        durationSeconds: null,
-        bcsScore: ind?.bcs_score ?? null,
-        bcsRawResponse: ind?.bcs_raw_response ?? null,
-        bcsSpecies: ind?.bcs_species ?? null,
-        bcsConfidence: ind?.bcs_confidence ?? null,
-        bcsFlagFollowup: ind?.bcs_flag_followup ?? null,
-        offtakeRate: ind?.offtake_rate ?? null,
-        offtakeRawResponse: ind?.offtake_raw_response ?? null,
-        mortalityRate: ind?.mortality_rate ?? null,
-        mortalityRawResponse: ind?.mortality_raw_response ?? null,
-        milkProduction: ind?.milk_production ?? null,
-        milkRawResponse: ind?.milk_raw_response ?? null,
-        waterTrekkingDistance: ind?.water_trekking_distance ?? null,
-        waterTrekkingRaw: ind?.water_trekking_raw ?? null,
-        waterPointName: ind?.water_point_name ?? null,
-        waterPointStatus: ind?.water_point_status ?? null,
-        waterPointRawResponse: ind?.water_point_raw_response ?? null,
-        supplementaryFeeding: ind?.supplementary_feeding ?? null,
-        supplementaryRawResponse: ind?.supplementary_raw_response ?? null,
-        reportedQuadrant: ind?.reported_quadrant ?? null,
-        reportedLocation: ind?.reported_location ?? null,
-        ndviScore: ndvi,
-        ndviVsBaselinePercent: ndviPct,
-        rainfall30dayMm: rainfall,
-        soilMoistureIndex: soilMoisture,
-        evaporationRate: et0,
-        rainfallEvapRatio: ratio,
-        indicatorsCollected: ind?.indicators_collected ?? null,
-        dataCompletenessPercent: completenessPct,
-        trustScore: trust.score,
-        trustFlags: trust.flags,
-      })
-      .returning();
-
-    logTrustScore(phone || null, report?.id ?? null, trust);
+    logTrustScore(phone || null, null, trust);
     logger.info(
       {
-        id: report.id,
         actionTag,
         phone,
         bcs: ind?.bcs_score,
         collected: ind?.indicators_collected,
         trustScore: trust.score,
       },
-      "[Ground Truth Saved] Realtime conversation stored with structured indicators",
+      "[Ground Truth Processed] Realtime conversation indicators extracted",
     );
   } catch (err) {
     logger.error({ err, phone }, "Failed to save ground truth");

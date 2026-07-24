@@ -21,14 +21,12 @@
  * pipeline.
  */
 
-import { groundTruthReportsTable } from "@workspace/db";
 import { logger } from "./logger.js";
 import { getLastResult } from "./intelligence.js";
 import { extractIndicators, generateActionTag } from "./openai.js";
 import { computeTrustScore, logTrustScore } from "./trustScore.js";
 import { touchPastoralistLastContact } from "./pastoralistContact.js";
 import { fastTranscribe, isSpeechConfigured } from "./speech.js";
-import { withTenantContext } from "./tenancy-context.js";
 import {
   insertGroundTruthCall,
   isSupabaseConfigured,
@@ -175,77 +173,26 @@ export async function processDeterministicVoiceRecording(
   });
 
   try {
-    const [report] = await withTenantContext(DEFAULT_TENANT_ID, (tx) =>
-      tx
-        .insert(groundTruthReportsTable)
-        .values({
-          tenantId: DEFAULT_TENANT_ID,
-          phone: input.phone ?? "deterministic-voice",
-          month,
-          timestamp: new Date(),
-          satelliteMetrics: last?.delta ?? null,
-          aiQuestion: `${input.categoryLabel} voice report`,
-          userFeedback,
-          actionTag,
-          recordingUrl: input.recordingUrl,
-          durationSeconds,
-          bcsScore: indicators?.bcs_score ?? null,
-          bcsRawResponse: indicators?.bcs_raw_response ?? null,
-          bcsSpecies: indicators?.bcs_species ?? null,
-          bcsConfidence: indicators?.bcs_confidence ?? null,
-          bcsFlagFollowup: indicators?.bcs_flag_followup ?? null,
-          offtakeRate: indicators?.offtake_rate ?? null,
-          offtakeRawResponse: indicators?.offtake_raw_response ?? null,
-          mortalityRate: indicators?.mortality_rate ?? null,
-          mortalityRawResponse: indicators?.mortality_raw_response ?? null,
-          milkProduction: indicators?.milk_production ?? null,
-          milkRawResponse: indicators?.milk_raw_response ?? null,
-          waterTrekkingDistance: indicators?.water_trekking_distance ?? null,
-          waterTrekkingRaw: indicators?.water_trekking_raw ?? null,
-          waterPointName: indicators?.water_point_name ?? null,
-          waterPointStatus: indicators?.water_point_status ?? null,
-          waterPointRawResponse: indicators?.water_point_raw_response ?? null,
-          supplementaryFeeding: indicators?.supplementary_feeding ?? null,
-          supplementaryRawResponse:
-            indicators?.supplementary_raw_response ?? null,
-          reportedQuadrant: indicators?.reported_quadrant ?? null,
-          reportedLocation: indicators?.reported_location ?? null,
-          ndviScore: ndvi,
-          ndviVsBaselinePercent: ndviPct,
-          rainfall30dayMm: rainfall,
-          soilMoistureIndex: soilMoisture,
-          evaporationRate: et0,
-          rainfallEvapRatio: ratio,
-          indicatorsCollected: indicators?.indicators_collected ?? null,
-          dataCompletenessPercent: completenessPct,
-          callDurationSeconds: durationSeconds,
-          trustScore: trust.score,
-          trustFlags: trust.flags,
-        })
-        .returning(),
-    );
-
-    logTrustScore(input.phone ?? "deterministic", report?.id ?? null, trust);
+    logTrustScore(input.phone ?? "deterministic", null, trust);
     logger.info(
       {
-        id: report?.id,
         actionTag,
         bcs: indicators?.bcs_score,
         category: input.categoryId,
         collected: indicators?.indicators_collected,
         trustScore: trust.score,
       },
-      "[Deterministic] Ground truth stored (local mirror)",
+      "[Deterministic] Ground truth processed",
     );
 
     // Best-effort: bump last-contact so the dashboard shows this pastoralist
     // was reached today. Never blocks the pipeline.
     await touchPastoralistLastContact(input.phone);
 
-    // ─── Supabase mirror write ───────────────────────────────────────
-    // Supabase is source of truth: also write a thin ground_truth_calls
+    // ─── Supabase write ──────────────────────────────────────────────
+    // Supabase ground_truth_calls is the source of truth. Write the thin
     // row so downstream analytics and partner dashboards see the call.
-    // Failures are logged but never block — the local row is our backup.
+    // Failures are logged but never block.
     if (isSupabaseConfigured() && input.phone) {
       void writeSupabaseMirror({
         phone: input.phone,
@@ -261,22 +208,20 @@ export async function processDeterministicVoiceRecording(
 
     // ─── Post-call SMS handoff — closes the voice loop ───────────────
     // Per the "no open loops" rule (2026-07-11), every completed voice
-    // call ends by sending a summary SMS in the caller's language. The
-    // herder walks away knowing what we captured and gets a written
-    // record they can re-read. Skip when we don't know who the caller
-    // is (tier='unknown') to avoid random-number spam.
+    // call ends by sending a summary SMS in the caller's language.
+    // Skip when we don't know who the caller is (tier='unknown').
     if (input.phone) {
       void sendPostCallSummary({
         phone: input.phone,
         indicators,
         actionTag,
-        reportId: report?.id ?? null,
+        reportId: null,
       });
     }
 
-    return report?.id ?? null;
+    return null;
   } catch (err) {
-    logger.error({ err }, "[Deterministic] Failed to insert ground-truth row");
+    logger.error({ err }, "[Deterministic] Failed to process ground-truth");
     return null;
   }
 }

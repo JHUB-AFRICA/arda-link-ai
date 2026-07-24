@@ -21,7 +21,6 @@ import {
   type Request,
   type Response,
 } from "express";
-import { groundTruthReportsTable } from "@workspace/db";
 import { logger } from "../lib/logger.js";
 import {
   buildLocalizedBrief,
@@ -32,7 +31,6 @@ import { fastTranscribe, isSpeechConfigured } from "../lib/speech.js";
 import { extractIndicators, generateActionTag } from "../lib/openai.js";
 import { getLastResult } from "../lib/intelligence.js";
 import { computeTrustScore, logTrustScore } from "../lib/trustScore.js";
-import { withTenantContext } from "../lib/tenancy-context.js";
 import { touchPastoralistLastContact } from "../lib/pastoralistContact.js";
 import {
   insertGroundTruthCall,
@@ -215,98 +213,27 @@ router.post("/talk/record", async (req: Request, res: Response): Promise<void> =
     endReason: "unknown",
   });
 
-  try {
-    const [report] = await withTenantContext(PUBLIC_TENANT_ID, (tx) =>
-      tx
-        .insert(groundTruthReportsTable)
-        .values({
-          tenantId: PUBLIC_TENANT_ID,
-          phone: phone || "public-talk",
-          month,
-          timestamp: new Date(),
-          satelliteMetrics: last?.delta ?? null,
-          aiQuestion: `${categoryLabel} voice report`,
-          userFeedback,
-          actionTag,
-          recordingUrl: null,
-          durationSeconds: null,
-          bcsScore: indicators?.bcs_score ?? null,
-          bcsRawResponse: indicators?.bcs_raw_response ?? null,
-          bcsSpecies: indicators?.bcs_species ?? null,
-          bcsConfidence: indicators?.bcs_confidence ?? null,
-          bcsFlagFollowup: indicators?.bcs_flag_followup ?? null,
-          offtakeRate: indicators?.offtake_rate ?? null,
-          offtakeRawResponse: indicators?.offtake_raw_response ?? null,
-          mortalityRate: indicators?.mortality_rate ?? null,
-          mortalityRawResponse: indicators?.mortality_raw_response ?? null,
-          milkProduction: indicators?.milk_production ?? null,
-          milkRawResponse: indicators?.milk_raw_response ?? null,
-          waterTrekkingDistance: indicators?.water_trekking_distance ?? null,
-          waterTrekkingRaw: indicators?.water_trekking_raw ?? null,
-          waterPointName: indicators?.water_point_name ?? null,
-          waterPointStatus: indicators?.water_point_status ?? null,
-          waterPointRawResponse: indicators?.water_point_raw_response ?? null,
-          supplementaryFeeding: indicators?.supplementary_feeding ?? null,
-          supplementaryRawResponse:
-            indicators?.supplementary_raw_response ?? null,
-          reportedQuadrant: indicators?.reported_quadrant ?? null,
-          reportedLocation: indicators?.reported_location ?? null,
-          ndviScore: ndvi,
-          ndviVsBaselinePercent: ndviPct,
-          rainfall30dayMm: rainfall,
-          soilMoistureIndex: soilMoisture,
-          evaporationRate: et0,
-          rainfallEvapRatio: ratio,
-          indicatorsCollected: indicators?.indicators_collected ?? null,
-          dataCompletenessPercent: completenessPct,
-          callDurationSeconds: null,
-          trustScore: trust.score,
-          trustFlags: trust.flags,
-        })
-        .returning(),
-    );
+  logTrustScore(phone || "public-talk", null, trust);
+  if (phone) {
+    await touchPastoralistLastContact(phone);
+  }
+  logger.info(
+    {
+      category,
+      phone: phone || "anon",
+      bcs: indicators?.bcs_score,
+      collected: indicators?.indicators_collected,
+      trustScore: trust.score,
+    },
+    "[Talk] ground truth processed",
+  );
 
-    logTrustScore(phone || "public-talk", report?.id ?? null, trust);
-    if (phone) {
-      await touchPastoralistLastContact(phone);
-    }
-    logger.info(
-      {
-        id: report?.id,
-        category,
-        phone: phone || "anon",
-        bcs: indicators?.bcs_score,
-        collected: indicators?.indicators_collected,
-        trustScore: trust.score,
-      },
-      "[Talk] ground truth stored (local mirror)",
-    );
-
-    // Supabase mirror — thin ground_truth_calls row. Non-blocking.
-    // Only mirrors when the pastoralist already exists on Supabase (i.e.
-    // has been enrolled out-of-band). We do NOT auto-upsert profiles —
-    // the pilot isn't live yet and pastoralists must not be auto-created.
-    if (isSupabaseConfigured() && phone) {
-      const past = await pastoralistByPhone(phone);
-      if (!past || !past.ward_id) {
-        // Skip the Supabase mirror silently. The local rich row is the
-        // source of truth until the pilot enrolls this herder.
-        res.json({
-          ok: true,
-          reportId: report?.id ?? null,
-          transcript: stt.transcript,
-          detectedLocale: stt.locale ?? null,
-          actionTag,
-          indicators,
-          trustScore: trust.score,
-          indicatorsCollected: indicators?.indicators_collected ?? 0,
-          dataCompletenessPercent: completenessPct,
-          herderContext: phone
-            ? await resolveHerderContext(phone, PUBLIC_TENANT_ID)
-            : null,
-        });
-        return;
-      }
+  // Supabase write — the source of truth. Non-blocking.
+  // Only writes when the pastoralist is already enrolled on Supabase
+  // (out-of-band). We do NOT auto-upsert profiles.
+  if (isSupabaseConfigured() && phone) {
+    const past = await pastoralistByPhone(phone);
+    if (past && past.ward_id) {
       const wardId = past.ward_id;
       const trekKm =
         indicators?.water_trekking_distance === "under_5km"
@@ -316,7 +243,6 @@ router.post("/talk/record", async (req: Request, res: Response): Promise<void> =
             : indicators?.water_trekking_distance === "over_10km"
               ? 12
               : null;
-      // Supabase mortality_rate + offtake_rate are proportions [0,1].
       const mortalityNum =
         indicators?.mortality_rate === "4-plus"
           ? 0.15
@@ -359,29 +285,26 @@ router.post("/talk/record", async (req: Request, res: Response): Promise<void> =
         if (r)
           logger.info(
             { call_id: r.call_id, wardId },
-            "[Talk] Supabase mirror ok",
+            "[Talk] Supabase ground_truth_calls write ok",
           );
       });
     }
-
-    const ctx = phone ? await resolveHerderContext(phone, PUBLIC_TENANT_ID) : null;
-
-    res.json({
-      ok: true,
-      reportId: report?.id ?? null,
-      transcript: stt.transcript,
-      detectedLocale: stt.locale ?? null,
-      actionTag,
-      indicators,
-      trustScore: trust.score,
-      indicatorsCollected: indicators?.indicators_collected ?? 0,
-      dataCompletenessPercent: completenessPct,
-      herderContext: ctx,
-    });
-  } catch (err) {
-    logger.error({ err }, "[Talk] ground-truth insert failed");
-    res.status(500).json({ error: "insert_failed" });
   }
+
+  const ctx = phone ? await resolveHerderContext(phone, PUBLIC_TENANT_ID) : null;
+
+  res.json({
+    ok: true,
+    reportId: null,
+    transcript: stt.transcript,
+    detectedLocale: stt.locale ?? null,
+    actionTag,
+    indicators,
+    trustScore: trust.score,
+    indicatorsCollected: indicators?.indicators_collected ?? 0,
+    dataCompletenessPercent: completenessPct,
+    herderContext: ctx,
+  });
 });
 
 export default router;
