@@ -107,14 +107,36 @@ The script:
 2. Starts Postgres in Docker on `:15432`.
 3. Starts Redis in Docker on `:6379`.
 4. Runs the migrations (idempotent — `IF NOT EXISTS` everywhere).
+   Migration `0003` realigns to the 5 canonical Isiolo wards and adds
+   the seven Supabase mirror tables. Migration `0004` inserts the
+   5 tenant operator logins + super-admin + per-tenant feature flags —
+   these are structural bootstrap, always applied.
 5. Creates the `ardalink_app` role with `NOSUPERUSER, NOBYPASSRLS`.
-6. Seeds 3 demo tenants + 36 ground-truth reports + 15 pastoralists.
+6. **`SEED_DEMO_DATA` gate**: by default the stack comes up with the
+   5 tenants and 6 operator logins but **zero pastoralists and zero
+   ground-truth reports** — a real-data-only DB. Real herder rows land
+   via USSD/SMS/voice. Set `SEED_DEMO_DATA=1` to also insert 15 fake
+   pastoralists + 36 fake ground-truth reports so the dashboard
+   renders as if the pilot had been running for a month; use this for
+   screenshots and demos, never for pilot analytics.
 7. Starts the engine on `:5001`.
 8. Starts the API on `:3000`.
 9. Starts the web server on `:8080` (serves dashboard + talk).
-10. Prints demo JWTs for all three tenants.
+10. Prints demo JWTs for the primary demo tenants.
 
 This takes ~90 seconds on a cold cache.
+
+**Real-data-only bring-up (default, recommended for pilot dry-runs):**
+
+```bash
+make up
+```
+
+**Demo bring-up with placeholder rows (for screenshots / walkthroughs):**
+
+```bash
+SEED_DEMO_DATA=1 make up
+```
 
 ### 2.5 Verify
 

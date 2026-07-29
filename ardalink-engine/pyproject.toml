@@ -14,6 +14,10 @@ dependencies = [
     # Force httplib2 >= 0.32.0 — 0.31.2 (transitive via google-auth-httplib2)
     # is flagged PYSEC-2026-3444 by pip-audit; explicit pin unblocks master CI.
     "httplib2>=0.32.0",
+    # Force pyasn1 >= 0.6.4 — 0.6.3 (transitive via pyasn1-modules ->
+    # google-auth) is flagged PYSEC-2026-3455/3456/3457 by pip-audit;
+    # explicit pin unblocks CI, same pattern as the httplib2 pin above.
+    "pyasn1>=0.6.4",
     "geopandas>=1.1.4",
     "networkx>=3.6.1",
     "psycopg2-binary>=2.9.12",

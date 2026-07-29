@@ -18,6 +18,12 @@
  */
 
 import { logger } from "./logger.js";
+import {
+  mirrorLeadInteraction,
+  mirrorPastoralistLead,
+  mirrorWeatherData,
+} from "./localMirror.js";
+import { type InsertLeadInteraction } from "@workspace/db";
 
 const CACHE_TTL_MS = parseInt(
   process.env.SUPABASE_CACHE_TTL_MS ?? "60000",
@@ -879,9 +885,35 @@ export const upsertPastoralistLead = async (
       return null;
     }
     const rows = (await res.json()) as SbPastoralistLead[];
-    return rows[0] ?? null;
+    const primary = rows[0] ?? null;
+    // Local mirror. Best-effort; runs even if the Supabase branch
+    // above returned null so a Supabase outage doesn't drop the lead.
+    await mirrorPastoralistLead({
+      phoneNumber: row.phone_number,
+      fullName: row.full_name ?? undefined,
+      preferredLanguage: row.preferred_language ?? undefined,
+      wardId: row.ward_id ?? undefined,
+      herdSize: row.herd_size ?? undefined,
+      enrollmentSource: row.enrollment_source ?? undefined,
+      status: row.status ?? undefined,
+      alertsEnabled: row.alerts_enabled ?? undefined,
+      notes: row.notes ?? undefined,
+    });
+    return primary;
   } catch (err) {
     logger.warn({ err }, "[Supabase] pastoralist_leads upsert crashed");
+    // Still attempt the local mirror on Supabase-side crash.
+    await mirrorPastoralistLead({
+      phoneNumber: row.phone_number,
+      fullName: row.full_name ?? undefined,
+      preferredLanguage: row.preferred_language ?? undefined,
+      wardId: row.ward_id ?? undefined,
+      herdSize: row.herd_size ?? undefined,
+      enrollmentSource: row.enrollment_source ?? undefined,
+      status: row.status ?? undefined,
+      alertsEnabled: row.alerts_enabled ?? undefined,
+      notes: row.notes ?? undefined,
+    });
     return null;
   }
 };
@@ -1081,9 +1113,10 @@ export interface SbLeadInteractionInsert {
 
 /**
  * Fire-and-forget log write. Never blocks — the caller's AT
- * response has already been formulated. Only touches Supabase; the
- * local mirror isn't used because interactions are analytics data,
- * not source-of-truth. Failures are warn-logged and swallowed.
+ * response has already been formulated. Dual-writes: Supabase primary
+ * (source of truth) + local Postgres mirror (best-effort, keeps the
+ * audit trail alive during a Supabase outage). Both failures are
+ * warn-logged and swallowed.
  */
 export const logLeadInteraction = async (
   row: SbLeadInteractionInsert,
@@ -1105,6 +1138,21 @@ export const logLeadInteraction = async (
   } catch (err) {
     logger.warn({ err, channel: row.channel }, "[Supabase] lead_interactions insert crashed");
   }
+  // Local mirror runs regardless of Supabase outcome — if Supabase is
+  // down we still capture the interaction; if the local pool is down
+  // Supabase still has the row.
+  await mirrorLeadInteraction({
+    phoneNumber: row.phone_number,
+    tier: row.tier,
+    channel: row.channel,
+    sessionId: row.session_id ?? null,
+    keyword: row.keyword ?? null,
+    inputText: row.input_text ?? null,
+    replyText: row.reply_text ?? null,
+    wardId: row.ward_id ?? null,
+    rawBody: (row.raw_body ?? null) as InsertLeadInteraction["rawBody"],
+    tenantId: null,
+  });
 };
 
 /**
@@ -1522,8 +1570,33 @@ export interface UpsertWeatherDataArgs {
   p_evapotranspiration_mm: number;
   p_source?: string;
 }
-export const upsertWeatherData = (args: UpsertWeatherDataArgs) =>
-  sbRpc<{ weather_data_id?: number } | null>("upsert_weather_data", args);
+export const upsertWeatherData = async (
+  args: UpsertWeatherDataArgs,
+): Promise<{ weather_data_id?: number } | null> => {
+  const primary = await sbRpc<{ weather_data_id?: number } | null>(
+    "upsert_weather_data",
+    args,
+  );
+  // Local mirror. Runs regardless of Supabase outcome so the forecast
+  // job keeps local `weather_data` warm during a Supabase outage.
+  await mirrorWeatherData({
+    wardId: args.p_ward_id,
+    observedDate: args.p_observed_date,
+    rainfallMm30d:
+      args.p_rainfall_mm_30d != null ? String(args.p_rainfall_mm_30d) : null,
+    humidityPct:
+      args.p_humidity_pct != null ? String(args.p_humidity_pct) : null,
+    temperatureC:
+      args.p_temperature_c != null ? String(args.p_temperature_c) : null,
+    evapotranspirationMm:
+      args.p_evapotranspiration_mm != null
+        ? String(args.p_evapotranspiration_mm)
+        : null,
+    source: args.p_source ?? null,
+    tenantId: null,
+  });
+  return primary;
+};
 
 /** Rebuild the `ward_cells` grid (~1 km default). Ops-only — recomputes
  *  ~27 k rows in one call. Do not fire in a request path. */
@@ -1535,4 +1608,126 @@ export const rebuildWardCells = (cellSizeM = 1000) =>
 
 export function clearSupabaseCache(): void {
   cache.clear();
+}
+
+/**
+ * Generic PostgREST GET for internal batch consumers (sync workers,
+ * backfill jobs). Always uses the `batch` timeout; never caches.
+ * Returns `null` on network error or non-2xx so callers can skip and
+ * retry on the next cycle.
+ */
+export async function sbQuery<T>(
+  path: string,
+  opts: { mode?: SupabaseMode } = {},
+): Promise<T[] | null> {
+  return sbGet<T>(path, { mode: opts.mode ?? "batch" });
+}
+
+// ── satellite_indices VCI snapshot write ───────────────────────────────────
+
+export interface SatelliteVciSnapshotArgs {
+  periodStart: string;    // "YYYY-MM-01"
+  periodEnd: string;      // "YYYY-MM-DD"
+  calendarMonth: number;
+  calendarYear: number;
+  ndviMean: number | null;
+  ndviMin: number | null;
+  ndviMax: number | null;
+  vciValue: number | null;
+  prosopisCorrected: boolean;
+  runId: string;
+}
+
+/**
+ * Persist a live GEE VCI snapshot to `satellite_indices` with
+ * `vci_value` already computed — so the hourly backfill job has
+ * nothing to patch on its next run.
+ *
+ * Strategy: GET the existing row first.
+ *   • Exists + has vci_value → skip (idempotent).
+ *   • Exists + vci_value null → PATCH the two known columns.
+ *   • Missing → INSERT a minimal row with the columns GEE provides.
+ *
+ * Columns not available from the live trigger (ndre_mean, ndwi_mean,
+ * etc.) are left NULL in the INSERT path — the full upsert_satellite_indices
+ * RPC fills them when the comprehensive ingest script runs.
+ */
+export async function persistSatelliteVciSnapshot(
+  wardId: string,
+  args: SatelliteVciSnapshotArgs,
+): Promise<boolean> {
+  if (args.vciValue == null) return false;
+  try {
+    // Check for an existing row this period.
+    const existing = await sbGet<{
+      satellite_index_id: number;
+      vci_value: number | null;
+    }>(
+      `satellite_indices?ward_id=eq.${encodeURIComponent(wardId)}&period_start=eq.${encodeURIComponent(args.periodStart)}&select=satellite_index_id,vci_value&limit=1`,
+      { mode: "batch" },
+    );
+
+    if (existing && existing.length > 0) {
+      if (existing[0]!.vci_value != null) return true; // already set
+      const patchRes = await sbFetch(
+        `satellite_indices?ward_id=eq.${encodeURIComponent(wardId)}&period_start=eq.${encodeURIComponent(args.periodStart)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            vci_value: args.vciValue,
+            ndvi_mean: args.ndviMean,
+          }),
+          headers: { Prefer: "return=minimal" },
+          sbMode: "batch",
+        },
+      );
+      if (!patchRes.ok) {
+        const body = await patchRes.text().catch(() => "");
+        logger.warn(
+          { status: patchRes.status, wardId, body: body.slice(0, 200) },
+          "[Supabase] satellite_indices VCI patch non-2xx",
+        );
+        return false;
+      }
+      return true;
+    }
+
+    // Insert new row with the columns the live trigger provides.
+    const payload: Record<string, unknown> = {
+      ward_id: wardId,
+      period_start: args.periodStart,
+      period_end: args.periodEnd,
+      calendar_month: args.calendarMonth,
+      calendar_year: args.calendarYear,
+      ndvi_mean: args.ndviMean,
+      vci_value: args.vciValue,
+      prosopis_corrected: args.prosopisCorrected,
+      source_collection: "MODIS/061/MOD13Q1",
+      run_id: args.runId,
+    };
+    if (args.ndviMin != null) payload.ndvi_min = args.ndviMin;
+    if (args.ndviMax != null) payload.ndvi_max = args.ndviMax;
+
+    const insertRes = await sbFetch("satellite_indices", {
+      method: "POST",
+      body: JSON.stringify(payload),
+      headers: { Prefer: "return=minimal" },
+      sbMode: "batch",
+    });
+    if (!insertRes.ok) {
+      const body = await insertRes.text().catch(() => "");
+      logger.warn(
+        { status: insertRes.status, wardId, body: body.slice(0, 300) },
+        "[Supabase] satellite_indices VCI insert non-2xx",
+      );
+      return false;
+    }
+    return true;
+  } catch (err) {
+    logger.warn(
+      { err: String(err), wardId },
+      "[Supabase] satellite_indices VCI snapshot write crashed",
+    );
+    return false;
+  }
 }

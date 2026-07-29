@@ -31,6 +31,8 @@ import {
   refreshSatelliteIndicesLatest,
   upsertWeatherData,
 } from "../lib/supabase.js";
+import { mirrorWeatherForecastBatch } from "../lib/localMirror.js";
+import type { InsertWeatherForecast } from "@workspace/db";
 
 // 5 Isiolo Sub-County ward centroids. Duplicated from wpdx.ts's
 // WARD_CENTROIDS because we lookup by ward_id here rather than
@@ -283,6 +285,7 @@ async function persistForecast(rows: ForecastRow[]): Promise<boolean> {
   const url = `${(process.env.SUPABASE_URL ?? "").replace(/\/$/, "")}/rest/v1/weather_forecast`;
   const key = (process.env.SUPABASE_SECRET_KEY ?? "").trim();
   if (!url || !key) return false;
+  let supabaseOk = false;
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -302,13 +305,33 @@ async function persistForecast(rows: ForecastRow[]): Promise<boolean> {
         { status: res.status, body: body.slice(0, 300) },
         "[ForecastJob] Supabase insert non-2xx",
       );
-      return false;
+    } else {
+      supabaseOk = true;
     }
-    return true;
   } catch (err) {
     logger.warn({ err: String(err) }, "[ForecastJob] Supabase insert crashed");
-    return false;
   }
+  // Local mirror runs regardless of Supabase outcome so a Supabase
+  // outage doesn't leave local `weather_forecast` empty.
+  const mirrorRows: InsertWeatherForecast[] = rows.map((r) => ({
+    wardId: r.ward_id,
+    targetDate: r.target_date,
+    horizonDays: r.horizon_days,
+    rainfallMmP5: String(r.rainfall_mm_p5),
+    rainfallMmP50: String(r.rainfall_mm_p50),
+    rainfallMmP95: String(r.rainfall_mm_p95),
+    precipitationProbability: String(r.precipitation_probability),
+    temperatureCMean:
+      r.temperature_c_mean != null ? String(r.temperature_c_mean) : null,
+    temperatureCMax:
+      r.temperature_c_max != null ? String(r.temperature_c_max) : null,
+    et0Mm: r.et0_mm != null ? String(r.et0_mm) : null,
+    source: r.source,
+    rawResponse: r.raw_response ?? null,
+    tenantId: null,
+  }));
+  await mirrorWeatherForecastBatch(mirrorRows);
+  return supabaseOk;
 }
 
 export async function runForecastJob(): Promise<void> {

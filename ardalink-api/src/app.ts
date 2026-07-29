@@ -4,6 +4,7 @@ import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { tenantMiddleware } from "./middlewares/tenant";
+import { getLastHeartbeat } from "./jobs/heartbeatJob";
 
 const app: Express = express();
 // Behind the Replit reverse proxy: trust X-Forwarded-For so req.ip is the
@@ -37,7 +38,20 @@ app.use(express.urlencoded({ extended: true }));
 app.use(tenantMiddleware);
 
 app.get("/api/healthz", (_req, res) => {
-  res.json({ status: "ok", service: "ardalink-api", version: "0.2.0" });
+  // `status: "ok"` is the process-liveness signal — the server is up.
+  // `pipeline` is the data-freshness signal produced by heartbeatJob;
+  // external monitors alert on `pipeline.status !== "healthy"`.
+  const pipeline = getLastHeartbeat() ?? {
+    status: "unknown" as const,
+    checkedAt: null,
+    tables: [],
+  };
+  res.json({
+    status: "ok",
+    service: "ardalink-api",
+    version: "0.2.0",
+    pipeline,
+  });
 });
 
 app.get("/api/whoami", (req, res) => {

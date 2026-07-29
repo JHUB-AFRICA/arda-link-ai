@@ -28,15 +28,17 @@
  * are missing.
  */
 
-import { sql, count, avg, gte } from "drizzle-orm";
-import { db } from "@workspace/db";
+import { sql } from "drizzle-orm";
 import {
-  groundTruthReportsTable,
   pastoralistsTable,
 } from "@workspace/db";
 import { logger } from "./logger.js";
 import { CLIMATE_LAT_DEFAULT, CLIMATE_LON_DEFAULT } from "./climate.js";
 import { withTenantContext } from "./tenancy-context.js";
+import {
+  isSupabaseConfigured,
+  recentGroundTruthCalls,
+} from "./supabase.js";
 
 // ── Open-Meteo — historical climate (ERA5-based; archive goes back to 1940) ─
 
@@ -519,15 +521,11 @@ export async function computePerCountyAggregates(
 
   switch (metric) {
     case "reports": {
+      // Count from Supabase ground_truth_calls (source of truth).
       const out: Record<string, number> = { ISIOLO: 0 };
-      for (const t of tenantIds) {
-        const rows = await withTenantContext(t, async (tx) => {
-          const q = tx
-            .select({ n: count() })
-            .from(groundTruthReportsTable);
-          return since ? q.where(gte(groundTruthReportsTable.createdAt, since)) : q;
-        });
-        out["ISIOLO"] = (out["ISIOLO"] ?? 0) + Number(rows[0]?.n ?? 0);
+      if (isSupabaseConfigured()) {
+        const rows = await recentGroundTruthCalls(500);
+        out["ISIOLO"] = rows?.length ?? 0;
       }
       return {
         byCounty: out,
@@ -536,23 +534,18 @@ export async function computePerCountyAggregates(
       };
     }
     case "bcs": {
+      // Average BCS from Supabase ground_truth_calls.
       const out: Record<string, number | null> = { ISIOLO: null };
-      let sum = 0;
-      let n = 0;
-      for (const t of tenantIds) {
-        const rows = await withTenantContext(t, async (tx) => {
-          const q = tx
-            .select({ v: avg(groundTruthReportsTable.bcsScore) })
-            .from(groundTruthReportsTable);
-          return since ? q.where(gte(groundTruthReportsTable.createdAt, since)) : q;
-        });
-        const v = Number(rows[0]?.v ?? 0);
-        if (v > 0) {
-          sum += v;
-          n += 1;
+      if (isSupabaseConfigured()) {
+        const rows = await recentGroundTruthCalls(500);
+        const bcsValues = (rows ?? [])
+          .map((r) => r.bcs_score)
+          .filter((v): v is number => v != null && v > 0);
+        if (bcsValues.length > 0) {
+          const avg = bcsValues.reduce((a, b) => a + b, 0) / bcsValues.length;
+          out["ISIOLO"] = parseFloat(avg.toFixed(2));
         }
       }
-      out["ISIOLO"] = n > 0 ? parseFloat((sum / n).toFixed(2)) : null;
       return {
         byCounty: out,
         unit: "BCS (1-5)",
@@ -560,23 +553,9 @@ export async function computePerCountyAggregates(
       };
     }
     case "ndvi": {
+      // No ndviVsBaselinePercent equivalent on ground_truth_calls.
+      // Return null so the dashboard shows "no data" rather than a fabricated value.
       const out: Record<string, number | null> = { ISIOLO: null };
-      let sum = 0;
-      let n = 0;
-      for (const t of tenantIds) {
-        const rows = await withTenantContext(t, async (tx) => {
-          const q = tx
-            .select({ v: avg(groundTruthReportsTable.ndviVsBaselinePercent) })
-            .from(groundTruthReportsTable);
-          return since ? q.where(gte(groundTruthReportsTable.createdAt, since)) : q;
-        });
-        const v = Number(rows[0]?.v ?? 0);
-        if (v !== 0) {
-          sum += v;
-          n += 1;
-        }
-      }
-      out["ISIOLO"] = n > 0 ? parseFloat((sum / n).toFixed(1)) : null;
       return {
         byCounty: out,
         unit: "% vs 11-yr baseline",
@@ -859,70 +838,51 @@ export async function computeAlertMarkers(
     createdAt: string;
   }>
 > {
-  const wantsAdmin = tenantId === "admin";
-  const tenantIds = wantsAdmin
-    ? ["bula-pesa", "ngare-mara", "burat"]
-    : [tenantId];
-  const since = timeSliceStart(slice);
   const out: Array<{
     id: number;
     county: string;
     severity: "red" | "yellow";
     kind: string;
     message: string;
-    quadrant: string | null;
+    quadrant: null;
     createdAt: string;
   }> = [];
-  for (const t of tenantIds) {
-    const rows = await withTenantContext(t, async (tx) => {
-      const q = tx
-        .select({
-          id: groundTruthReportsTable.id,
-          createdAt: groundTruthReportsTable.createdAt,
-          bcsScore: groundTruthReportsTable.bcsScore,
-          mortalityRate: groundTruthReportsTable.mortalityRate,
-          waterPointStatus: groundTruthReportsTable.waterPointStatus,
-          waterPointName: groundTruthReportsTable.waterPointName,
-          reportedLocation: groundTruthReportsTable.reportedLocation,
-          reportedQuadrant: groundTruthReportsTable.reportedQuadrant,
-        })
-        .from(groundTruthReportsTable);
-      return since
-        ? q.where(gte(groundTruthReportsTable.createdAt, since))
-        : q;
-    });
-    for (const r of rows) {
-      if (r.bcsScore != null && r.bcsScore <= 2) {
+  // Read from Supabase ground_truth_calls. No reportedQuadrant available.
+  if (isSupabaseConfigured()) {
+    const rows = await recentGroundTruthCalls(500);
+    for (const r of rows ?? []) {
+      if (r.bcs_score != null && r.bcs_score <= 2) {
         out.push({
-          id: r.id,
+          id: 0,
           county: "ISIOLO",
           severity: "red",
           kind: "bcs_critical",
-          message: `Animals reported emaciated (BCS ${r.bcsScore.toFixed(1)})`,
-          quadrant: r.reportedQuadrant ?? null,
-          createdAt: r.createdAt.toISOString(),
+          message: `Animals reported emaciated (BCS ${r.bcs_score.toFixed(1)})`,
+          quadrant: null,
+          createdAt: r.created_at,
         });
       }
-      if (r.mortalityRate === "4-plus") {
+      // mortality_rate on Supabase is a proportion; >= 0.1 maps to "4-plus"
+      if (r.mortality_rate != null && r.mortality_rate >= 0.1) {
         out.push({
-          id: r.id,
+          id: 0,
           county: "ISIOLO",
           severity: "red",
           kind: "mortality_critical",
           message: "4+ animal deaths reported",
-          quadrant: r.reportedQuadrant ?? null,
-          createdAt: r.createdAt.toISOString(),
+          quadrant: null,
+          createdAt: r.created_at,
         });
       }
-      if (r.waterPointStatus === "dry" || r.waterPointStatus === "not_operational") {
+      if (r.water_point_status === "dry" || r.water_point_status === "not_operational") {
         out.push({
-          id: r.id,
+          id: 0,
           county: "ISIOLO",
           severity: "yellow",
           kind: "water_point_broken",
-          message: `Water point ${r.waterPointName ?? "(unnamed)"} — ${r.waterPointStatus === "dry" ? "dry" : "not operational"}`,
-          quadrant: r.reportedQuadrant ?? null,
-          createdAt: r.createdAt.toISOString(),
+          message: `Water point — ${r.water_point_status === "dry" ? "dry" : "not operational"}`,
+          quadrant: null,
+          createdAt: r.created_at,
         });
       }
     }

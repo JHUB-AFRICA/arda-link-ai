@@ -13,8 +13,10 @@
  */
 
 import { Router, type IRouter, type Request, type Response } from "express";
-import { desc, eq, gt, and } from "drizzle-orm";
-import { db, groundTruthReportsTable } from "@workspace/db";
+import {
+  isSupabaseConfigured,
+  recentGroundTruthCalls,
+} from "../../lib/supabase";
 import {
   parseVoiceInput,
   generateAiResponse,
@@ -34,7 +36,6 @@ import { getLastResult } from "../../lib/intelligence";
 import { fetchSatelliteVCI, type VCISnapshot } from "../../lib/engine";
 import { tenantForWardId } from "../../lib/wardMapping";
 import { computeTrustScore, logTrustScore } from "../../lib/trustScore";
-import { withTenantContext } from "../../lib/tenancy-context";
 import {
   resolveHerderContext,
   buildLocalizedBrief,
@@ -205,54 +206,64 @@ router.post("/token", async (req: Request, res: Response): Promise<void> => {
 /**
  * GET /api/demo/voice/latest-report
  *
- * Returns the most recent ground-truth report from a browser demo call
- * (phone = 'browser-webrtc') so the UI can show what the AI actually
- * extracted from the conversation — BCS, mortality, water status, etc.
- * Bypasses tenant RLS because demo calls aren't tenant-scoped.
+ * Returns the most recent ground-truth report recorded in the last 10
+ * minutes from Supabase ground_truth_calls. The demo UI uses this to
+ * show what the AI actually extracted from the conversation.
+ * Fields not present on ground_truth_calls (bcsSpecies, bcsConfidence,
+ * offtakeRate, milkProduction, waterTrekkingDistance, waterPointName,
+ * reportedLocation, reportedQuadrant, indicatorsCollected,
+ * dataCompletenessPercent, callDurationSeconds) are returned as null.
  */
 router.get(
   "/latest-report",
   async (_req: Request, res: Response): Promise<void> => {
     try {
-      const since = new Date(Date.now() - 10 * 60 * 1000);
-      const rows = await db
-        .select()
-        .from(groundTruthReportsTable)
-        .where(
-          and(
-            eq(groundTruthReportsTable.phone, "browser-webrtc"),
-            gt(groundTruthReportsTable.createdAt, since),
-          ),
-        )
-        .orderBy(desc(groundTruthReportsTable.createdAt))
-        .limit(1);
-      const row = rows[0];
+      if (!isSupabaseConfigured()) {
+        res.json({ report: null });
+        return;
+      }
+      const rows = await recentGroundTruthCalls(1);
+      const row = rows?.[0];
       if (!row) {
         res.json({ report: null });
         return;
       }
+      // Filter to only rows within the last 10 minutes
+      const since = Date.now() - 10 * 60 * 1000;
+      if (new Date(row.created_at).getTime() < since) {
+        res.json({ report: null });
+        return;
+      }
+      const mortalityLabel =
+        row.mortality_rate == null
+          ? null
+          : row.mortality_rate >= 0.1
+            ? "4-plus"
+            : row.mortality_rate >= 0.02
+              ? "1-3"
+              : "none";
       res.json({
         report: {
-          id: row.id,
-          createdAt: row.createdAt,
-          actionTag: row.actionTag,
-          bcsScore: row.bcsScore,
-          bcsSpecies: row.bcsSpecies,
-          bcsConfidence: row.bcsConfidence,
-          offtakeRate: row.offtakeRate,
-          mortalityRate: row.mortalityRate,
-          milkProduction: row.milkProduction,
-          waterTrekkingDistance: row.waterTrekkingDistance,
-          waterPointName: row.waterPointName,
-          waterPointStatus: row.waterPointStatus,
-          supplementaryFeeding: row.supplementaryFeeding,
-          reportedLocation: row.reportedLocation,
-          reportedQuadrant: row.reportedQuadrant,
-          indicatorsCollected: row.indicatorsCollected,
-          dataCompletenessPercent: row.dataCompletenessPercent,
-          callDurationSeconds: row.callDurationSeconds,
-          trustScore: row.trustScore,
-          transcript: row.userFeedback,
+          id: row.call_id,
+          createdAt: row.created_at,
+          actionTag: null,
+          bcsScore: row.bcs_score ?? null,
+          bcsSpecies: null,
+          bcsConfidence: null,
+          offtakeRate: null,
+          mortalityRate: mortalityLabel,
+          milkProduction: null,
+          waterTrekkingDistance: null,
+          waterPointName: null,
+          waterPointStatus: row.water_point_status ?? null,
+          supplementaryFeeding: row.supplementary_feeding ?? null,
+          reportedLocation: null,
+          reportedQuadrant: null,
+          indicatorsCollected: null,
+          dataCompletenessPercent: null,
+          callDurationSeconds: null,
+          trustScore: row.trust_score ?? null,
+          transcript: row.transcript ?? null,
         },
       });
     } catch (err) {
@@ -381,66 +392,15 @@ router.post(
     });
 
     try {
-      const [report] = await withTenantContext(DEMO_TENANT_ID, (tx) =>
-        tx
-          .insert(groundTruthReportsTable)
-          .values({
-            tenantId: DEMO_TENANT_ID,
-            phone: phone || "browser-deterministic",
-            month,
-            timestamp: new Date(),
-            satelliteMetrics: last?.delta ?? null,
-            aiQuestion: `${categoryLabel} voice report`,
-            userFeedback,
-            actionTag,
-            recordingUrl: null,
-            durationSeconds: null,
-            bcsScore: indicators?.bcs_score ?? null,
-            bcsRawResponse: indicators?.bcs_raw_response ?? null,
-            bcsSpecies: indicators?.bcs_species ?? null,
-            bcsConfidence: indicators?.bcs_confidence ?? null,
-            bcsFlagFollowup: indicators?.bcs_flag_followup ?? null,
-            offtakeRate: indicators?.offtake_rate ?? null,
-            offtakeRawResponse: indicators?.offtake_raw_response ?? null,
-            mortalityRate: indicators?.mortality_rate ?? null,
-            mortalityRawResponse: indicators?.mortality_raw_response ?? null,
-            milkProduction: indicators?.milk_production ?? null,
-            milkRawResponse: indicators?.milk_raw_response ?? null,
-            waterTrekkingDistance: indicators?.water_trekking_distance ?? null,
-            waterTrekkingRaw: indicators?.water_trekking_raw ?? null,
-            waterPointName: indicators?.water_point_name ?? null,
-            waterPointStatus: indicators?.water_point_status ?? null,
-            waterPointRawResponse: indicators?.water_point_raw_response ?? null,
-            supplementaryFeeding: indicators?.supplementary_feeding ?? null,
-            supplementaryRawResponse:
-              indicators?.supplementary_raw_response ?? null,
-            reportedQuadrant: indicators?.reported_quadrant ?? null,
-            reportedLocation: indicators?.reported_location ?? null,
-            ndviScore: ndvi,
-            ndviVsBaselinePercent: ndviPct,
-            rainfall30dayMm: rainfall,
-            soilMoistureIndex: soilMoisture,
-            evaporationRate: et0,
-            rainfallEvapRatio: ratio,
-            indicatorsCollected: indicators?.indicators_collected ?? null,
-            dataCompletenessPercent: completenessPct,
-            callDurationSeconds: null,
-            trustScore: trust.score,
-            trustFlags: trust.flags,
-          })
-          .returning(),
-      );
-
-      logTrustScore("browser-deterministic", report?.id ?? null, trust);
+      logTrustScore("browser-deterministic", null, trust);
       logger.info(
         {
-          id: report?.id,
           category,
           bcs: indicators?.bcs_score,
           collected: indicators?.indicators_collected,
           trustScore: trust.score,
         },
-        "[Demo Voice] deterministic ground truth stored",
+        "[Demo Voice] deterministic ground truth processed",
       );
 
       // Herder context lookup — used both for personalizing the reply
@@ -452,7 +412,7 @@ router.post(
 
       res.json({
         ok: true,
-        reportId: report?.id ?? null,
+        reportId: null,
         transcript: stt.transcript,
         detectedLocale: stt.locale ?? null,
         actionTag,
@@ -463,8 +423,8 @@ router.post(
         herderContext: ctx,
       });
     } catch (err) {
-      logger.error({ err }, "[Demo Voice] deterministic insert failed");
-      res.status(500).json({ error: "insert_failed" });
+      logger.error({ err }, "[Demo Voice] deterministic processing failed");
+      res.status(500).json({ error: "processing_failed" });
     }
   },
 );

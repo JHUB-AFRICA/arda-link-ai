@@ -2,7 +2,14 @@
  * Unit tests for the satellite job scheduler.
  */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+// ── Supabase mock — registered before any satelliteJob import ──────────────
+const mockPersist = vi.fn(() => Promise.resolve(true));
+vi.mock("../src/lib/supabase", () => ({
+  isSupabaseConfigured: () => true,
+  persistSatelliteVciSnapshot: mockPersist,
+}));
 
 // Mock the engine client before importing the job
 vi.mock("../src/lib/engine", () => ({
@@ -64,7 +71,10 @@ describe("Satellite job - interval calculation", () => {
 
 describe("Satellite job - enable/disable", () => {
   beforeEach(() => {
-    // Reset env var before each test
+    delete process.env.SATELLITE_JOB_ENABLED;
+  });
+
+  afterEach(() => {
     delete process.env.SATELLITE_JOB_ENABLED;
   });
 
@@ -119,5 +129,43 @@ describe("Jobs registry", () => {
     expect(typeof jobs.stopSatelliteJob).toBe("function");
     expect(typeof jobs.isSatelliteJobEnabled).toBe("function");
     expect(typeof jobs.getScheduleDescription).toBe("function");
+  });
+});
+
+describe("Satellite job — VCI persist (B6)", () => {
+  beforeEach(() => {
+    mockPersist.mockClear();
+  });
+
+  it("calls persistSatelliteVciSnapshot once per ward after a successful trigger", async () => {
+    const { runSatelliteJob } = await import("../src/jobs/satelliteJob");
+    await runSatelliteJob();
+    expect(mockPersist).toHaveBeenCalledTimes(5);
+  });
+
+  it("maps bula-pesa slug to numeric ward_id 242", async () => {
+    const { runSatelliteJob } = await import("../src/jobs/satelliteJob");
+    await runSatelliteJob();
+    expect(mockPersist).toHaveBeenCalledWith(
+      "242",
+      expect.objectContaining({ vciValue: 22.1 }),
+    );
+  });
+
+  it("maps wabera slug to numeric ward_id 241 and passes correct VCI", async () => {
+    const { runSatelliteJob } = await import("../src/jobs/satelliteJob");
+    await runSatelliteJob();
+    expect(mockPersist).toHaveBeenCalledWith(
+      "241",
+      expect.objectContaining({ vciValue: 40.2 }),
+    );
+  });
+
+  it("does not call persist when trigger returns null", async () => {
+    const engine = await import("../src/lib/engine");
+    vi.mocked(engine.triggerSatelliteRefresh).mockResolvedValueOnce(null);
+    const { runSatelliteJob } = await import("../src/jobs/satelliteJob");
+    await runSatelliteJob();
+    expect(mockPersist).not.toHaveBeenCalled();
   });
 });

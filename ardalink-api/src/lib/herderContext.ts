@@ -17,10 +17,9 @@
  *      the deterministic pipeline to compose personalized replies.
  */
 
-import { and, desc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   pastoralistsTable,
-  groundTruthReportsTable,
 } from "@workspace/db";
 import { withTenantContext } from "./tenancy-context.js";
 import { getLastResult } from "./intelligence.js";
@@ -36,6 +35,7 @@ import {
   computeVci,
   countWorseThanYears,
   identityForPhone,
+  recentGroundTruthCalls,
   type SbCallContext,
   type SbPastoralist,
   type SbPhoneIdentity,
@@ -492,8 +492,9 @@ async function overlayNeighborAdvice(
 
 /**
  * Enrich a Supabase-resolved context with fields only the local mirror
- * knows about (species breakdown, water_source, extraction detail from
- * the last ground_truth_reports row).
+ * knows about (species breakdown, water_source). Last ground-truth fields
+ * (bcsScore, bcsSpecies, actionTag, reportedLocation, reportedQuadrant) are
+ * sourced from Supabase ground_truth_calls; fields not present there are null.
  */
 async function enrichFromLocalMirror(
   ctx: HerderContext,
@@ -501,23 +502,11 @@ async function enrichFromLocalMirror(
 ): Promise<HerderContext> {
   if (!ctx.canonicalPhone) return ctx;
   try {
-    return await withTenantContext(tenantId, async (tx) => {
+    const enriched = await withTenantContext(tenantId, async (tx) => {
       const [pastoralist] = await tx
         .select()
         .from(pastoralistsTable)
         .where(eq(pastoralistsTable.phone, ctx.canonicalPhone))
-        .limit(1);
-
-      const [lastReport] = await tx
-        .select()
-        .from(groundTruthReportsTable)
-        .where(
-          and(
-            eq(groundTruthReportsTable.phone, ctx.canonicalPhone),
-            eq(groundTruthReportsTable.tenantId, tenantId),
-          ),
-        )
-        .orderBy(desc(groundTruthReportsTable.createdAt))
         .limit(1);
 
       return {
@@ -529,16 +518,30 @@ async function enrichFromLocalMirror(
         camels: pastoralist?.camels ?? ctx.camels,
         waterSource: pastoralist?.waterSource ?? ctx.waterSource,
         lastContactAt: pastoralist?.lastContactAt ?? ctx.lastContactAt,
-        lastBcsScore: lastReport?.bcsScore ?? ctx.lastBcsScore,
-        lastBcsSpecies: lastReport?.bcsSpecies ?? ctx.lastBcsSpecies,
-        lastActionTag: lastReport?.actionTag ?? ctx.lastActionTag,
-        lastReportedLocation:
-          lastReport?.reportedLocation ?? ctx.lastReportedLocation,
-        lastReportedQuadrant:
-          lastReport?.reportedQuadrant ?? ctx.lastReportedQuadrant,
-        lastReportAt: lastReport?.createdAt ?? ctx.lastReportAt,
       };
     });
+
+    // Backfill lastBcsScore from Supabase ground_truth_calls if available.
+    if (isSupabaseConfigured() && ctx.lastBcsScore == null) {
+      try {
+        const recent = await recentGroundTruthCalls(1);
+        const latest = recent?.[0];
+        if (latest) {
+          return {
+            ...enriched,
+            lastBcsScore: latest.bcs_score ?? null,
+            lastBcsSpecies: null,
+            lastActionTag: null,
+            lastReportedLocation: null,
+            lastReportedQuadrant: null,
+            lastReportAt: latest.created_at ? new Date(latest.created_at) : null,
+          };
+        }
+      } catch {
+        // ignore — Supabase unavailable
+      }
+    }
+    return enriched;
   } catch (err) {
     logger.warn({ err }, "[HerderContext] Local mirror enrichment failed");
     return ctx;
@@ -547,8 +550,8 @@ async function enrichFromLocalMirror(
 
 /**
  * Local-only fallback used when Supabase is unreachable or the herder
- * isn't in Supabase yet. Same shape/behavior as the pre-Supabase
- * version of this function.
+ * isn't in Supabase yet. Reads pastoralists table only; last ground-truth
+ * fields not available on the local mirror return null.
  */
 async function resolveFromLocalOnly(
   ctx: HerderContext,
@@ -564,18 +567,6 @@ async function resolveFromLocalOnly(
         .limit(1);
       if (!pastoralist) return ctx;
 
-      const [lastReport] = await tx
-        .select()
-        .from(groundTruthReportsTable)
-        .where(
-          and(
-            eq(groundTruthReportsTable.phone, ctx.canonicalPhone),
-            eq(groundTruthReportsTable.tenantId, tenantId),
-          ),
-        )
-        .orderBy(desc(groundTruthReportsTable.createdAt))
-        .limit(1);
-
       return {
         ...ctx,
         known: true,
@@ -590,12 +581,14 @@ async function resolveFromLocalOnly(
         camels: pastoralist.camels,
         waterSource: pastoralist.waterSource,
         lastContactAt: pastoralist.lastContactAt,
-        lastBcsScore: lastReport?.bcsScore ?? null,
-        lastBcsSpecies: lastReport?.bcsSpecies ?? null,
-        lastActionTag: lastReport?.actionTag ?? null,
-        lastReportedLocation: lastReport?.reportedLocation ?? null,
-        lastReportedQuadrant: lastReport?.reportedQuadrant ?? null,
-        lastReportAt: lastReport?.createdAt ?? null,
+        // ground_truth_reports dropped — these fields return null when only
+        // local data is available. Supabase ground_truth_calls is primary.
+        lastBcsScore: null,
+        lastBcsSpecies: null,
+        lastActionTag: null,
+        lastReportedLocation: null,
+        lastReportedQuadrant: null,
+        lastReportAt: null,
       };
     });
   } catch (err) {

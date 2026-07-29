@@ -28,3 +28,28 @@ export {
   type BackfillResult,
   type RunVciBackfillOptions,
 } from "./vciBackfillJob.js";
+
+export {
+  runSyncCycle,
+  startSyncJob,
+  stopSyncJob,
+  isSyncJobEnabled,
+  getLastSyncResult,
+  type SyncCycleResult,
+  type SyncTableResult,
+} from "./syncJob.js";
+
+export {
+  runHeartbeat,
+  startHeartbeatJob,
+  stopHeartbeatJob,
+  isHeartbeatJobEnabled,
+  getLastHeartbeat,
+  DEFAULT_CHECKS,
+  type HeartbeatSnapshot,
+  type TableHeartbeat,
+  type TableCheck,
+  type TableStatus,
+  type PipelineStatus,
+  type Role,
+} from "./heartbeatJob.js";

@@ -22,6 +22,8 @@ import {
   startSatelliteJob,
   startForecastJob,
   startVciBackfillJob,
+  startSyncJob,
+  startHeartbeatJob,
 } from "./jobs/index.js";
 import { consumeToken } from "./lib/callTokens.js";
 import { isTrustedOrigin } from "./lib/originGuard.js";
@@ -94,6 +96,24 @@ const httpServer = app.listen(port, (err) => {
     startVciBackfillJob();
   } catch (err) {
     logger.error({ err }, "VCI backfill job bootstrap failed");
+  }
+
+  // Start the 5-min Supabase → local sync (pastoralist_leads +
+  // weather_data). Keeps local mirror current for read fallbacks
+  // during Supabase outages.
+  try {
+    startSyncJob();
+  } catch (err) {
+    logger.error({ err }, "Sync job bootstrap failed");
+  }
+
+  // Start the 15-minute heartbeat probe (populates /api/healthz with
+  // per-table freshness so silent writer failures are caught before
+  // they corrupt pilot signal).
+  try {
+    startHeartbeatJob();
+  } catch (err) {
+    logger.error({ err }, "Heartbeat job bootstrap failed");
   }
 });
 

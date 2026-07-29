@@ -1,10 +1,4 @@
 import { Router, type IRouter, type Request } from "express";
-import { desc } from "drizzle-orm";
-import {
-  groundTruthReportsTable,
-  type GroundTruthReport,
-} from "@workspace/db";
-import { withTenantContext } from "../lib/tenancy-context.js";
 import {
   isSupabaseConfigured,
   recentGroundTruthCalls,
@@ -21,119 +15,33 @@ function requireTenant(req: Request): string {
 
 const router: IRouter = Router();
 
-interface ApiReport {
-  id: number;
-  createdAt: string;
-  phone: string | null;
-  month: string;
-  reportedQuadrant: string | null;
-  reportedLocation: string | null;
-  actionTag: string;
-  bcsScore: number | null;
-  bcsConfidence: string | null;
-  bcsSpecies: string | null;
-  bcsFlagFollowup: boolean | null;
-  offtakeRate: string | null;
-  mortalityRate: string | null;
-  milkProduction: string | null;
-  waterTrekkingDistance: string | null;
-  waterPointName: string | null;
-  waterPointStatus: string | null;
-  supplementaryFeeding: string | null;
-  ndviVsBaselinePercent: number | null;
-  rainfall30dayMm: number | null;
-  indicatorsCollected: number | null;
-  dataCompletenessPercent: number | null;
-  trustScore: number | null;
-  trustFlags: string[] | null;
-  userFeedback: string;
-}
-
-function toApiReport(r: GroundTruthReport): ApiReport {
-  return {
-    id: r.id,
-    createdAt: r.createdAt.toISOString(),
-    phone: r.phone,
-    month: r.month,
-    reportedQuadrant: r.reportedQuadrant,
-    reportedLocation: r.reportedLocation,
-    actionTag: r.actionTag,
-    bcsScore: r.bcsScore,
-    bcsConfidence: r.bcsConfidence,
-    bcsSpecies: r.bcsSpecies,
-    bcsFlagFollowup: r.bcsFlagFollowup,
-    offtakeRate: r.offtakeRate,
-    mortalityRate: r.mortalityRate,
-    milkProduction: r.milkProduction,
-    waterTrekkingDistance: r.waterTrekkingDistance,
-    waterPointName: r.waterPointName,
-    waterPointStatus: r.waterPointStatus,
-    supplementaryFeeding: r.supplementaryFeeding,
-    ndviVsBaselinePercent: r.ndviVsBaselinePercent,
-    rainfall30dayMm: r.rainfall30dayMm,
-    indicatorsCollected: r.indicatorsCollected,
-    dataCompletenessPercent: r.dataCompletenessPercent,
-    trustScore: r.trustScore,
-    trustFlags: Array.isArray(r.trustFlags)
-      ? (r.trustFlags as unknown[]).filter(
-          (v): v is string => typeof v === "string",
-        )
-      : null,
-    userFeedback: r.userFeedback,
-  };
-}
-
 /**
- * Shape of the dashboard's "merged" ground-truth row — the union of what
- * we can render from either the local rich schema or Supabase's thin one.
+ * Shape of the dashboard's "merged" ground-truth row — sourced solely from
+ * Supabase's ground_truth_calls now that the local table has been dropped.
  */
 interface MergedReport {
-  /** Where the row came from — badge in the dashboard. */
-  source: "local" | "supabase";
-  /** Present when source='local' — the local Postgres serial ID. */
-  localId: number | null;
-  /** Present when source='supabase' — the ground_truth_calls uuid. */
+  /** Where the row came from — always 'supabase' now. */
+  source: "supabase";
+  /** Always null — local Postgres ID no longer exists. */
+  localId: null;
+  /** The ground_truth_calls uuid. */
   callId: string | null;
   createdAt: string;
   phone: string | null;
   fullName: string | null;
   wardId: string | null;
-  actionTag: string | null;
+  actionTag: null;
   bcsScore: number | null;
-  bcsSpecies: string | null;
-  bcsConfidence: string | null;
+  bcsSpecies: null;
+  bcsConfidence: null;
   mortalityRate: string | null;
   waterPointStatus: string | null;
-  waterPointName: string | null;
+  waterPointName: null;
   supplementaryFeeding: string | null;
   trustScore: number | null;
-  indicatorsCollected: number | null;
-  dataCompletenessPercent: number | null;
+  indicatorsCollected: null;
+  dataCompletenessPercent: null;
   transcript: string | null;
-}
-
-function localToMerged(r: GroundTruthReport): MergedReport {
-  return {
-    source: "local",
-    localId: r.id,
-    callId: null,
-    createdAt: r.createdAt.toISOString(),
-    phone: r.phone,
-    fullName: null,
-    wardId: null,
-    actionTag: r.actionTag,
-    bcsScore: r.bcsScore,
-    bcsSpecies: r.bcsSpecies,
-    bcsConfidence: r.bcsConfidence,
-    mortalityRate: r.mortalityRate,
-    waterPointStatus: r.waterPointStatus,
-    waterPointName: r.waterPointName,
-    supplementaryFeeding: r.supplementaryFeeding,
-    trustScore: r.trustScore,
-    indicatorsCollected: r.indicatorsCollected,
-    dataCompletenessPercent: r.dataCompletenessPercent,
-    transcript: r.userFeedback,
-  };
 }
 
 function supabaseToMerged(r: SbGroundTruthCallRead): MergedReport {
@@ -179,13 +87,9 @@ function supabaseToMerged(r: SbGroundTruthCallRead): MergedReport {
 /**
  * GET /api/ground-truth/merged?limit=20
  *
- * Union view of local `ground_truth_reports` + Supabase `ground_truth_calls`
- * (via the joined pastoralist view). Each row carries a `source` badge so
- * the dashboard can show provenance. Rows are ordered by createdAt DESC.
- *
- * When Supabase is unconfigured we transparently fall back to local-only.
- * When Supabase times out or returns an error we still return the local
- * rows; the operator dashboard never has to wait on Supabase to load.
+ * Returns rows from Supabase `ground_truth_calls`. The `source` badge is
+ * always 'supabase'. When Supabase is unconfigured the endpoint returns an
+ * empty array.
  */
 router.get("/ground-truth/merged", async (req, res): Promise<void> => {
   const rawLimit = parseInt(String(req.query.limit ?? "20"), 10);
@@ -194,30 +98,17 @@ router.get("/ground-truth/merged", async (req, res): Promise<void> => {
     100,
   );
   try {
-    const tenantId = requireTenant(req);
-    const localP = withTenantContext(tenantId, (tx) =>
-      tx
-        .select()
-        .from(groundTruthReportsTable)
-        .orderBy(desc(groundTruthReportsTable.createdAt))
-        .limit(limit),
-    );
-    const supabaseP = isSupabaseConfigured()
-      ? recentGroundTruthCalls(limit)
-      : Promise.resolve(null);
+    requireTenant(req);
+    const supabaseRows = isSupabaseConfigured()
+      ? await recentGroundTruthCalls(limit)
+      : null;
 
-    const [locals, supabaseRows] = await Promise.all([localP, supabaseP]);
-
-    const rows: MergedReport[] = [
-      ...locals.map(localToMerged),
-      ...(supabaseRows ?? []).map(supabaseToMerged),
-    ];
-    rows.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    const rows: MergedReport[] = (supabaseRows ?? []).map(supabaseToMerged);
 
     res.json({
-      rows: rows.slice(0, limit),
+      rows,
       counts: {
-        local: locals.length,
+        local: 0,
         supabase: supabaseRows?.length ?? 0,
       },
       supabase: {
@@ -233,7 +124,7 @@ router.get("/ground-truth/merged", async (req, res): Promise<void> => {
 
 /**
  * GET /api/ground-truth/recent?limit=20
- * Returns the most recent ground-truth reports with structured indicators.
+ * Returns the most recent ground-truth calls from Supabase.
  */
 router.get("/ground-truth/recent", async (req, res): Promise<void> => {
   const rawLimit = parseInt(String(req.query.limit ?? "20"), 10);
@@ -243,15 +134,11 @@ router.get("/ground-truth/recent", async (req, res): Promise<void> => {
   );
 
   try {
-    const tenantId = requireTenant(req);
-    const rows = await withTenantContext(tenantId, (tx) =>
-      tx
-        .select()
-        .from(groundTruthReportsTable)
-        .orderBy(desc(groundTruthReportsTable.createdAt))
-        .limit(limit),
-    );
-    res.json(rows.map(toApiReport));
+    requireTenant(req);
+    const rows = isSupabaseConfigured()
+      ? ((await recentGroundTruthCalls(limit)) ?? []).map(supabaseToMerged)
+      : [];
+    res.json(rows);
   } catch (err) {
     req.log.error({ err }, "Failed to list recent ground-truth reports");
     res.status(500).json({ error: "Failed to load ground truth" });
@@ -262,25 +149,25 @@ interface QuadrantAggregate {
   quadrant: "NW" | "NE" | "SW" | "SE";
   bcsAverage: number | null;
   bcsSampleCount: number;
-  ndviAverage: number | null;
+  ndviAverage: null;
   reportCount: number;
 }
 
 interface StressAlert {
-  id: number;
+  id: string;
   createdAt: string;
   severity: "red" | "yellow";
   kind: "bcs_critical" | "mortality_critical" | "water_point_broken";
   message: string;
-  location: string | null;
-  quadrant: string | null;
+  location: null;
+  quadrant: null;
 }
 
 interface GroundTruthSummary {
   totalReports: number;
   reportsLast7Days: number;
-  averageCompletenessPercent: number | null;
-  bcsFollowupCount: number;
+  averageCompletenessPercent: null;
+  bcsFollowupCount: null;
   byQuadrant: QuadrantAggregate[];
   alerts: StressAlert[];
 }
@@ -289,94 +176,72 @@ const QUADRANTS = ["NW", "NE", "SW", "SE"] as const;
 
 /**
  * GET /api/ground-truth/summary
- * Returns per-quadrant BCS/NDVI aggregates + active stress alerts.
+ * Returns BCS aggregates + active stress alerts from Supabase ground_truth_calls.
+ * Fields that don't exist on ground_truth_calls (quadrant, ndvi, completeness)
+ * are returned as null/empty.
  */
 router.get("/ground-truth/summary", async (req, res): Promise<void> => {
   try {
-    const tenantId = requireTenant(req);
-    // Last 90 days of reports keeps the dashboard fresh without scanning everything
-    const rows = await withTenantContext(tenantId, (tx) =>
-      tx
-        .select()
-        .from(groundTruthReportsTable)
-        .orderBy(desc(groundTruthReportsTable.createdAt))
-        .limit(500),
-    );
+    requireTenant(req);
+
+    const rows = isSupabaseConfigured()
+      ? ((await recentGroundTruthCalls(500)) ?? [])
+      : [];
 
     const now = Date.now();
     const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
-
-    const completenessSamples = rows
-      .map((r) => r.dataCompletenessPercent)
-      .filter((v): v is number => v != null);
-    const avgCompleteness = completenessSamples.length
-      ? completenessSamples.reduce((a, b) => a + b, 0) /
-        completenessSamples.length
-      : null;
-
-    const byQuadrant: QuadrantAggregate[] = QUADRANTS.map((q) => {
-      const inQuad = rows.filter((r) => r.reportedQuadrant === q);
-      const bcsValues = inQuad
-        .map((r) => r.bcsScore)
-        .filter((v): v is number => v != null);
-      const ndviValues = inQuad
-        .map((r) => r.ndviVsBaselinePercent)
-        .filter((v): v is number => v != null);
-      return {
-        quadrant: q,
-        bcsAverage: bcsValues.length
-          ? bcsValues.reduce((a, b) => a + b, 0) / bcsValues.length
-          : null,
-        bcsSampleCount: bcsValues.length,
-        ndviAverage: ndviValues.length
-          ? ndviValues.reduce((a, b) => a + b, 0) / ndviValues.length
-          : null,
-        reportCount: inQuad.length,
-      };
-    });
-
-    // Generate alerts from the last 14 days only (older alerts are stale)
     const fourteenDaysAgo = now - 14 * 24 * 60 * 60 * 1000;
+
+    // No reportedQuadrant on ground_truth_calls — return empty quadrant breakdown.
+    const byQuadrant: QuadrantAggregate[] = QUADRANTS.map((q) => ({
+      quadrant: q,
+      bcsAverage: null,
+      bcsSampleCount: 0,
+      ndviAverage: null,
+      reportCount: 0,
+    }));
+
     const recentForAlerts = rows.filter(
-      (r) => r.createdAt.getTime() >= fourteenDaysAgo,
+      (r) => new Date(r.created_at).getTime() >= fourteenDaysAgo,
     );
 
     const alerts: StressAlert[] = [];
     for (const r of recentForAlerts) {
-      if (r.bcsScore != null && r.bcsScore <= 2) {
+      if (r.bcs_score != null && r.bcs_score <= 2) {
         alerts.push({
-          id: r.id,
-          createdAt: r.createdAt.toISOString(),
+          id: r.call_id,
+          createdAt: r.created_at,
           severity: "red",
           kind: "bcs_critical",
-          message: `Animals reported emaciated (BCS ${r.bcsScore.toFixed(1)})`,
-          location: r.reportedLocation,
-          quadrant: r.reportedQuadrant,
+          message: `Animals reported emaciated (BCS ${r.bcs_score.toFixed(1)})`,
+          location: null,
+          quadrant: null,
         });
       }
-      if (r.mortalityRate === "4-plus") {
+      // mortality_rate on Supabase is a proportion; "4-plus" maps to ~0.15+
+      if (r.mortality_rate != null && r.mortality_rate >= 0.1) {
         alerts.push({
-          id: r.id,
-          createdAt: r.createdAt.toISOString(),
+          id: r.call_id,
+          createdAt: r.created_at,
           severity: "red",
           kind: "mortality_critical",
           message: "4+ animal deaths reported in the last 2 weeks",
-          location: r.reportedLocation,
-          quadrant: r.reportedQuadrant,
+          location: null,
+          quadrant: null,
         });
       }
       if (
-        r.waterPointStatus === "not_operational" ||
-        r.waterPointStatus === "dry"
+        r.water_point_status === "not_operational" ||
+        r.water_point_status === "dry"
       ) {
         alerts.push({
-          id: r.id,
-          createdAt: r.createdAt.toISOString(),
+          id: r.call_id,
+          createdAt: r.created_at,
           severity: "yellow",
           kind: "water_point_broken",
-          message: `Water point ${r.waterPointName ?? "(unnamed)"} — ${r.waterPointStatus === "dry" ? "dry" : "not operational"}`,
-          location: r.waterPointName ?? r.reportedLocation,
-          quadrant: r.reportedQuadrant,
+          message: `Water point — ${r.water_point_status === "dry" ? "dry" : "not operational"}`,
+          location: null,
+          quadrant: null,
         });
       }
     }
@@ -384,10 +249,10 @@ router.get("/ground-truth/summary", async (req, res): Promise<void> => {
     const summary: GroundTruthSummary = {
       totalReports: rows.length,
       reportsLast7Days: rows.filter(
-        (r) => r.createdAt.getTime() >= sevenDaysAgo,
+        (r) => new Date(r.created_at).getTime() >= sevenDaysAgo,
       ).length,
-      averageCompletenessPercent: avgCompleteness,
-      bcsFollowupCount: rows.filter((r) => r.bcsFlagFollowup === true).length,
+      averageCompletenessPercent: null,
+      bcsFollowupCount: null,
       byQuadrant,
       alerts,
     };

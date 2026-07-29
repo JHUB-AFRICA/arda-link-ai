@@ -1,14 +1,16 @@
 import { Router, type IRouter, type Request } from "express";
-import { desc } from "drizzle-orm";
 import { z } from "zod";
-import { groundTruthReportsTable } from "@workspace/db";
-import { withTenantContext } from "../../lib/tenancy-context.js";
 import { completeJson } from "../../lib/llm/index.js";
 import { logger } from "../../lib/logger.js";
 import {
   buildBriefSystemPrompt,
   type BriefData,
 } from "../../lib/llm/prompts/tenant-brief.js";
+import {
+  isSupabaseConfigured,
+  recentGroundTruthCalls,
+  type SbGroundTruthCallRead,
+} from "../../lib/supabase.js";
 
 const router: IRouter = Router();
 
@@ -65,8 +67,6 @@ function parseLooseJson<T>(
   });
 }
 
-const QUADRANTS = ["NW", "NE", "SW", "SE"] as const;
-
 const briefResponseSchema = z.object({
   summary: z.string().max(2000),
   actions: z.array(z.string()).min(2).max(3),
@@ -77,11 +77,9 @@ type BriefResponse = z.infer<typeof briefResponseSchema>;
 /**
  * GET /api/intelligence/brief?lang=en|sw&regenerate=1
  *
- * Tenant-scoped intelligence brief generated live from
- * ground_truth_reports via the LLM layer. Cache: 1 hour per
- * (tenant_id, lang). Tenant safety: the LLM only ever sees
- * data fetched inside withTenantContext(tenantId, …) — no
- * cross-tenant data, no shared cache, no shared context.
+ * Tenant-scoped intelligence brief generated from Supabase ground_truth_calls.
+ * Fields not available on ground_truth_calls (ndviVsBaseline, quadrant
+ * breakdown, completeness) are omitted or set to zero/empty.
  */
 router.get("/intelligence/brief", async (req, res): Promise<void> => {
   try {
@@ -90,119 +88,90 @@ router.get("/intelligence/brief", async (req, res): Promise<void> => {
     const lang: "en" | "sw" = langRaw === "sw" ? "sw" : "en";
     const bypassCache = req.query.regenerate === "1";
 
-    // ── 1. Fetch tenant-scoped data ───────────────────────────────────
-    const data = await withTenantContext(tenantId, async (tx) => {
-      // Last 90 days of reports for the brief
-      const rows = await tx
-        .select()
-        .from(groundTruthReportsTable)
-        .orderBy(desc(groundTruthReportsTable.createdAt))
-        .limit(500);
+    // ── 1. Fetch data from Supabase ──────────────────────────────────
+    const rows: SbGroundTruthCallRead[] = isSupabaseConfigured()
+      ? ((await recentGroundTruthCalls(500)) ?? [])
+      : [];
 
-      const now = Date.now();
-      const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
-      const fourteenDaysAgo = now - 14 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+    const fourteenDaysAgo = now - 14 * 24 * 60 * 60 * 1000;
 
-      const totalReports = rows.length;
-      const reportsLast7Days = rows.filter(
-        (r) => r.createdAt.getTime() >= sevenDaysAgo,
-      ).length;
+    const totalReports = rows.length;
+    const reportsLast7Days = rows.filter(
+      (r) => new Date(r.created_at).getTime() >= sevenDaysAgo,
+    ).length;
 
-      const completenessSamples = rows
-        .map((r) => r.dataCompletenessPercent)
-        .filter((v): v is number => v != null);
-      const averageCompletenessPercent = completenessSamples.length
-        ? Math.round(
-            completenessSamples.reduce((a, b) => a + b, 0) /
-              completenessSamples.length,
-          )
-        : 0;
+    // No dataCompletenessPercent on ground_truth_calls
+    const averageCompletenessPercent = 0;
+    // No bcsFlagFollowup on ground_truth_calls
+    const bcsFollowupCount = 0;
 
-      const bcsFollowupCount = rows.filter(
-        (r) => r.bcsFlagFollowup === true,
-      ).length;
+    // No reportedQuadrant on ground_truth_calls — return empty quadrant breakdown.
+    const byQuadrant = (["NW", "NE", "SW", "SE"] as const).map((q) => ({
+      quadrant: q,
+      reportCount: 0,
+      bcsAverage: null,
+      ndviAverage: null,
+    }));
 
-      const byQuadrant = QUADRANTS.map((q) => {
-        const inQuad = rows.filter((r) => r.reportedQuadrant === q);
-        const bcsValues = inQuad
-          .map((r) => r.bcsScore)
-          .filter((v): v is number => v != null);
-        const ndviValues = inQuad
-          .map((r) => r.ndviVsBaselinePercent)
-          .filter((v): v is number => v != null);
-        return {
-          quadrant: q,
-          reportCount: inQuad.length,
-          bcsAverage: bcsValues.length
-            ? Math.round((bcsValues.reduce((a, b) => a + b, 0) / bcsValues.length) * 10) / 10
-            : null,
-          ndviAverage: ndviValues.length
-            ? Math.round(ndviValues.reduce((a, b) => a + b, 0) / ndviValues.length)
-            : null,
-        };
-      });
-
-      // Alerts (last 14 days, same rules as /api/ground-truth/summary)
-      const recentForAlerts = rows.filter(
-        (r) => r.createdAt.getTime() >= fourteenDaysAgo,
-      );
-      const alerts: BriefData["alerts"] = [];
-      for (const r of recentForAlerts) {
-        if (r.bcsScore != null && r.bcsScore <= 2) {
-          alerts.push({
-            id: r.id,
-            severity: "red",
-            kind: "bcs_critical",
-            message: `Animals reported emaciated (BCS ${r.bcsScore.toFixed(1)})`,
-            location: r.reportedLocation,
-            quadrant: r.reportedQuadrant,
-          });
-        }
-        if (r.mortalityRate === "4-plus") {
-          alerts.push({
-            id: r.id,
-            severity: "red",
-            kind: "mortality_critical",
-            message: "4+ animal deaths reported in the last 2 weeks",
-            location: r.reportedLocation,
-            quadrant: r.reportedQuadrant,
-          });
-        }
-        if (
-          r.waterPointStatus === "not_operational" ||
-          r.waterPointStatus === "dry"
-        ) {
-          alerts.push({
-            id: r.id,
-            severity: "yellow",
-            kind: "water_point_broken",
-            message: `Water point ${r.waterPointName ?? "(unnamed)"} — ${r.waterPointStatus === "dry" ? "dry" : "not operational"}`,
-            location: r.waterPointName ?? r.reportedLocation,
-            quadrant: r.reportedQuadrant,
-          });
-        }
+    // Alerts (last 14 days)
+    const recentForAlerts = rows.filter(
+      (r) => new Date(r.created_at).getTime() >= fourteenDaysAgo,
+    );
+    const alerts: BriefData["alerts"] = [];
+    for (const r of recentForAlerts) {
+      if (r.bcs_score != null && r.bcs_score <= 2) {
+        alerts.push({
+          id: 0, // no integer id on Supabase rows
+          severity: "red",
+          kind: "bcs_critical",
+          message: `Animals reported emaciated (BCS ${r.bcs_score.toFixed(1)})`,
+          location: null,
+          quadrant: null,
+        });
       }
+      // mortality_rate on Supabase is a proportion; >= 0.1 maps to "4-plus"
+      if (r.mortality_rate != null && r.mortality_rate >= 0.1) {
+        alerts.push({
+          id: 0,
+          severity: "red",
+          kind: "mortality_critical",
+          message: "4+ animal deaths reported in the last 2 weeks",
+          location: null,
+          quadrant: null,
+        });
+      }
+      if (
+        r.water_point_status === "not_operational" ||
+        r.water_point_status === "dry"
+      ) {
+        alerts.push({
+          id: 0,
+          severity: "yellow",
+          kind: "water_point_broken",
+          message: `Water point — ${r.water_point_status === "dry" ? "dry" : "not operational"}`,
+          location: null,
+          quadrant: null,
+        });
+      }
+    }
 
-      // Note: public.tenants isn't in the Drizzle schema yet; for the
-      // brief we surface the tenant_id as the display name. Operators
-      // already know their tenant.
-      const briefData: BriefData = {
-        tenant_id: tenantId,
-        display_name: tenantId,
-        region: "Isiolo County",
-        totalReports,
-        reportsLast7Days,
-        averageCompletenessPercent,
-        bcsFollowupCount,
-        byQuadrant,
-        alerts,
-      };
-      return briefData;
-    });
+    const briefData: BriefData = {
+      tenant_id: tenantId,
+      display_name: tenantId,
+      region: "Isiolo County",
+      totalReports,
+      reportsLast7Days,
+      averageCompletenessPercent,
+      bcsFollowupCount,
+      byQuadrant,
+      alerts,
+    };
 
-    // ── 2. Generate brief via LLM layer ───────────────────────────────
-    const systemPrompt = buildBriefSystemPrompt(data, lang);
-    const { complete, completeJson } = await import("../../lib/llm/index.js");
+    // ── 2. Generate brief via LLM layer ─────────────────────────────
+    const systemPrompt = buildBriefSystemPrompt(briefData, lang);
+    const { complete } = await import("../../lib/llm/index.js");
     const response = await complete(
       "summarize",
       {
@@ -216,17 +185,15 @@ router.get("/intelligence/brief", async (req, res): Promise<void> => {
       },
       { tenantId },
     );
-    // Parse the response content with the schema; tolerate trailing
-    // prose by extracting the first JSON object if needed.
     const parsed = parseLooseJson<BriefResponse>(response.content, briefResponseSchema);
 
-    // ── 3. Respond ───────────────────────────────────────────────────
+    // ── 3. Respond ──────────────────────────────────────────────────
     res.json({
       tenant_id: tenantId,
       lang,
       summary: parsed.summary,
       actions: parsed.actions,
-      data_sources: ["ground_truth_reports", "tenants"],
+      data_sources: ["ground_truth_calls", "tenants"],
       generated_at: new Date().toISOString(),
       provider: response.provider,
       model: response.model,
