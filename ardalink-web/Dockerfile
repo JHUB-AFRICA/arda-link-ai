@@ -8,9 +8,10 @@
 FROM node:24-bookworm-slim AS deps
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json .npmrc ./
 COPY dashboard/package.json dashboard/
 COPY talk/package.json talk/
+COPY packages ./packages
 RUN pnpm install --frozen-lockfile --prod=false
 
 # ---- Stage 2: build dashboard ----
@@ -18,7 +19,8 @@ FROM node:24-bookworm-slim AS build-dashboard
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 COPY --from=deps /app/node_modules ./node_modules
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json ./
+COPY packages ./packages
 COPY dashboard ./dashboard
 ENV BASE_PATH=/
 RUN pnpm --filter @workspace/dashboard run build
@@ -28,7 +30,8 @@ FROM node:24-bookworm-slim AS build-talk
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 COPY --from=deps /app/node_modules ./node_modules
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json tsconfig.base.json ./
+COPY packages ./packages
 COPY talk ./talk
 ENV BASE_PATH=/talk/
 RUN pnpm --filter @workspace/talk run build
