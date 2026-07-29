@@ -1,31 +1,9 @@
 import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger.js";
 import {
-  resolveHerderContext,
-  buildLocalizedBrief,
-  type HerderContext,
-} from "../lib/herderContext.js";
-import { centroidForTenant, nearestWorkingKnownPoints } from "../lib/wpdx.js";
-import { languageForCaller } from "../lib/voiceCopy.js";
-import {
-  sendWhatsappSessionMessage,
-  sendWhatsappInteractiveList,
-  sendWhatsappLocation,
-} from "../lib/threeSixtyDialog.js";
-import {
-  logWhatsappMessage,
-  hasPriorWhatsappMessages,
-  insertGroundTruthCall,
-  isSupabaseConfigured,
-  type SbWhatsappMessageInsert,
-} from "../lib/supabase.js";
-import { extractIndicators, generateActionTag } from "../lib/openai.js";
-import { mapExtractedIndicatorsToGroundTruthRow } from "../lib/groundTruthMapping.js";
-import { computeTrustScore, logTrustScore } from "../lib/trustScore.js";
-import { touchPastoralistLastContact } from "../lib/pastoralistContact.js";
-import { getLastResult } from "../lib/intelligence.js";
-
-const DEFAULT_TENANT_ID = process.env.DETERMINISTIC_TENANT_ID ?? "bula-pesa";
+  processInboundWhatsappMessage,
+  type NormalizedWaMessage,
+} from "../lib/whatsappTurn.js";
 
 /**
  * 360dialog forwards the Meta Cloud API webhook envelope verbatim.
@@ -33,24 +11,26 @@ const DEFAULT_TENANT_ID = process.env.DETERMINISTIC_TENANT_ID ?? "bula-pesa";
  * `.statuses[]` for delivery/read receipts — both can appear on the
  * same endpoint, sometimes interleaved.
  */
+interface WaMessage {
+  from?: string;
+  id?: string;
+  timestamp?: string;
+  type?: string;
+  text?: { body?: string };
+  interactive?: {
+    list_reply?: { id?: string; title?: string };
+    button_reply?: { id?: string; title?: string };
+  };
+  location?: { latitude?: number; longitude?: number };
+  audio?: { id?: string };
+}
+
 interface WaWebhookBody {
   entry?: Array<{
     changes?: Array<{
       value?: {
         contacts?: Array<{ wa_id?: string; profile?: { name?: string } }>;
-        messages?: Array<{
-          from?: string;
-          id?: string;
-          timestamp?: string;
-          type?: string;
-          text?: { body?: string };
-          interactive?: {
-            list_reply?: { id?: string; title?: string };
-            button_reply?: { id?: string; title?: string };
-          };
-          location?: { latitude?: number; longitude?: number };
-          audio?: { id?: string };
-        }>;
+        messages?: WaMessage[];
         statuses?: Array<{ id?: string; status?: string; recipient_id?: string }>;
       };
     }>;
@@ -64,226 +44,40 @@ function toE164(raw: string): string {
   return raw.startsWith("+") ? raw : `+${raw}`;
 }
 
-function logInbound(
-  from: string,
-  ctx: HerderContext,
-  messageType: SbWhatsappMessageInsert["message_type"],
-  bodyText: string | null,
-  rawPayload: unknown,
-): void {
-  void logWhatsappMessage({
-    phone_number: from,
-    tier: ctx.tier,
-    direction: "in",
-    message_type: messageType,
-    body_text: bodyText,
-    ward_id: ctx.wardId ?? null,
-    raw_payload: rawPayload,
-  });
-}
+/** Parses one Meta-Cloud-API-shaped inbound message into the shared normalized shape. */
+function fromMetaMessage(message: WaMessage): NormalizedWaMessage | null {
+  if (!message.from) return null;
+  const from = toE164(message.from);
 
-function logOutbound(
-  from: string,
-  ctx: HerderContext,
-  messageType: SbWhatsappMessageInsert["message_type"],
-  bodyText: string | null,
-  templateName?: string | null,
-): void {
-  void logWhatsappMessage({
-    phone_number: from,
-    tier: ctx.tier,
-    direction: "out",
-    message_type: messageType,
-    template_name: templateName ?? null,
-    body_text: bodyText,
-    ward_id: ctx.wardId ?? null,
-  });
-}
-
-/** The welcome interactive list — direct replacement for the USSD tree. */
-async function sendWelcomeList(from: string, lang: "sw" | "en"): Promise<void> {
-  await sendWhatsappInteractiveList(
-    from,
-    "Karibu ArdaLink",
-    lang === "sw"
-      ? "Chagua huduma unayotaka:"
-      : "Choose the service you need:",
-    lang === "sw" ? "Chagua" : "Choose",
-    [
-      {
-        title: lang === "sw" ? "Huduma" : "Services",
-        rows: [
-          {
-            id: "bula_pesa",
-            title: "Bula Pesa",
-            description: lang === "sw" ? "Hali ya ukame" : "Drought brief",
-          },
-          {
-            id: "malisho",
-            title: "Malisho",
-            description: lang === "sw" ? "Maeneo ya maji" : "Water points",
-          },
-          {
-            id: "ongea_na_ai",
-            title: "Ongea na AI",
-            description: lang === "sw" ? "Zungumza na AI" : "Talk to the AI",
-          },
-        ],
+  if (message.type === "location" && message.location) {
+    return {
+      from,
+      type: "location",
+      location: {
+        lat: message.location.latitude ?? 0,
+        lon: message.location.longitude ?? 0,
       },
-    ],
-  );
-}
-
-async function handleBulaPesa(
-  from: string,
-  ctx: HerderContext,
-  lang: "sw" | "en",
-): Promise<void> {
-  const brief = buildLocalizedBrief(ctx, lang);
-  await sendWhatsappSessionMessage(from, brief);
-  logOutbound(from, ctx, "text", brief);
-}
-
-async function handleMalisho(
-  from: string,
-  ctx: HerderContext,
-  lang: "sw" | "en",
-): Promise<void> {
-  // Bypass herderContext's overlayNearestWaterPoint (which drops
-  // lat/lon) — call wpdx.ts directly so we can send real map pins
-  // instead of USSD-style text lines.
-  const origin =
-    centroidForTenant(DEFAULT_TENANT_ID) ?? { lat: 0.3453, lon: 37.581 };
-  const points = nearestWorkingKnownPoints(origin, 3);
-  if (points.length === 0) {
-    const text =
-      lang === "sw" ? "Hakuna data ya WPDx bado." : "No WPDx data yet.";
-    await sendWhatsappSessionMessage(from, text);
-    logOutbound(from, ctx, "text", text);
-    return;
+      raw: message.location,
+    };
   }
-  const nearWard = ctx.wardName
-    ? `${lang === "sw" ? "karibu na" : "near"} ${ctx.wardName}`
-    : lang === "sw"
-      ? "karibu na kituo cha wodi"
-      : "near the ward center";
-  for (const p of points) {
-    await sendWhatsappLocation(from, p.point.lat, p.point.lon, p.displayName, nearWard);
-    logOutbound(from, ctx, "location", p.displayName);
+  if (message.type === "audio") {
+    return { from, type: "audio", audioRef: message.audio, raw: message.audio };
   }
-}
-
-async function handleOngeaAck(
-  from: string,
-  ctx: HerderContext,
-  lang: "sw" | "en",
-): Promise<void> {
-  const text =
-    lang === "sw"
-      ? "Sawa, niambie mifugo yako inaendeleaje."
-      : "Okay, tell me how your animals are doing.";
-  await sendWhatsappSessionMessage(from, text);
-  logOutbound(from, ctx, "text", text);
-}
-
-async function handleAudioNote(
-  from: string,
-  ctx: HerderContext,
-  lang: "sw" | "en",
-): Promise<void> {
-  const text =
-    lang === "sw"
-      ? "Ujumbe wa sauti unakuja hivi karibuni. Kwa sasa, tafadhali andika ujumbe wako."
-      : "Voice notes are coming soon. For now, please type your message.";
-  await sendWhatsappSessionMessage(from, text);
-  logOutbound(from, ctx, "text", text);
-}
-
-/**
- * Free-form conversational turn. Reuses the same channel-agnostic
- * pieces the voice deterministic pipeline uses: extractIndicators() /
- * generateActionTag() from openai.ts, computeTrustScore(), and
- * mapExtractedIndicatorsToGroundTruthRow() for the ground_truth_calls
- * write — nothing here is voice-specific.
- */
-async function handleFreeText(
-  from: string,
-  ctx: HerderContext,
-  lang: "sw" | "en",
-  rawText: string,
-): Promise<void> {
-  const { complete } = await import("../lib/llm/index.js");
-  const { buildWhatsappSystemPrompt } = await import(
-    "../lib/whatsappConversation.js"
-  );
-  const systemPrompt = buildWhatsappSystemPrompt(ctx, lang);
-  const last = getLastResult();
-  const month =
-    last?.month_name ??
-    new Date().toLocaleString("en", { month: "short" }).toUpperCase();
-
-  const [llmResponse, indicators, actionTag] = await Promise.all([
-    complete(
-      "multilingual",
-      {
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: rawText },
-        ],
-        temperature: 0.7,
-        maxTokens: 400,
-      },
-      { tenantId: DEFAULT_TENANT_ID },
-    ),
-    extractIndicators(rawText),
-    last?.delta
-      ? generateActionTag(rawText, {
-          aiQuestion: "WhatsApp free-text report",
-          month,
-          delta: last.delta,
-        })
-      : Promise.resolve("WhatsApp Report"),
-  ]);
-
-  const reply = llmResponse.content || (
-    lang === "sw" ? "Asante kwa ujumbe wako." : "Thanks for your message."
-  );
-  await sendWhatsappSessionMessage(from, reply);
-  logOutbound(from, ctx, "text", reply);
-
-  logger.info(
-    { from, actionTag, collected: indicators?.indicators_collected },
-    "[WhatsApp] Free-text turn processed",
-  );
-
-  if (
-    indicators &&
-    indicators.indicators_collected > 0 &&
-    ctx.pastoralistId &&
-    ctx.wardId &&
-    isSupabaseConfigured()
-  ) {
-    const trust = computeTrustScore({
-      indicators,
-      wardAnomalyPct: last?.live?.anomaly?.NDVI?.p50 ?? null,
-      callDurationSeconds: null,
-      endReason: "unknown",
-    });
-    logTrustScore(from, null, trust);
-    void insertGroundTruthCall(
-      mapExtractedIndicatorsToGroundTruthRow({
-        pastoralistId: ctx.pastoralistId,
-        wardId: ctx.wardId,
-        indicators,
-        trustScore: trust.score,
-        transcript: rawText,
-        sourceLanguage: lang,
-        channel: "whatsapp",
-      }),
-    );
+  if (message.type === "interactive") {
+    const listId = message.interactive?.list_reply?.id;
+    const buttonId = message.interactive?.button_reply?.id;
+    if (listId) {
+      return { from, type: "list_reply", replyId: listId, raw: message.interactive };
+    }
+    if (buttonId) {
+      return { from, type: "button_reply", replyId: buttonId, raw: message.interactive };
+    }
+    return null;
   }
-
-  await touchPastoralistLastContact(from);
+  if (message.type === "text" && message.text?.body) {
+    return { from, type: "text", text: message.text.body, raw: null };
+  }
+  return null;
 }
 
 router.post("/whatsapp-webhook", async (req, res): Promise<void> => {
@@ -297,69 +91,33 @@ router.post("/whatsapp-webhook", async (req, res): Promise<void> => {
 
   if (value.statuses && value.statuses.length > 0) {
     for (const status of value.statuses) {
-      void logWhatsappMessage({
-        phone_number: status.recipient_id ?? "unknown",
-        direction: "status",
-        message_type: "status",
-        body_text: status.status ?? null,
-        raw_payload: status,
-      });
+      try {
+        await processInboundWhatsappMessage({
+          from: status.recipient_id ?? "unknown",
+          type: "status",
+          status: {
+            id: status.id,
+            status: status.status,
+            recipientId: status.recipient_id,
+          },
+          raw: status,
+        });
+      } catch (err) {
+        logger.error({ err }, "[WhatsApp] status webhook handler error");
+      }
     }
     return;
   }
 
   const message = value.messages?.[0];
-  if (!message?.from) return;
-
-  const from = toE164(message.from);
+  if (!message) return;
+  const normalized = fromMetaMessage(message);
+  if (!normalized) return;
 
   try {
-    const ctx = await resolveHerderContext(from, DEFAULT_TENANT_ID);
-    const lang = languageForCaller(ctx);
-
-    if (message.type === "location" && message.location) {
-      logInbound(from, ctx, "location", null, message.location);
-      // Phase 0/1: log only. No herder-GPS-driven feature exists yet
-      // anywhere in the codebase — this just lands the first rows of it.
-      return;
-    }
-
-    if (message.type === "audio") {
-      logInbound(from, ctx, "audio", null, message.audio);
-      await handleAudioNote(from, ctx, lang);
-      return;
-    }
-
-    if (message.type === "interactive") {
-      const replyId =
-        message.interactive?.list_reply?.id ??
-        message.interactive?.button_reply?.id;
-      logInbound(from, ctx, "list_reply", replyId ?? null, message.interactive);
-      if (replyId === "bula_pesa") {
-        await handleBulaPesa(from, ctx, lang);
-      } else if (replyId === "malisho") {
-        await handleMalisho(from, ctx, lang);
-      } else if (replyId === "ongea_na_ai") {
-        await handleOngeaAck(from, ctx, lang);
-      }
-      return;
-    }
-
-    if (message.type === "text" && message.text?.body) {
-      const rawText = message.text.body;
-      logInbound(from, ctx, "text", rawText, null);
-
-      const seenBefore = await hasPriorWhatsappMessages(from);
-      if (!seenBefore) {
-        await sendWelcomeList(from, lang);
-        logOutbound(from, ctx, "interactive_list", "welcome_list");
-        return;
-      }
-      await handleFreeText(from, ctx, lang, rawText);
-      return;
-    }
+    await processInboundWhatsappMessage(normalized);
   } catch (err) {
-    logger.error({ err, from }, "[WhatsApp] webhook handler error");
+    logger.error({ err, from: normalized.from }, "[WhatsApp] webhook handler error");
   }
 });
 

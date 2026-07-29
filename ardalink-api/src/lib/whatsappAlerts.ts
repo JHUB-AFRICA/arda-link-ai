@@ -24,10 +24,8 @@ import { db, pastoralistsTable } from "@workspace/db";
 import { logger } from "./logger.js";
 import { resolveHerderContext } from "./herderContext.js";
 import { languageForCaller } from "./voiceCopy.js";
-import {
-  sendWhatsappTemplate,
-  type WaTemplateComponent,
-} from "./threeSixtyDialog.js";
+import { sendWhatsappTemplate } from "./whatsappProviderRegistry.js";
+import type { WaTemplateComponent } from "./whatsappProvider.js";
 
 const DEFAULT_TENANT_ID = process.env.DETERMINISTIC_TENANT_ID ?? "bula-pesa";
 const DROUGHT_ALERT_TEMPLATE = "drought_alert_utility";

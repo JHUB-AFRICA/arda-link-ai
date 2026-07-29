@@ -50,7 +50,7 @@ vi.mock("drizzle-orm", async () => {
   return { ...actual, eq: (column: unknown, value: unknown) => ({ column, value }) };
 });
 
-vi.mock("../src/lib/threeSixtyDialog.js", () => ({
+vi.mock("../src/lib/whatsappProviderRegistry.js", () => ({
   sendWhatsappTemplate: async () => fx.templateResult,
 }));
 

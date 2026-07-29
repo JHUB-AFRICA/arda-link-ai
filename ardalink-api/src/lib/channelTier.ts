@@ -14,12 +14,20 @@
  * No user-facing route in Phase 0/1 — this is a library the alert-
  * dispatch loop calls before each send so a stale tier doesn't waste a
  * billed template on a now-unreachable number.
+ *
+ * KNOWN GAP — WA_PROVIDER=evolution: the NOT_ON_WHATSAPP_ERROR_CODES
+ * check below inspects `waResponse.error.code`, which is 360dialog's
+ * Meta-passthrough error shape. evolutionApi.ts's client does not yet
+ * surface an equivalent error code (see its file header), so this
+ * probe will never downgrade a tier to `voice` while Evolution is the
+ * active provider — it'll just always read as reachable. Fix once
+ * Evolution's real error-body shape for this case is confirmed.
  */
 
 import { eq } from "drizzle-orm";
 import { db, pastoralistsTable, type PastoralistChannelTier } from "@workspace/db";
 import { logger } from "./logger.js";
-import { sendWhatsappTemplate } from "./threeSixtyDialog.js";
+import { sendWhatsappTemplate } from "./whatsappProviderRegistry.js";
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const RE_ENGAGEMENT_TEMPLATE = "re_engagement_check";

@@ -41,6 +41,13 @@
  */
 
 import { logger } from "./logger.js";
+import type {
+  WaSendResult,
+  WaTemplateComponent,
+  WaListSection,
+  WhatsappProvider,
+} from "./whatsappProvider.js";
+export type { WaSendResult, WaTemplateComponent, WaListSection };
 
 // ── Config ──────────────────────────────────────────────────────────────
 
@@ -119,22 +126,6 @@ export function _resetRateLimits(): void {
 }
 
 // ── Public API ──────────────────────────────────────────────────────────
-
-export interface WaSendResult {
-  ok: boolean;
-  skipped?: boolean;
-  reason?:
-    | "disabled"
-    | "rate_limited"
-    | "not_configured"
-    | "wa_error"
-    | "network_error"
-    | "outside_session_window"
-    | "unknown_tier";
-  waResponse?: unknown;
-  messageId?: string;
-  status?: string;
-}
 
 interface MetaErrorBody {
   error?: {
@@ -254,11 +245,6 @@ export async function sendWhatsappSessionMessage(
   );
 }
 
-export interface WaTemplateComponent {
-  type: "body" | "header" | "button";
-  parameters: Array<{ type: "text"; text: string }>;
-}
-
 /**
  * Approved-template send — the only way to reach a herder outside the
  * 24h session window (proactive drought alerts, opt-in, re-engagement).
@@ -322,11 +308,6 @@ export async function sendWhatsappTemplate(
     },
     { phone, kind: "template", templateName },
   );
-}
-
-export interface WaListSection {
-  title: string;
-  rows: Array<{ id: string; title: string; description?: string }>;
 }
 
 /** Interactive list message — renders the welcome menu (Bula Pesa / Malisho / Ongea na AI). */
@@ -425,3 +406,16 @@ export async function sendWhatsappLocation(
     { phone, kind: "location" },
   );
 }
+
+// ── WhatsappProvider adapter ────────────────────────────────────────────
+// Delegates to the functions above unchanged — added so the registry can
+// treat 360dialog and Evolution identically. Every named export above is
+// untouched; this is purely additive.
+export const threeSixtyDialogProvider: WhatsappProvider = {
+  isConfigured: isThreeSixtyDialogConfigured,
+  sendWhatsappSessionMessage,
+  sendWhatsappTemplate,
+  sendWhatsappInteractiveList,
+  sendWhatsappInteractiveButtons,
+  sendWhatsappLocation,
+};

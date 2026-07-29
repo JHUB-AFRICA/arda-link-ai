@@ -3,6 +3,8 @@
 > **Status**: strategic planning, approved direction — **WhatsApp becomes ArdaLink's primary delivery channel**, with voice, USSD, and SMS retained as a fallback tier for herders without a smartphone or data. This is a deliberate pivot from the voice-first architecture described in [`STATUS.md`](../STATUS.md) and [`voice.md`](./voice.md). This document is the strategic plan; it is followed by a separate implementation plan (routes, provider client, data model migration) once this direction is confirmed.
 >
 > Builds on the vendor research already done in [`whatsapp-delivery.md`](./whatsapp-delivery.md) (Meta Cloud API vs BSP vs self-hosted options, and the Jan 2026 Meta AI-chatbot policy). That doc's conclusion — "don't make WhatsApp primary, scope it for cooperative reps first" — is the position this plan supersedes, on explicit direction from the team.
+>
+> **Update (2026-07)**: Evolution API (self-hosted) added as a swappable second WhatsApp provider ahead of schedule — see `ardalink-api/src/lib/whatsappProviderRegistry.ts` and the "Delivery approach decision" section below.
 
 ---
 
@@ -225,7 +227,7 @@ Differences worth calling out explicitly:
 Per [`whatsapp-delivery.md`](./whatsapp-delivery.md)'s comparison, now decided **in favor of Tier-1 primary status**:
 
 - **MVP / submission / pilot: 360dialog (BSP)**. Fastest to a compliant, working primary channel — no owned template-approval plumbing, ~€49/mo + Meta's per-conversation fee, official Cloud API underneath so zero ban risk. This is what the Docker-packaged `ardalink-api` will call at `/api/whatsapp/*`.
-- **Scale trigger for revisiting self-hosted (Evolution API, Cloud-API mode)**: once conversation volume makes the BSP's fee meaningfully more expensive than running our own Postgres/Redis-backed gateway (same infra pattern `ardalink-api` already uses) — track this as a cost-crossover check in Phase 3, not a Phase 1 decision.
+- **Self-hosted (Evolution API, Cloud-API mode) is now implemented as a second provider behind the same interface** (`WhatsappProvider` in `ardalink-api/src/lib/whatsappProvider.ts`), selected via `WA_PROVIDER=360dialog|evolution`. 360dialog remains the **default** and the one actually receiving live traffic; Evolution is available to flip on per-environment without any app-layer code change, ahead of the original cost-crossover trigger, to de-risk the migration path early rather than build it under pressure once volume forces the question. The original scale-trigger reasoning (BSP fee vs. self-hosted infra cost) still governs *when to make Evolution the default*, not whether the capability exists. Evolution's wire protocol is its own simplified JSON shape, not Meta's — see `evolutionApi.ts`'s file header for the specifics, and note that non-text inbound message shapes (list/button replies, location, audio) are unverified against a live instance as of this writing.
 - **Do not use Baileys-mode self-hosting or OpenClaw** for this channel — both carry ban risk or are the wrong tool shape, as already established.
 
 ---

@@ -5,9 +5,11 @@ import request from "supertest";
 /**
  * Route-level tests for the WhatsApp webhook, following the same
  * dependency-mocking convention as voiceDeterministicPipeline.test.ts:
- * every collaborator (herderContext, wpdx, threeSixtyDialog, supabase,
- * openai) is mocked at module level so the test exercises whatsapp.ts's
- * own branching logic in isolation, not the full DB/Supabase/LLM stack.
+ * every collaborator (herderContext, wpdx, whatsappProviderRegistry,
+ * supabase, openai) is mocked at module level so the test exercises
+ * whatsapp.ts's parsing + whatsappTurn.ts's branching logic in
+ * isolation, not the full DB/Supabase/LLM stack or a real WhatsApp
+ * provider.
  *
  * A minimal local Express app (not the full createApp()) mounts just
  * the whatsapp router, avoiding the need to configure every other
@@ -82,7 +84,7 @@ vi.mock("../src/lib/wpdx.js", () => ({
   nearestWorkingKnownPoints: () => fx.waterPoints,
 }));
 
-vi.mock("../src/lib/threeSixtyDialog.js", () => ({
+vi.mock("../src/lib/whatsappProviderRegistry.js", () => ({
   sendWhatsappSessionMessage: async (phone: string, text: string) => {
     fx.sentSessionMessages.push({ phone, text });
     return { ok: true, messageId: "wamid.test" };
