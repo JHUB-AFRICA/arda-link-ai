@@ -14,6 +14,7 @@ import { Router, type IRouter } from "express";
 import ussdRouter from "./ussd.js";
 import smsRouter from "./sms.js";
 import voiceRouter from "./voice.js";
+import whatsappRouter from "./whatsapp.js";
 
 const router: IRouter = Router();
 
@@ -21,6 +22,7 @@ const router: IRouter = Router();
 router.use("/ussd", ussdRouter);
 router.use("/sms", smsRouter);
 router.use("/voice", voiceRouter);
+router.use("/whatsapp", whatsappRouter);
 
 // Demo home page
 router.get("/", (_req, res): void => {
@@ -132,6 +134,12 @@ router.get("/", (_req, res): void => {
         <div class="icon">📞</div>
         <h2>Voice Simulator <span class="badge">HERDER PATH</span></h2>
         <p>Deterministic phone-call flow: enter your phone → personalized opener plays → pick a category → record 20 s → Azure Speech → GPT-5 Mini extracts BCS/water/mortality → ground truth row. Mirrors the exact pipeline real herder calls run.</p>
+      </a>
+
+      <a href="/api/demo/whatsapp/simulator" class="card">
+        <div class="icon">💚</div>
+        <h2>WhatsApp Simulator <span class="badge">PRIMARY CHANNEL</span></h2>
+        <p>Welcome interactive list (Bula Pesa / Malisho / Ongea na AI) → real water-point pins → free-text turn through the same LLM + indicator extractor as voice. No 360dialog credentials needed — this exercises the real conversation logic without dispatching anywhere.</p>
       </a>
     </div>
 

@@ -19,10 +19,11 @@
 ```mermaid
 erDiagram
     tenants ||--o{ pastoralists : "has"
-    tenants ||--o{ ground_truth_reports : "has"
+    tenants ||--o{ ground_truth_calls : "has"
     tenants ||--o{ admin_users : "has"
     tenants ||--o{ tenant_feature_flags : "has"
-    pastoralists ||--o{ ground_truth_reports : "generates"
+    pastoralists ||--o{ ground_truth_calls : "generates"
+    pastoralists ||--o{ whatsapp_messages : "exchanges"
 
     tenants {
         text tenant_id PK
@@ -46,21 +47,45 @@ erDiagram
         boolean alerts_enabled
         integer alerts_sent
         timestamptz last_contact_at
+        text wa_id
+        text channel_tier
+        timestamptz last_tier_check_at
         timestamptz created_at
     }
 
-    ground_truth_reports {
-        serial id PK
+    ground_truth_calls {
+        text call_id PK
         text tenant_id FK
-        text session_id
         text phone
-        text month
+        text session_id
+        text pipeline_mode
+        text channel
         real bcs_score
-        text action_tag
-        integer trust_score
+        text bcs_species
+        text mortality_rate
+        text offtake_rate
+        text milk_production
+        text water_trekking_distance
+        text supplementary_feeding
         real ndvi_score
         real rainfall_30day_mm
+        integer trust_score
+        text transcript_summary
         timestamptz created_at
+    }
+
+    whatsapp_messages {
+        text message_id PK
+        text phone_number
+        text wa_id
+        text tier
+        text direction
+        text message_type
+        text template_name
+        text body_text
+        timestamptz session_expires_at
+        text ward_id
+        timestamptz occurred_at
     }
 
     admin_users {
@@ -115,14 +140,17 @@ CREATE TABLE tenants (
 );
 ```
 
-**Current tenants:**
+**Canonical tenants (5 active Isiolo Sub-County wards):**
 
-| tenant_id | display_name | Region |
-|-----------|-------------|--------|
-| `bula-pesa` | Bula Pesa Ward | Isiolo North |
-| `garbatulla` | Garbatulla Ward | Isiolo South |
-| `merti` | Merti Ward | Isiolo South |
-| `legacy` | Legacy (pre-multi-tenant) | — |
+| tenant_id | display_name | Ward ID | Region |
+|-----------|-------------|---------|--------|
+| `wabera` | Wabera Ward | 241 | Isiolo North |
+| `bula-pesa` | Bulla Pesa Ward | 242 | Isiolo North |
+| `ngare-mara` | Ngare Mara Ward | 245 | Isiolo North |
+| `burat` | Burat Ward | 246 | Isiolo South |
+| `oldonyiro` | Oldonyiro Ward | 247 | Isiolo South |
+
+Retired demo tenants `garbatulla`, `merti`, `kinna`, and `legacy` must not appear in any production code path. The ward-ID mapping is enforced in `ardalink-api/src/lib/wardMapping.ts`; use `knownWardIds()` rather than hard-coding slugs.
 
 ---
 
@@ -145,6 +173,9 @@ CREATE TABLE pastoralists (
     alerts_enabled   BOOLEAN     DEFAULT TRUE,
     alerts_sent      INTEGER     DEFAULT 0,
     last_contact_at  TIMESTAMPTZ,
+    wa_id            TEXT,                          -- WhatsApp's stable user identifier (added migration 0005)
+    channel_tier     TEXT        DEFAULT 'sms',      -- 'whatsapp' | 'voice' | 'ussd' | 'sms'
+    last_tier_check_at TIMESTAMPTZ,                  -- when channel_tier was last (re-)probed
     UNIQUE(tenant_id, phone)
 );
 ```
@@ -153,75 +184,53 @@ CREATE TABLE pastoralists (
 - `phone` is unique per tenant (same number may be enrolled in multiple tenants in edge cases).
 - `location` is currently free-text (e.g. `"Bula Pesa NW"`). A PostGIS point column is planned.
 - `herd_counts` (cattle + goats + camels) are used to weight drought impact assessments.
+- `channel_tier` drives the WhatsApp-first channel resolver (`src/lib/channelTier.ts`) — re-evaluated every 30 days per `Arda-link-AI-Docs/whatsapp-first-architecture.md`.
 
 ---
 
-### `ground_truth_reports` — Voice call data store
+### `ground_truth_calls` — Voice call data store (Supabase primary)
 
-The richest table. Every outbound AI voice call produces one row, containing the full set of pastoralist-reported livestock indicators alongside satellite correlations.
+Every AI voice call produces one row in Supabase `ground_truth_calls`. The local `ground_truth_reports` table was dropped (migration `0004_drop_ground_truth_reports.up.sql`); all call data now lands directly in Supabase via `insertGroundTruthCall()` in `src/lib/supabase.ts`.
 
 ```sql
-CREATE TABLE ground_truth_reports (
-    id                         SERIAL PRIMARY KEY,
-    created_at                 TIMESTAMPTZ,
-    session_id                 TEXT,
-    phone                      TEXT,
-    month                      TEXT        NOT NULL,    -- e.g. "2026-06"
-    timestamp                  TIMESTAMPTZ,
-    tenant_id                  TEXT,
-
-    -- AI conversation metadata
-    satellite_metrics          JSONB,       -- NDVI/VCI snapshot at call time
-    ai_question                TEXT,        -- Last AI prompt in transcript
-    user_feedback              TEXT        NOT NULL,
-    action_tag                 TEXT        NOT NULL,    -- e.g. "alert_triggered"
-    recording_url              TEXT,
-    duration_seconds           INTEGER,
+-- Supabase schema (abridged — see Supabase project for full DDL)
+CREATE TABLE ground_truth_calls (
+    call_id                TEXT        PRIMARY KEY,   -- UUID
+    tenant_id              TEXT        NOT NULL,
+    phone                  TEXT,                      -- E.164 herder phone
+    session_id             TEXT,                      -- AT session ID
+    pipeline_mode          TEXT,                      -- 'deterministic' | 'realtime'
+    channel                TEXT        DEFAULT 'voice', -- 'voice' | 'sms' | 'ussd' | 'whatsapp' (added migration 0005)
 
     -- Body Condition Score (ILRI/FAO standard, 1.0–5.0)
-    bcs_score                  REAL,
-    bcs_raw_response           TEXT,        -- Verbatim herder response
-    bcs_species                TEXT,        -- cattle | goat | camel
-    bcs_confidence             TEXT,        -- high | medium | low
-    bcs_flag_followup          BOOLEAN,
+    bcs_score              REAL,
+    bcs_species            TEXT,        -- cattle | goat | camel
+    bcs_confidence         TEXT,        -- high | medium | low
 
     -- Secondary herd indicators
-    offtake_rate               TEXT,        -- early | normal | not_selling
-    offtake_raw_response       TEXT,
-    mortality_rate             TEXT,        -- none | 1-3 | 4-plus
-    mortality_raw_response     TEXT,
-    milk_production            TEXT,        -- normal | reduced | stopped
-    milk_raw_response          TEXT,
-    water_trekking_distance    TEXT,        -- under_5km | 5-10km | over_10km
-    water_trekking_raw         TEXT,
-    water_point_name           TEXT,
-    water_point_status         TEXT,        -- operational | poor | dry
-    water_point_raw_response   TEXT,
-    supplementary_feeding      TEXT,        -- yes | no | planning
-    supplementary_raw_response TEXT,
+    mortality_rate         TEXT,        -- none | 1-3 | 4-plus
+    offtake_rate           TEXT,        -- early | normal | not_selling
+    milk_production        TEXT,        -- normal | reduced | stopped
+    water_trekking_distance TEXT,       -- under_5km | 5-10km | over_10km
+    supplementary_feeding  TEXT,        -- yes | no | planning
 
-    -- Spatial data
-    reported_quadrant          TEXT,        -- NW | NE | SW | SE | unknown
-    reported_location          TEXT,
+    -- Satellite snapshot at call time
+    ndvi_score             REAL,
+    rainfall_30day_mm      REAL,
 
-    -- Satellite correlations (captured at call time)
-    ndvi_score                 REAL,
-    ndvi_vs_baseline_percent   REAL,
-    rainfall_30day_mm          REAL,
-    soil_moisture_index        REAL,
-    evaporation_rate           REAL,
-    rainfall_evap_ratio        REAL,
+    -- Data quality
+    trust_score            INTEGER,     -- 0–100
+    transcript_summary     TEXT,
+    action_tag             TEXT,
 
-    -- Data quality metadata
-    data_methodology_version   TEXT        DEFAULT 'v1.0',
-    standards_applied          TEXT        DEFAULT 'ILRI/FAO BCS, FEWS NET, LEGS, WFP CSI',
-    call_duration_seconds      INTEGER,
-    indicators_collected       INTEGER,
-    data_completeness_percent  REAL,
-    trust_score                INTEGER,    -- 0–100
-    trust_flags                JSONB       -- array of penalty reasons
+    created_at             TIMESTAMPTZ
 );
 ```
+
+**Fields not in `ground_truth_calls`** (returned as `null` by all API reads):
+- `ndviVsBaselinePercent` — requires NDVI baseline lookup; compute via `vciBackfillJob` if needed
+- `reportedQuadrant`, `reportedLocation` — spatial fields; planned for a future migration
+- `waterPointName` / `waterPointStatus` — stored in WPDx snapshot (`src/lib/data/wpdxIsiolo.ts`), not per-call
 
 **Standards applied:**
 
@@ -231,6 +240,32 @@ CREATE TABLE ground_truth_reports (
 | FEWS NET | Famine Early Warning Systems Network | Drought phase classification |
 | LEGS | Livestock Emergency Guidelines and Standards | Response thresholds |
 | WFP CSI | Coping Strategies Index | Household stress proxy |
+
+---
+
+### `whatsapp_messages` — WhatsApp thread/audit log (added migration 0005)
+
+Append-only thread log for the WhatsApp channel — the WhatsApp analogue of `lead_interactions`, but with two rows per conversational turn (one `in`, one `out`) since WhatsApp's `message_type`/`template_name`/`session_expires_at` fields are richer and direction-specific. Written via `logWhatsappMessage()` in `src/lib/supabase.ts` (dual-write: Supabase primary + local mirror, same pattern as `logLeadInteraction`).
+
+```sql
+CREATE TABLE whatsapp_messages (
+    message_id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    phone_number        TEXT        NOT NULL,
+    wa_id               TEXT,
+    tier                TEXT,                     -- 'verified' | 'lead' | 'unknown', snapshot at send time
+    direction           TEXT        NOT NULL,      -- 'in' | 'out' | 'status'
+    message_type        TEXT        NOT NULL,      -- 'text' | 'template' | 'interactive_list' | 'interactive_buttons' | 'list_reply' | 'button_reply' | 'location' | 'audio' | 'status'
+    template_name       TEXT,
+    body_text           TEXT,
+    session_expires_at  TIMESTAMPTZ,
+    ward_id             TEXT,
+    occurred_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    raw_payload         JSONB,
+    tenant_id           TEXT
+);
+```
+
+See `Arda-link-AI-Docs/whatsapp-first-architecture.md` for the channel's full strategic design.
 
 ---
 
@@ -382,12 +417,25 @@ This is called inside every route handler that touches tenant-scoped data.
 | Table | RLS | Notes |
 |-------|-----|-------|
 | `pastoralists` | ✅ | |
-| `ground_truth_reports` | ✅ | |
+| `ground_truth_calls` | ✅ | Supabase primary; local `ground_truth_reports` dropped |
 | `tenant_feature_flags` | ✅ | |
-| `satellite_snapshots` | ✅ | |
-| `climate_snapshots` | ✅ | |
+| `satellite_snapshots` | ✅ | Per-call cache; Supabase `satellite_indices` is source of truth |
+| `climate_snapshots` | ✅ | Per-call cache; Supabase `weather_data` is source of truth |
 | `admin_users` | ❌ | Auth happens before context is set |
 | `tenants` | ❌ | Root table, accessed by admin only |
+
+### Local mirror tables (Supabase → local, synced every 5 min by `syncJob.ts`)
+
+| Mirror table | Supabase source | Notes |
+|---|---|---|
+| `pastoralist_leads` | `pastoralists` | Read fallback during Supabase outage |
+| `lead_interactions` | `lead_interactions` | Read fallback |
+| `satellite_indices` | `satellite_indices` | VCI + NDVI per ward per month |
+| `weather_data` | `weather_data` | Temperature, rainfall, humidity per ward |
+| `weather_forecast` | `weather_forecast` | 7-day Open-Meteo forecast |
+| `ground_truth_calls` | `ground_truth_calls` | Thin mirror; synced for read fallback |
+| `ward_cells` | `ward_cells` | 26,975 raster cell rows; not actively synced |
+| `whatsapp_messages` | `whatsapp_messages` | Dual-write at write time (like `lead_interactions`), not `syncJob.ts`-polled — append-only, never hand-edited in Supabase |
 
 ---
 

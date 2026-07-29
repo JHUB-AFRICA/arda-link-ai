@@ -22,8 +22,12 @@ import {
   mirrorLeadInteraction,
   mirrorPastoralistLead,
   mirrorWeatherData,
+  mirrorWhatsappMessage,
 } from "./localMirror.js";
-import { type InsertLeadInteraction } from "@workspace/db";
+import {
+  type InsertLeadInteraction,
+  type InsertWhatsappMessage,
+} from "@workspace/db";
 
 const CACHE_TTL_MS = parseInt(
   process.env.SUPABASE_CACHE_TTL_MS ?? "60000",
@@ -266,6 +270,7 @@ export interface SbGroundTruthCallRead {
   trust_score: number | null;
   source_language: string | null;
   transcript: string | null;
+  channel: string | null;
   created_at: string;
   // Embedded pastoralist (via `pastoralists(...)` select in PostgREST)
   pastoralists?: {
@@ -290,6 +295,10 @@ export interface SbGroundTruthCallInsert {
   trust_score?: number | null;
   source_language?: string | null;
   transcript?: string | null;
+  /** Which channel produced this row. Defaults to 'voice' at the DB
+   * level (see migration 0005_add_whatsapp_support) for rows written
+   * before this field existed; new callers should always set it. */
+  channel?: "voice" | "sms" | "ussd" | "whatsapp";
 }
 
 // ── Public typed helpers ──────────────────────────────────────────────────
@@ -1183,6 +1192,99 @@ export const recentLeadInteractions = (
     `lead_interactions?select=*${filterStr}&order=occurred_at.desc&limit=${safeLimit}`,
     { mode: opts.mode ?? "batch" },
   );
+};
+
+// ── whatsapp_messages ─────────────────────────────────────────────────────
+
+/**
+ * WhatsApp thread/audit log — the append-only analogue of
+ * lead_interactions, but with two rows per conversational turn ('in'
+ * and 'out' logged separately) since WhatsApp's message_type/
+ * template_name/session_expires_at fields are richer and direction-
+ * specific. `tier` is snapshot at send time, same convention as
+ * lead_interactions.
+ */
+export interface SbWhatsappMessageInsert {
+  phone_number: string;
+  wa_id?: string | null;
+  tier?: "verified" | "lead" | "unknown" | null;
+  direction: "in" | "out" | "status";
+  message_type:
+    | "text"
+    | "template"
+    | "interactive_list"
+    | "interactive_buttons"
+    | "list_reply"
+    | "button_reply"
+    | "location"
+    | "audio"
+    | "status";
+  template_name?: string | null;
+  body_text?: string | null;
+  session_expires_at?: string | null;
+  ward_id?: string | null;
+  raw_payload?: unknown;
+}
+
+/**
+ * Fire-and-forget log write, same dual-write shape as
+ * logLeadInteraction: Supabase primary + local Postgres mirror
+ * (best-effort). Both failures are warn-logged and swallowed — never
+ * blocks the caller's reply.
+ */
+export const logWhatsappMessage = async (
+  row: SbWhatsappMessageInsert,
+): Promise<void> => {
+  try {
+    const res = await sbFetch("whatsapp_messages", {
+      method: "POST",
+      body: JSON.stringify(row),
+      headers: { Prefer: "return=minimal" },
+      sbMode: "batch",
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      logger.warn(
+        { status: res.status, body: body.slice(0, 200), direction: row.direction },
+        "[Supabase] whatsapp_messages insert non-2xx",
+      );
+    }
+  } catch (err) {
+    logger.warn(
+      { err, direction: row.direction },
+      "[Supabase] whatsapp_messages insert crashed",
+    );
+  }
+  await mirrorWhatsappMessage({
+    phoneNumber: row.phone_number,
+    waId: row.wa_id ?? null,
+    tier: row.tier ?? null,
+    direction: row.direction,
+    messageType: row.message_type,
+    templateName: row.template_name ?? null,
+    bodyText: row.body_text ?? null,
+    sessionExpiresAt: row.session_expires_at
+      ? new Date(row.session_expires_at)
+      : null,
+    wardId: row.ward_id ?? null,
+    rawPayload: (row.raw_payload ?? null) as InsertWhatsappMessage["rawPayload"],
+    tenantId: null,
+  });
+};
+
+/**
+ * Whether the phone has any prior whatsapp_messages row — used to
+ * decide whether an inbound text is a genuinely first contact (send
+ * the welcome interactive list) or a returning conversation.
+ */
+export const hasPriorWhatsappMessages = async (
+  phone: string,
+): Promise<boolean> => {
+  const rows = await sbGet<{ message_id: string }>(
+    `whatsapp_messages?select=message_id&phone_number=eq.${encodeURIComponent(phone)}&limit=1`,
+    { mode: "interactive" },
+  );
+  return Boolean(rows && rows.length > 0);
 };
 
 // ── Ward cells (grid geometry) + per-cell satellite indices ─────────────
