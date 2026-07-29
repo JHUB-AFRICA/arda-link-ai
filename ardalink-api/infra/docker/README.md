@@ -48,9 +48,12 @@ one interface (`ardalink-api/src/lib/whatsappProvider.ts`), selected via
   the container itself works, via a manual smoke test:
 
   ```bash
+  # Uses the EVOLUTION_API_KEY you set in .env (or the compose default)
+  export EVO_KEY="${EVOLUTION_API_KEY:?set EVOLUTION_API_KEY first}"
+
   # Create a Cloud-API-backed instance (no QR code needed for this mode)
   curl -X POST http://localhost:8081/instance/create \
-    -H "apikey: dev_only_change_me" -H "Content-Type: application/json" \
+    -H "apikey: $EVO_KEY" -H "Content-Type: application/json" \
     -d '{
       "instanceName": "ardalink-dev",
       "integration": "WHATSAPP-BUSINESS",
@@ -62,7 +65,7 @@ one interface (`ardalink-api/src/lib/whatsappProvider.ts`), selected via
 
   # Send a plain-text message through it
   curl -X POST http://localhost:8081/message/sendText/ardalink-dev \
-    -H "apikey: dev_only_change_me" -H "Content-Type: application/json" \
+    -H "apikey: $EVO_KEY" -H "Content-Type: application/json" \
     -d '{"number": "254712345678", "text": "hello from Evolution"}'
   ```
 
