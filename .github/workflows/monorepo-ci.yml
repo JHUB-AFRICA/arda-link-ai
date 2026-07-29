@@ -302,7 +302,7 @@ jobs:
         with:
           node-version: "24"
       - name: Cache pnpm
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ardalink-api/node_modules
           key: ${{ runner.os }}-pnpm-api-${{ hashFiles('ardalink-api/pnpm-lock.yaml') }}
@@ -351,7 +351,7 @@ jobs:
         with:
           node-version: "24"
       - name: Cache pnpm
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ardalink-web/node_modules
           key: ${{ runner.os }}-pnpm-web-${{ hashFiles('ardalink-web/pnpm-lock.yaml') }}
