@@ -1,6 +1,6 @@
 # ArdaLink — System Status
 
-**Author**: Lead Software Engineer · **Last refreshed**: 2026-07-21
+**Author**: Lead Software Engineer · **Last refreshed**: 2026-07-24
 **Audience**: Engineering team + funders + partners
 **Scope**: Current production state, what's deployed and operational, what's in progress, and what remains to be built.
 
@@ -43,12 +43,12 @@
 | **Operator dashboard** | ✅ Login + multi-tenant + choropleth + brief | ✅ Same, with auth UX hardened |
 | **Backend API** | ✅ Express + Postgres + RLS | ✅ Same, hardened + observability |
 | **Intelligence layer** | ✅ Provider-agnostic LLM registry with **Azure AI Foundry (GPT-5 Mini) as primary**, z.ai as fallback, MiniMax as secondary fallback. Verified: `/api/intelligence/brief` returns real Swahili brief from `provider: azure, model: gpt-5-mini` (~6s, 787 tokens). Voice bridge via Azure OpenAI Realtime (`gpt-4o-realtime-preview` deployment). | ✅ Real LLM with provider failover, real-time voice |
-| **Voice call pipeline** | ✅ **Two modes, chosen by `CALL_PIPELINE_MODE` env (default `deterministic`)**. Deterministic: value-first opener → DTMF category menu → 20 s AT `<Record>` → Azure Fast Transcription (with auto-fallback to short-audio REST for regions like `southafricanorth` that don't host Fast yet) → GPT-5 Mini indicator extraction → `ground_truth_reports` row per call. Robust on 2G, guaranteed data capture, no Realtime deployment needed. Realtime (optional): Azure OpenAI Realtime WS bridge for full-duplex conversation on `/api/voice-stream` (AT mulaw) and `/api/browser-voice-stream` (PCM16 24 kHz). Kept for the operator/demo path and as the future upgrade once herder connections and Realtime pricing improve. `voiceStream.ts` has TTS fallback via Azure Speech if Realtime WS fails to open — caller hears the pre-generated Swahili script instead of silence. | ✅ Live outbound + inbound over 2G/3G |
+| **Voice call pipeline** | ✅ **Two modes, chosen by `CALL_PIPELINE_MODE` env (default `deterministic`)**. Deterministic: value-first opener → DTMF category menu → 20 s AT `<Record>` → Azure Fast Transcription (with auto-fallback to short-audio REST for regions like `southafricanorth` that don't host Fast yet) → GPT-5 Mini indicator extraction → `ground_truth_calls` (Supabase) row per call. Robust on 2G, guaranteed data capture, no Realtime deployment needed. Realtime (optional): Azure OpenAI Realtime WS bridge for full-duplex conversation on `/api/voice-stream` (AT mulaw) and `/api/browser-voice-stream` (PCM16 24 kHz). Kept for the operator/demo path and as the future upgrade once herder connections and Realtime pricing improve. `voiceStream.ts` has TTS fallback via Azure Speech if Realtime WS fails to open — caller hears the pre-generated Swahili script instead of silence. | ✅ Live outbound + inbound over 2G/3G |
 | **Satellite drought pipeline** | ✅ **Supabase primary** (ward-level `satellite_indices`, `weather_data`, `api_latest_satellite_indices` / `api_latest_weather_data` views; 1,082 satellite rows + 20 weather rows + 2.24M cell rows for 5 active wards, PostGIS 3.4). Local `satellite_snapshots` retained as per-call cache. GEE pipeline still wired (`/api/satellite/vci`, `/trigger`, `/snapshots`) — engine `/api/v1/satellite/vci` returns MODIS VCI for Bulla Pesa, Garbatulla, Kinna. Tests 14/14. | ✅ Real Sentinel-2 / MODIS / CHIRPS at ward scale, surfaced via `/api/satellite` |
-| **Reference data layer** | ✅ **Supabase source of truth** (2026-07-08). `wards` (5 active + 5 dormant), `ward_neighbors` (28), `ward_cells` (26,975), `pastoralists` (upsert-on-first-call), `ground_truth_calls` (thin, dual-written from local rich `ground_truth_reports`). PostgREST client `src/lib/supabase.ts` with 60 s cache; ward-id mapping `src/lib/wardMapping.ts` (Bula Pesa → 242). Local Postgres remains a backup mirror; falls back cleanly when Supabase env unset. Verified 2026-07-08 (Mohamed Ali `+254712000004` upsert + NDVI 0.25272 + 2 real dual-written calls). | ✅ Same, with per-tenant secret rotation |
+| **Reference data layer** | ✅ **Supabase source of truth** (2026-07-08). `wards` (5 active + 5 dormant), `ward_neighbors` (28), `ward_cells` (26,975), `pastoralists` (upsert-on-first-call), `ground_truth_calls` (primary write target — voice pipeline writes directly; local `ground_truth_reports` table dropped). PostgREST client `src/lib/supabase.ts` with 60 s cache; ward-id mapping `src/lib/wardMapping.ts` (Bula Pesa → 242). Local Postgres mirror kept for read fallback; 5-minute sync job (`syncJob.ts`) keeps `pastoralist_leads` + `weather_data` current. Verified 2026-07-08 (Mohamed Ali `+254712000004` upsert + NDVI 0.25272 + 2 real calls). | ✅ Same, with per-tenant secret rotation |
 | **Cross-service tenancy (engine ↔ api)** | ✅ HMAC-SHA256 attestation wired: api's `engine.ts` signs `X-Tenant-ID` with `TENANT_ATTESTATION_SECRET`; engine's `TenantAttestationMiddleware` verifies + calls `set_tenant()` so Postgres RLS on `gis_engine.*` enforces isolation. Dev mode (secret unset) passes through. | ✅ Same, with the secret rotated per environment |
 | **Language stack** | ✅ **Azure Speech (STT/TTS) wired end-to-end**, region `southafricanorth`. Neural voices `sw-KE-ZuriNeural`, `en-KE-AsiliaNeural`. Endpoints: `GET /api/speech/status`, `GET /api/speech/token` (browser SDK), `POST /api/speech/tts`, `GET /api/speech/brief.mp3?lang=sw` (Swahili audio brief for callbacks). Borana/Turkana/Samburu/Somali still upstream-only. | ✅ STT/TTS/MT for Swahili + Borana + Turkana + Samburu + Somali |
-| **Herder-facing UI** | ✅ **All three channel simulators are now deterministic and herder-personalized**. `/api/demo/voice/simulator` = phone-lookup → localized TTS opener (with nearest WPDx water-point line when <30 km) → DTMF category → 20 s recording → Speech + GPT-5 Mini extract → ground truth. `/api/demo/ussd/simulator` = fixed menu screens (no LLM in-loop) that pull ward satellite numbers + the herder's location/last-BCS from `pastoralists` + `ground_truth_reports`; selection 2 (Malisho) now emits nearest-5 WPDx points with OK/BAD/? badges. `/api/demo/sms/simulator` = fixed keyword responses (BULA, MALISHO with WPDx, ONGEA, RIPOTI, STOP) with the same personalization. Realtime WS demo kept at `/simulator-realtime` as a Phase-3 preview. Turn-based sim retained at `/simulator-legacy`. `/talk` React app also live. | ✅ Voice-first call receiver + USSD fallback + SMS keyword |
+| **Herder-facing UI** | ✅ **All three channel simulators are now deterministic and herder-personalized**. `/api/demo/voice/simulator` = phone-lookup → localized TTS opener (with nearest WPDx water-point line when <30 km) → DTMF category → 20 s recording → Speech + GPT-5 Mini extract → ground truth. `/api/demo/ussd/simulator` = fixed menu screens (no LLM in-loop) that pull ward satellite numbers + the herder's location/last-BCS from `pastoralists` + `ground_truth_calls` (Supabase); selection 2 (Malisho) now emits nearest-5 WPDx points with OK/BAD/? badges. `/api/demo/sms/simulator` = fixed keyword responses (BULA, MALISHO with WPDx, ONGEA, RIPOTI, STOP) with the same personalization. Realtime WS demo kept at `/simulator-realtime` as a Phase-3 preview. Turn-based sim retained at `/simulator-legacy`. `/talk` React app also live. | ✅ Voice-first call receiver + USSD fallback + SMS keyword |
 | **Identity proofing** | ⚠️ Email/password for operators only | ✅ Voice biometric + phone OTP for herders |
 | **Payouts / value transfer** | ❌ None | ✅ M-Pesa B2C, Airtel Money, integration |
 | **Offline / poor-connectivity** | ❌ Not designed for | ✅ USSD + queued SMS + edge sync |
@@ -102,21 +102,23 @@ The current build is **a credible technical demo for funders and operators**. To
 ┌────────────────────────────────────────────────────────────────────────────┐
 │   ardalink-engine  Python 3.12 / FastAPI  :5001                            │
 │   GET /health                                                             │
-│   ⚠️  Earth Engine pipeline wired (code path real, key in env) but no live route triggers it │
+│   ✅  Earth Engine pipeline wired AND triggered — api's satelliteJob.ts calls  │
+│      the engine's /trigger on a seasonal schedule (weekly dry-season /      │
+│      monthly wet-season), persisting VCI into Supabase satellite_indices    │
 │   ⚠️  Biophysical work in src/ardalink_engine/src/ as library code         │
 └────────────────────────────────────────────────────────────────────────────┘
 
 External (live):
   ✅ Open-Meteo Forecast + Archive + Air Quality      (free, no key)
   ✅ Microsoft Planetary Computer STAC catalog         (free, no key)
-  ⚠️ Google Earth Engine  (env keys set in `ardalink-engine/.env`; `pipeline/satellite.py` calls real `ee.ImageCollection(MODIS/061/MOD13Q1)` — not a mock. **Not currently triggered** by any live route in the engine or the api; an earlier dev session confirmed real GEE output (NDVI 0.229163, 6 imageDates, 250 997 vegetated pixels). Add a `/api/satellite` route to actually expose this. **Owner: backend. Phase 12.**)
+  ✅ Google Earth Engine  (env keys set in `ardalink-engine/.env`; `pipeline/satellite.py` calls real `ee.ImageCollection(MODIS/061/MOD13Q1)` — not a mock. **Now triggered on a schedule**: `ardalink-api`'s `satelliteJob.ts` calls the engine's `/api/v1/satellite/trigger` (weekly in dry season Jun–Sep/Jan–Mar, monthly otherwise, plus once at boot) and persists VCI into Supabase `satellite_indices` via `persistSatelliteVciSnapshot`. Confirmed real GEE output (NDVI 0.229163, 6 imageDates, 250 997 vegetated pixels) is the same pipeline now live.)
   ✅ z.ai GLM-4.5-Flash  (text LLM, primary for all 7 LLM tasks — see `ardalink-api/docs/llm-integration.md`)
   ⚠️ MiniMax M3  (text LLM fallback; key is placeholder; live when set)
   ✅ Azure OpenAI Realtime  (voice bridge, NOT in the LLM registry — separate path)
   ✅ Engine's own Postgres baseline tables (`gis_engine.baseline_aggregate` / `baseline_pixel`) — replaces what was previously Azure Cosmos DB
 ```
 
-**What's solid**: data model (RLS-enforced multi-tenancy), API surface (38 endpoints, 56 tests), choropleth visualisation, open-data integration, auth flow, dev tooling, **LLM intelligence layer (z.ai + MiniMax, with Azure OpenAI Realtime for the voice bridge)**, **GEE pipeline code path is real (not mocked; live MODIS calls work but no route currently triggers them)**.
+**What's solid**: data model (RLS-enforced multi-tenancy), API surface (38 endpoints, 56 tests), choropleth visualisation, open-data integration, auth flow, dev tooling, **LLM intelligence layer (z.ai + MiniMax, with Azure OpenAI Realtime for the voice bridge)**, **GEE pipeline is real and now scheduled (`satelliteJob.ts` triggers the engine seasonally; live MODIS VCI writes into Supabase `satellite_indices`)**.
 **What's stubbed**: every line marked ❌.
 
 ---
@@ -262,7 +264,7 @@ sequenceDiagram
   WA-->>AT: RTP frames back to herder
   AT-->>H: audio plays on herder's phone
   LLM->>API: on call end → extractIndicators(transcript)
-  API->>DB: insert ground_truth_reports<br/>(BCS, NDVI delta, mortality, etc.)
+  API->>DB: insert ground_truth_calls (Supabase)<br/>(BCS, NDVI delta, mortality, etc.)
   API-->>WA: indicator extracted
   API->>H: SMS summary in herder's preferred language
 ```
@@ -375,13 +377,15 @@ flowchart LR
 
 | Gap | What's needed | Cost | Risk if not done |
 |---|---|---|---|
-| GEE service account JSON | `GOOGLE_SERVICE_ACCOUNT_JSON` (in `ardalink-engine/.env`) | Free for low-volume (3000+ images/day) | ⚠️ Wired but no live route triggers `fetch_vegetation_index` today |
+| GEE service account JSON | `GOOGLE_SERVICE_ACCOUNT_JSON` (in `ardalink-engine/.env`) | Free for low-volume (3000+ images/day) | ✅ Wired and triggered — `satelliteJob.ts` calls the engine's `/trigger` on a seasonal schedule |
 | MODIS NDVI ingest | Daily MOD13Q1 via GEE | Free | **High** |
 | Sentinel-2 10m | Daily S2_SR via GEE | Free | Medium — already have STAC discovery |
 | CHIRPS daily rainfall | Via open-meteo.com (already integrated ✅) | Free | ✅ |
 | Open water detection (JRC GSW) | Static, downloaded once | Free | Low |
 | Ward-level zonal stats | Compute per-pixel mean + anomaly | Runs in GEE for free, just need the script | High |
 | Offline cache (last 30 days always available) | Cloudflare R2 / S3 | $5/mo for raster cache | Medium |
+
+**On the hourly VCI backfill job**: `vciBackfillJob.ts` exists to patch `vci_value=NULL` rows, but the live weekly/monthly writer (`satelliteJob.ts` → `persistSatelliteVciSnapshot`) already computes VCI synchronously before writing and never inserts a null row. The null rows the backfill actually patches come from a separate external historical-ingest script (not in this repo) that bulk-loads years of MODIS history via the `upsert_satellite_indices` RPC — VCI can't be computed for the first 1-2 years of that load since `computeVci` needs ≥3 historical years for the same ward+month. This two-phase shape (load raw NDVI, backfill VCI once enough sibling years exist) is by design, not a bug.
 
 ### 6.4 Pillar 4: Field-grade reliability
 
@@ -418,7 +422,7 @@ The dashboard is **substantially complete** for the Tuesday demo. Gaps for produ
 | **Azure Speech** | sw-KE STT + TTS | $50–100 | 2 days (same Azure subscription) |
 | **Anthropic Claude 3.5 Sonnet** | Fallback LLM | $100–200 | 2 days |
 | **Microsoft Translator** | Cross-language translation | $5 | 1 day |
-| **Google Earth Engine** | Satellite NDVI / ET (key already in `ardalink-engine/.env`) | Free | ✅ **Wired, awaiting route** |
+| **Google Earth Engine** | Satellite NDVI / ET (key already in `ardalink-engine/.env`) | Free | ✅ **Wired and triggered** (`satelliteJob.ts` seasonal schedule) |
 | **ElevenLabs** | Custom TTS voices (4 dialects) | $99–330 one-time | 2 weeks (voice recording + tuning) |
 | **Resemble.ai / Resemblyzer** | Voice biometric | $0 (OSS) | 2 weeks (data collection + enrollment) |
 | **Open-source Whisper** | STT for non-Swahili dialects | $30 GPU self-hosted | 4 weeks (data + fine-tune) |
@@ -452,8 +456,8 @@ The dashboard is **substantially complete** for the Tuesday demo. Gaps for produ
 | 1 | Africa\'s Talking paid plan, toll-free DID, real outbound calls | $200 | ⏳ Pending |
 | 1 | Provider-agnostic LLM registry: z.ai (GLM-4.5-Flash) + MiniMax (M3), with cache + cost guard + audit ring buffer. See `ardalink-api/docs/llm-integration.md`. | $0 (free tier) | ✅ **Complete** |
 | 1 | **Azure AI Foundry (GPT-5 Mini) added as primary LLM provider** — new `providers/azure.ts`, wired into registry, handles GPT-5 quirks (`max_completion_tokens`, `reasoning_effort: minimal`, no `temperature`). Verified 2026-07-06. | ~$0 (usage-based) | ✅ **Complete** |
-| 1 | **Deterministic voice pipeline (herder production path)** — `src/lib/voiceDeterministicPipeline.ts` + dual-mode `routes/voice.ts`. AT `<Record>` → Azure Fast Transcription (region-aware fallback) → GPT-5 Mini extract → RLS-scoped `ground_truth_reports` insert. `CALL_PIPELINE_MODE=deterministic` default. Verified 2026-07-07 end-to-end (row #39: BCS=2, species=goats, mortality=1-3). | dev | ✅ **Complete** |
-| 1 | **Supabase reference data plane (source of truth)** — `src/lib/supabase.ts` PostgREST client + `src/lib/wardMapping.ts` + Supabase-first `src/lib/herderContext.ts` + `writeSupabaseMirror()` in `voiceDeterministicPipeline.ts` and `routes/talk.ts`. Dual-write: rich `ground_truth_reports` local + thin `ground_truth_calls` on Supabase; pastoralist upsert on first call. Wards/satellite/weather/views populated. Local Postgres kept as fallback mirror. Verified 2026-07-08 (NDVI 0.25272, temp 29.5°C, rain 2.5 mm for ward 242; Mohamed Ali `+254712000004` upsert; 2 dual-written calls). | ~$0 (Supabase free tier for pilot volume) | ✅ **Complete** |
+| 1 | **Deterministic voice pipeline (herder production path)** — `src/lib/voiceDeterministicPipeline.ts` + dual-mode `routes/voice.ts`. AT `<Record>` → Azure Fast Transcription (region-aware fallback) → GPT-5 Mini extract → `ground_truth_calls` (Supabase) insert. `CALL_PIPELINE_MODE=deterministic` default. Verified 2026-07-07 end-to-end (row #39: BCS=2, species=goats, mortality=1-3). Note: local `ground_truth_reports` table was later dropped in B4. | dev | ✅ **Complete** |
+| 1 | **Supabase reference data plane (source of truth)** — `src/lib/supabase.ts` PostgREST client + `src/lib/wardMapping.ts` + Supabase-first `src/lib/herderContext.ts`. `ground_truth_calls` is the sole write target (B4 dropped local `ground_truth_reports`); pastoralist upsert on first call. Wards/satellite/weather/views populated. Local Postgres mirror synced by `syncJob.ts` (B5). Verified 2026-07-08 (NDVI 0.25272, temp 29.5°C, rain 2.5 mm for ward 242; Mohamed Ali `+254712000004` upsert). | ~$0 (Supabase free tier for pilot volume) | ✅ **Complete** |
 | 1 | Azure OpenAI Realtime deployment (`gpt-4o-realtime-preview`, voice bridge — kept as demo + future upgrade path) | $300 | ✅ **Complete** |
 | 1 | **Azure Speech `sw-KE-ZuriNeural` + `en-KE-AsiliaNeural` STT/TTS** — `src/lib/speech.ts` + `routes/speech.ts`. Endpoints: `/api/speech/status`, `/api/speech/token`, `/api/speech/tts`, `/api/speech/brief.mp3`. `fastTranscribe()` auto-falls back to short-audio REST when Fast Transcription isn't offered in the resource's region (e.g. `southafricanorth`). Verified 2026-07-06 (26 KB MP3 in 2.5 s). | $50 | ✅ **Complete** |
 | 2 | End-to-end call test (operator → AT → herder → Azure Realtime → AT → herder) | $200 testing | ⏳ Pending |
@@ -495,7 +499,7 @@ architecture. The gaps below are what separates our current merge
 |---|---|---|
 | 2.1 | Fork's `LOCATION_TO_WARD` alias mapping (case-insensitive location → ward_id) | New `wardMapping.ts::wardIdFromLocationText(text)` — used by USSD "where are you?" and voice pipeline extraction to attach a ward_id even when the herder isn't in `pastoralists` yet |
 | 2.2 | Fork's ward_neighbors consumption for cross-ward advice | Extend `buildLocalizedVoiceOpener` and the USSD brief: "in your neighbor Wabera, NDVI is higher — consider moving that way" |
-| 2.3 | Dashboard consumes Supabase (fork's assumption) | New route `/api/ground-truth/supabase` merges Supabase `ground_truth_calls` with local rich rows; `GroundTruthSection.tsx` renders both with source badge (supabase / local / both) |
+| 2.3 | Dashboard consumes Supabase (fork's assumption) | Route `/api/ground-truth/recent` reads Supabase `ground_truth_calls` directly (local `ground_truth_reports` dropped in B4); `GroundTruthSection.tsx` renders with source badge `supabase`. ✅ **Complete (B4)** |
 | 2.4 | Ward map (Supabase's PostGIS geometry) | New `/api/wards/geometry` returns wards GeoJSON + ward_cells summary + adjacency. Dashboard adds a small choropleth coloured by ward-level NDVI |
 | 2.5 | Fork's `voiceFunctionTools.ts` (LLM function calling for realtime) | Import + wire into the (still-optional) realtime path so operators using the demo get the same tools the fork uses |
 | 2.6 | Fork's per-ward WPDx water points | ✅ **Shipped 2026-07-08.** Snapshot in `ardalink-api/src/lib/data/wpdxIsiolo.ts` (10 rows for Isiolo County, refresh with `node ardalink-api/scripts/pull-wpdx.mjs`). `lib/wpdx.ts` exposes `nearestPoints` / `pointsForWard` / `formatUssdLines` / `centroidForTenant`. Wired into: USSD selection 2, SMS `MALISHO`, voice-call opener (`nearestWaterPointName`), and public `GET /api/water-points/{near,ward/:ward,status}`. Voice opener line: "The nearest WPDx-recorded water point X was last surveyed broken — please confirm." — herder ground-truth report is what freshens the WPDx-stale status. |
@@ -609,22 +613,41 @@ Full audit of Supabase-local write paths found 6 severe drifts, all now closed o
 - **#41 `fix(vci)`** — the existing `runVciBackfill()` job was wired to `POST /api/ops/vci-backfill` but had never been triggered; every fresh `satellite_indices` row from the daily GEE writer landed with `vci_value=NULL`. This PR added: (a) a `wardIds` filter defaulting to the 5 canonical Isiolo wards so retired-ward orphans aren't wastefully filled, (b) an hourly scheduler (`startVciBackfillJob()`) that runs at API boot, and (c) a CLI wrapper `pnpm --filter ardalink-api run vci-backfill` for on-demand backfills without needing the API up. Historical NDVI envelope is read from the `MULTI_SENSOR_CASCADE` baseline in Supabase.
 - **#42 `fix(local-mirror)`** — migration `0003_realign_local_mirror` retires 10 pastoralist rows + 24 GT-report rows + 76 satellite_snapshot orphans + 126 climate_snapshot orphans, adds the 4 canonical Isiolo wards that had never been seeded (wabera, ngare-mara, burat, oldonyiro), and creates the 7 mirror tables (`pastoralist_leads`, `lead_interactions`, `ward_cells`, `satellite_indices`, `weather_data`, `ground_truth_calls`, `weather_forecast`) as prerequisites for the Supabase → local sync job. Column shapes mirror Supabase; PostGIS-typed columns use JSONB (GeoJSON) so the migration doesn't require the postgis extension. Ships with `0003.down.sql` (partial rollback: schema-only, does not restore the purged rows) and `scripts/dryrun-migration-0003.sh` (dumps live public schema, restores into an ephemeral container on `:15433`, applies, diffs).
 
-**Docs pass — this branch:**
+**Docs pass — `docs/real-data-alignment` branch:**
 
 - Migration `0004_bootstrap_operator_accounts.up.sql` — moves the 5 tenant operator logins + super-admin + per-tenant feature flags out of `seed-demo.sql` into a proper structural migration. Runs unconditionally on every stack bring-up.
-- `seed-demo.sql` — now only contains **optional** demo data (15 fake pastoralists + 36 fake GT reports) and is gated behind `SEED_DEMO_DATA=1` in `start-local.sh`. Default bring-up is real-data-only.
+- `seed-demo.sql` — now only contains **optional** demo data (15 fake pastoralists across bula-pesa, ngare-mara, burat) gated behind `SEED_DEMO_DATA=1`. Default bring-up is real-data-only.
 - `RUNBOOK.md` + `LOCAL_SETUP.md` updated to reflect the migrations-only bootstrap and the `SEED_DEMO_DATA` opt-in.
 
-**Still ahead (Phase 2 → Phase 3):**
+**B-series (data correctness + observability) — all merged on `delivery/b-series`:**
 
-- **#TBD `feat/dual-write-completion`** — wire USSD/SMS lead upsert, `lead_interactions`, `weather_data`, and `weather_forecast` to also mirror to local (Supabase-primary + local best-effort).
-- **#TBD `feat/ground-truth-backfill`** — one-shot script + nightly reconciliation job that replays local `ground_truth_reports` into Supabase `ground_truth_calls` where missing.
-- **#TBD `feat/supabase-to-local-sync`** — background job that pulls Supabase-primary tables into local mirror every N minutes so local can serve reads during a Supabase outage.
-- **Post-pilot backlog**: `docs/gee-script-ownership` (get the out-of-tree GEE writer into git), `fix/interaction-writer-liveness` (diagnose the 2026-07-12 lead_interactions silence), `chore/retired-ward-cleanup-supabase` (prune ward 243/244/249 rows from Supabase `satellite_indices`).
+- **B1 `feat/heartbeat`** — 15-minute heartbeat probe populates `/api/healthz` with per-table freshness (`satellite_indices`, `weather_data`, `ground_truth_calls`, `pastoralists`). Silent writer failures caught before they corrupt pilot signal. `startHeartbeatJob()` runs at boot.
+- **B4 `feat/ground-truth-reads`** — dropped local `ground_truth_reports` table entirely (migration `0004_drop_ground_truth_reports.up.sql`). Voice pipeline writes to Supabase `ground_truth_calls` only (`insertGroundTruthCall()`). All reads in `herderContext.ts`, `memory.ts`, `intelligence/brief.ts`, `geoHelpers.ts`, `openData.ts`, `groundTruth.ts` redirect to `recentGroundTruthCalls()` from `supabase.ts`. Fields with no Supabase equivalent (`ndviVsBaselinePercent`, `reportedQuadrant`, `reportedLocation`, `waterPointName`) return null.
+- **B5 `feat/sync-job`** — 5-minute Supabase → local sync job (`syncJob.ts`, `startSyncJob()`). Keeps `pastoralist_leads` + `weather_data` mirror current for read fallbacks during Supabase outages.
+- **B6 `feat/vci-inline`** — VCI computed at satellite trigger time (inline in `ingest_ward_satellite_indices.py` + API's `vciBackfillJob.ts`). `satellite_indices` rows arrive in Supabase already having `vci_value` set. Hourly VCI backfill patches any rows where `vci_value` is still null.
+
+**C-series (pilot readiness) — next sprint:**
+
+- **C1**: Threshold alerting — drought SMS to opted-in herders when VCI drops below configurable threshold.
+- **C2**: Ground-truth loop — surface recent `ground_truth_calls` rows in intelligence briefs (closes the sensor-field loop).
+- **C3**: Herder personalization — location alias mapping, last known BCS from `ground_truth_calls`, nearest WPDx water point wired into voice opener and USSD.
+- **C4**: Surface `peerSignalForWard()` in USSD and SMS (neighbor-ward cross-ward advice).
+- **C5**: Lead → verified promotion button in ops dashboard.
+- **C6**: Per-herder-per-day cost dashboard (AT SMS + voice minutes) for operator.
+- **C7**: Post-voice "rate the call 1-5" feedback loop (AT DTMF after call ends).
+
+**A-series (telephony readiness) — next sprint (parallel with C):**
+
+- **A1**: Pin ngrok tunnel + smoke-test AT webhook endpoints end-to-end.
+- **A2**: Live Africa's Talking account + toll-free short-code + Kenyan DID.
+- **A3**: Swahili copy review with native speaker + Isiolo field partner.
+- **A4**: Consent/STOP end-to-end verification on a real number.
+
+**Post-pilot backlog**: `chore/retired-ward-cleanup-supabase` (prune ward 243/244/249 rows from Supabase `satellite_indices`); `fix/interaction-writer-liveness` (diagnose the 2026-07-12 lead_interactions silence); Sentry / Grafana observability wiring.
 
 *Prior cycle (2026-07-07 baseline)*:
-* Satellite API routes + scheduler (`feature/satellite-api-route`, `feature/satellite-scheduler`).
-* Engine ↔ api tenant attestation (HMAC-SHA256 over `TENANT_ATTESTATION_SECRET`) and full Postgres RLS enforcement on `gis_engine.baseline_aggregate`, `gis_engine.baseline_pixel` via `set_tenant()`.
+* Satellite API routes + scheduler.
+* Engine ↔ api tenant attestation (HMAC-SHA256 over `TENANT_ATTESTATION_SECRET`).
 * SMS + USSD route stubs (`/api/sms`, `/api/ussd`) waiting on live Africa's Talking credentials.
 
-*Next*: live Africa's Talking key + short-code registration; Sentry / Grafana observability wiring; ship Phase 2's remaining three PRs.
+*Next*: land `delivery/b-series` PR #50 into `dev`, then start C1 + A1 in parallel.
