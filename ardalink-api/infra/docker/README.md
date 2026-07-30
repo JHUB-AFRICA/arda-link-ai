@@ -1,5 +1,10 @@
 # ArdaLink — Local Development
 
+> **For the full step-by-step runbook** — running every service, both
+> WhatsApp provider modes (Meta/360dialog and self-hosted Evolution),
+> dashboards, monitoring, and graceful shutdown — see
+> [`RUNBOOK.md`](./RUNBOOK.md). This README is the quick-start.
+
 ```bash
 cd ardalink/infra/docker
 cp .env.example .env       # fill in the secrets

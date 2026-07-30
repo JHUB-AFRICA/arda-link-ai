@@ -678,6 +678,7 @@ If you want to understand what a request does, start here:
 - [`LOCAL_SETUP.md`](./LOCAL_SETUP.md) — 5-minute install on a fresh machine
 - [`Arda-link-AI-Docs/deployment.md`](./Arda-link-AI-Docs/deployment.md) — production hosting options
 - [`Arda-link-AI-Docs/security.md`](./Arda-link-AI-Docs/security.md) — auth, rate limiting, RLS threat model
+- [`ardalink-api/infra/docker/RUNBOOK.md`](./ardalink-api/infra/docker/RUNBOOK.md) — the Docker Compose stack runbook: running all services, WhatsApp in Meta (360dialog) or Evolution (self-hosted) mode, dashboards, monitoring, graceful shutdown
 
 *See `Arda-link-AI-Docs/architecture.md` for the diagrams. See `LOCAL_SETUP.md`
 for the 5-minute install.*

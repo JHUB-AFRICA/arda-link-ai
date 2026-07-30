@@ -16,6 +16,7 @@
 - **Supabase PostgREST timeout** → local Postgres mirror serves reads; check `GET /api/healthz` per-table freshness; restart sync job if mirror is stale.
 - **VCI null on `satellite_indices`** → trigger `pnpm --filter ardalink-api run vci-backfill` CLI or wait for next hourly `vciBackfillJob` tick.
 - **Africa's Talking delivery failure** → retry with exponential backoff.
+- **WhatsApp channel operations** (running Meta/360dialog or Evolution mode, dashboards, monitoring, graceful shutdown) → see the dedicated [`infra/docker/RUNBOOK.md`](../infra/docker/RUNBOOK.md).
 
 ## Backups
 
