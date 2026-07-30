@@ -1,29 +1,153 @@
-# ArdaLink AI — WhatsApp-First Delivery Architecture (Strategic Plan)
+# ArdaLink AI — WhatsApp-First Delivery Architecture
 
-> **Status**: strategic planning, approved direction — **WhatsApp becomes ArdaLink's primary delivery channel**, with voice, USSD, and SMS retained as a fallback tier for herders without a smartphone or data. This is a deliberate pivot from the voice-first architecture described in [`STATUS.md`](../STATUS.md) and [`voice.md`](./voice.md). This document is the strategic plan; it is followed by a separate implementation plan (routes, provider client, data model migration) once this direction is confirmed.
+> **Status**: **Phase 0/1 shipped and live-tested** (as of 2026-07-30) —
+> WhatsApp is a working channel today, running against a real linked
+> WhatsApp account via Evolution API while Meta Business verification
+> for the 360dialog path is pending (see
+> [As-built status](#as-built-status-202607) below). The rest of this
+> document is the original strategic rationale for the WhatsApp-first
+> pivot — voice/USSD/SMS retained as a genuine fallback tier — plus the
+> phased roadmap for what's still ahead (Phase 2+). Read the as-built
+> section first; the strategic sections below it are still accurate,
+> just not yet fully executed.
 >
 > Builds on the vendor research already done in [`whatsapp-delivery.md`](./whatsapp-delivery.md) (Meta Cloud API vs BSP vs self-hosted options, and the Jan 2026 Meta AI-chatbot policy). That doc's conclusion — "don't make WhatsApp primary, scope it for cooperative reps first" — is the position this plan supersedes, on explicit direction from the team.
->
-> **Update (2026-07)**: Evolution API (self-hosted) added as a swappable second WhatsApp provider ahead of schedule — see `ardalink-api/src/lib/whatsappProviderRegistry.ts` and the "Delivery approach decision" section below.
 
 ---
 
 ## Table of Contents
 
-1. [Why the pivot, and the tension we have to own](#why-the-pivot-and-the-tension-we-have-to-own)
-2. [Channel tiering strategy](#channel-tiering-strategy)
-3. [Target architecture](#target-architecture)
-4. [Message flows](#message-flows)
-5. [WhatsApp interaction design (replacing the USSD tree)](#whatsapp-interaction-design-replacing-the-ussd-tree)
-6. [Data model changes](#data-model-changes)
-7. [Delivery approach decision](#delivery-approach-decision)
-8. [Compliance, consent, and the 24-hour session window](#compliance-consent-and-the-24-hour-session-window)
-9. [Phased rollout roadmap](#phased-rollout-roadmap)
-10. [Cost model](#cost-model)
-11. [Risks and mitigations](#risks-and-mitigations)
-12. [Success metrics](#success-metrics)
-13. [Open questions for the team](#open-questions-for-the-team)
-14. [Next step](#next-step)
+1. [As-built status (2026-07)](#as-built-status-202607)
+2. [Why the pivot, and the tension we have to own](#why-the-pivot-and-the-tension-we-have-to-own)
+3. [Channel tiering strategy](#channel-tiering-strategy)
+4. [Target architecture](#target-architecture)
+5. [Message flows](#message-flows)
+6. [WhatsApp interaction design (replacing the USSD tree)](#whatsapp-interaction-design-replacing-the-ussd-tree)
+7. [Data model changes](#data-model-changes)
+8. [Delivery approach decision](#delivery-approach-decision)
+9. [Compliance, consent, and the 24-hour session window](#compliance-consent-and-the-24-hour-session-window)
+10. [Phased rollout roadmap](#phased-rollout-roadmap)
+11. [Cost model](#cost-model)
+12. [Risks and mitigations](#risks-and-mitigations)
+13. [Success metrics](#success-metrics)
+14. [Open questions for the team](#open-questions-for-the-team)
+15. [Next step](#next-step)
+
+---
+
+## As-built status (2026-07)
+
+Phase 0's *code* and Phase 1 (per the phased roadmap below) have shipped
+and been live-tested against a real linked WhatsApp number. Phase 0's
+*Meta Business verification* step has not — that's the current blocker,
+covered below.
+
+### What's shipped
+
+- **Provider-agnostic channel**: a `WhatsappProvider` interface
+  (`ardalink-api/src/lib/whatsappProvider.ts`) with two working adapters
+  — `threeSixtyDialogProvider` (`lib/threeSixtyDialog.ts`, Meta Cloud API
+  via the 360dialog BSP) and `evolutionApiProvider`
+  (`lib/evolutionApi.ts`, self-hosted Baileys/WhatsApp-Web protocol) —
+  selected at runtime via `WA_PROVIDER` (`whatsappProviderRegistry.ts`).
+  Route paths ended up as `POST /api/whatsapp-webhook` (360dialog) and
+  `POST /api/evolution-whatsapp-webhook` (Evolution), not the
+  `/api/whatsapp/*` shape sketched in the original Delivery approach
+  decision below.
+- **Shared conversation pipeline**: both webhooks normalize their own
+  wire envelope and hand off to one function,
+  `processInboundWhatsappMessage()` (`lib/whatsappTurn.ts`) — welcome
+  menu (buttons, not lists — list messages crash on the Evolution/Baileys
+  stack, confirmed live), Bula Pesa drought brief, Malisho water-point
+  location pins, and free-text conversation.
+- **Conversation memory**: `recentWhatsappMessages()` feeds real prior
+  turns into both the LLM's message history and the transcript passed to
+  `extractIndicators()` — the original stateless-per-turn design was live-
+  tested and found to repeat itself every turn; this is the fix.
+- **Herder-led system prompt** (`whatsappConversation.ts`): indicator
+  questions (BCS, mortality, offtake, water status…) are woven in
+  opportunistically rather than as the voice pipeline's rigid mandatory
+  FLOW — deliberately does not reuse voice's `indicatorCollectionBlock()`
+  or its `end_call` tool, which don't fit a continuing text thread.
+  Includes WhatsApp-native formatting guidance (emoji, `*bold*`/`_italic_`,
+  leaning on real location pins).
+- **Discoverability + accessibility**: `MSAADA`/`HELP`/`MENU`/`START`
+  resurfaces the welcome menu mid-conversation; `STOP`/`SITAKI` opts a
+  herder out (`markPastoralistOptedOut`, shared with the SMS opt-out
+  path).
+- **Operator parity**: every WhatsApp turn now logs to `lead_interactions`
+  (channel `"whatsapp"`) in addition to the `whatsapp_messages` thread
+  log — the same ops CallbackLog / trust-score feature source
+  ussd/sms/voice already write on every hit.
+- **Data model**: `pastoralists.wa_id`/`channel_tier`/`last_tier_check_at`,
+  `whatsapp_messages` table, `ground_truth_calls.channel` — all landed
+  (migration `0005_add_whatsapp_support`).
+
+```mermaid
+sequenceDiagram
+    participant Herder
+    participant Provider as 360dialog / Evolution API
+    participant API as ardalink-api
+    participant DB as Supabase + local mirror
+    participant LLM as LLM registry (GPT-5 Mini)
+
+    Herder->>Provider: WhatsApp message
+    Provider->>API: POST /api/whatsapp-webhook\nor /api/evolution-whatsapp-webhook
+    API->>API: fromMetaMessage() / fromEvolutionWebhook()\n→ NormalizedWaMessage
+    API->>DB: logInbound() → whatsapp_messages
+    API->>DB: recentWhatsappMessages() (memory)
+    par indicator extraction
+        API->>LLM: extractIndicators(transcript + history)
+    and conversational reply
+        API->>LLM: complete("multilingual", history + system prompt)
+    end
+    LLM-->>API: reply text + extracted indicators
+    API->>Provider: send reply (registry picks active adapter)
+    Provider-->>Herder: WhatsApp reply
+    API->>DB: logOutbound() + logLeadInteraction()\n(whatsapp_messages + lead_interactions)
+    API->>DB: insertGroundTruthCall() when indicators collected
+```
+
+```mermaid
+flowchart LR
+    Reg["whatsappProviderRegistry.ts\n(reads WA_PROVIDER env fresh per call)"]
+    Iface["WhatsappProvider interface\n(lib/whatsappProvider.ts)"]
+    ThreeSixty["threeSixtyDialogProvider\n(lib/threeSixtyDialog.ts)\nMeta Cloud API via 360dialog"]
+    Evo["evolutionApiProvider\n(lib/evolutionApi.ts)\nself-hosted Baileys"]
+    Turn["processInboundWhatsappMessage()\n(lib/whatsappTurn.ts)"]
+    Route1["routes/whatsapp.ts\nfromMetaMessage()"]
+    Route2["routes/evolutionWhatsapp.ts\nfromEvolutionWebhook()"]
+
+    Route1 --> Turn
+    Route2 --> Turn
+    Turn -->|"outbound send"| Reg
+    Reg --> Iface
+    Iface --> ThreeSixty
+    Iface --> Evo
+```
+
+### Known limitation: Meta Business API verification
+
+**360dialog (Meta's own Cloud API, via a Meta Business Solution
+Provider) is code-complete but cannot send or receive live production
+traffic until Meta approves the underlying business account.** That
+verification step — Phase 0 in the roadmap below — is external to
+engineering and hasn't happened yet. This is not a code gap; it's a
+pending administrative/compliance approval outside this repo's control.
+
+**Evolution API (self-hosted, Baileys/WhatsApp-Web protocol) is the
+live-tested substitute in the meantime** — it needs no Meta approval,
+and was used to verify the entire conversation pipeline end-to-end
+against a real linked WhatsApp account (QR-code device linking, exactly
+like WhatsApp Web). It is **not** a long-term production replacement for
+360dialog at scale: it has no official Meta support, carries a real
+account-ban risk if used at volume against Meta's terms, and this
+codebase already documents known gaps (list-message sends crash on this
+stack, no `outside_session_window` detection, some inbound shapes —
+list/button replies, location, audio — unverified against a live
+instance). Once Meta verification clears, 360dialog should become the
+one actually receiving production traffic; `WA_PROVIDER` makes that a
+config flip, not a code change.
 
 ---
 
@@ -226,8 +350,8 @@ Differences worth calling out explicitly:
 
 Per [`whatsapp-delivery.md`](./whatsapp-delivery.md)'s comparison, now decided **in favor of Tier-1 primary status**:
 
-- **MVP / submission / pilot: 360dialog (BSP)**. Fastest to a compliant, working primary channel — no owned template-approval plumbing, ~€49/mo + Meta's per-conversation fee, official Cloud API underneath so zero ban risk. This is what the Docker-packaged `ardalink-api` will call at `/api/whatsapp/*`.
-- **Self-hosted (Evolution API, Cloud-API mode) is now implemented as a second provider behind the same interface** (`WhatsappProvider` in `ardalink-api/src/lib/whatsappProvider.ts`), selected via `WA_PROVIDER=360dialog|evolution`. 360dialog remains the **default** and the one actually receiving live traffic; Evolution is available to flip on per-environment without any app-layer code change, ahead of the original cost-crossover trigger, to de-risk the migration path early rather than build it under pressure once volume forces the question. The original scale-trigger reasoning (BSP fee vs. self-hosted infra cost) still governs *when to make Evolution the default*, not whether the capability exists. Evolution's wire protocol is its own simplified JSON shape, not Meta's — see `evolutionApi.ts`'s file header for the specifics, and note that non-text inbound message shapes (list/button replies, location, audio) are unverified against a live instance as of this writing.
+- **MVP / submission / pilot: 360dialog (BSP)**. Fastest to a compliant, working primary channel — no owned template-approval plumbing, ~€49/mo + Meta's per-conversation fee, official Cloud API underneath so zero ban risk. Implemented at `POST /api/whatsapp-webhook` (the route ended up flatter than the originally-sketched `/api/whatsapp/*` shape).
+- **Self-hosted (Evolution API, Cloud-API mode) is now implemented as a second provider behind the same interface** (`WhatsappProvider` in `ardalink-api/src/lib/whatsappProvider.ts`), selected via `WA_PROVIDER=360dialog|evolution`. **Status as of 2026-07-30** (see [As-built status](#as-built-status-202607)): 360dialog is still the code *default*, but Meta Business verification hasn't cleared yet, so it isn't actually receiving live traffic today — Evolution is what's currently linked to a real WhatsApp account and live-tested. Once verification clears, flipping back to 360dialog as the live default is a config change (`WA_PROVIDER`), not a code change. Evolution's wire protocol is its own simplified JSON shape, not Meta's — see `evolutionApi.ts`'s file header for the specifics, and note that non-text inbound message shapes (list/button replies, location, audio) are unverified against a live instance as of this writing.
 - **Do not use Baileys-mode self-hosting or OpenClaw** for this channel — both carry ban risk or are the wrong tool shape, as already established.
 
 ---
@@ -245,8 +369,8 @@ Per [`whatsapp-delivery.md`](./whatsapp-delivery.md)'s comparison, now decided *
 
 | Phase | Work | Duration | Exit criteria |
 |---|---|---|---|
-| **0 — Decision + setup** | Register 360dialog account, Meta Business verification, WhatsApp number (can reuse the AT-provisioned DID or acquire a new one), submit first 3 templates (opt-in, drought alert, water-point) | 1–2 weeks (Meta review is the long pole) | Templates approved, sandbox number sending/receiving |
-| **1 — Cooperative rep pilot** | Build `/api/whatsapp/webhook` + `/api/whatsapp/send`, wire tier resolver defaulting new cooperative-rep contacts to WhatsApp, port the USSD tree to list/button messages for this group only | 2–3 weeks | Reps receiving briefs and replying end-to-end in ArdaLink's thread |
+| **0 — Decision + setup** | Register 360dialog account, Meta Business verification, WhatsApp number (can reuse the AT-provisioned DID or acquire a new one), submit first 3 templates (opt-in, drought alert, water-point) | 1–2 weeks (Meta review is the long pole) | **✅ Account registered. ⚠️ Meta Business verification still pending — see [Known limitation](#known-limitation-meta-business-api-verification).** Templates not yet submitted (blocked on verification). |
+| **1 — Cooperative rep pilot** | Build webhook + send client, wire tier resolver defaulting new cooperative-rep contacts to WhatsApp, port the USSD tree to list/button messages | 2–3 weeks | **✅ Shipped and live-tested** (via Evolution API, since 360dialog can't carry live traffic yet) — see [As-built status](#as-built-status-202607). |
 | **2 — Herder hybrid rollout** | Add WhatsApp-registration probing for existing `pastoralists` rows, auto-tier every herder, run WhatsApp + voice in parallel for the same population, compare pickup/completion rates | 3–4 weeks | WhatsApp-tier herders show completion rate ≥ voice-tier baseline |
 | **3 — WhatsApp-first cutover** | New herder onboarding defaults to WhatsApp-first probing before voice; voice/USSD/SMS formally reclassified as fallback tier in code and ops docs; cost-crossover check for self-hosted Evolution API | 2 weeks | ≥ 60% of active herders reachable on Tier 1 |
 | **4 — Scale + optimize** | Voice-note-driven conversations, dialect coverage parity with voice (reuse Phase 3 of STATUS.md's dialect roadmap), location-sharing for live herd tracking | Ongoing | — |

@@ -44,7 +44,7 @@
 | **Backend API** | ✅ Express + Postgres + RLS | ✅ Same, hardened + observability |
 | **Intelligence layer** | ✅ Provider-agnostic LLM registry with **Azure AI Foundry (GPT-5 Mini) as primary**, z.ai as fallback, MiniMax as secondary fallback. Verified: `/api/intelligence/brief` returns real Swahili brief from `provider: azure, model: gpt-5-mini` (~6s, 787 tokens). Voice bridge via Azure OpenAI Realtime (`gpt-4o-realtime-preview` deployment). | ✅ Real LLM with provider failover, real-time voice |
 | **Voice call pipeline** | ✅ **Two modes, chosen by `CALL_PIPELINE_MODE` env (default `deterministic`)**. Deterministic: value-first opener → DTMF category menu → 20 s AT `<Record>` → Azure Fast Transcription (with auto-fallback to short-audio REST for regions like `southafricanorth` that don't host Fast yet) → GPT-5 Mini indicator extraction → `ground_truth_calls` (Supabase) row per call. Robust on 2G, guaranteed data capture, no Realtime deployment needed. Realtime (optional): Azure OpenAI Realtime WS bridge for full-duplex conversation on `/api/voice-stream` (AT mulaw) and `/api/browser-voice-stream` (PCM16 24 kHz). Kept for the operator/demo path and as the future upgrade once herder connections and Realtime pricing improve. `voiceStream.ts` has TTS fallback via Azure Speech if Realtime WS fails to open — caller hears the pre-generated Swahili script instead of silence. | ✅ Live outbound + inbound over 2G/3G |
-| **Satellite drought pipeline** | ✅ **Supabase primary** (ward-level `satellite_indices`, `weather_data`, `api_latest_satellite_indices` / `api_latest_weather_data` views; 1,082 satellite rows + 20 weather rows + 2.24M cell rows for 5 active wards, PostGIS 3.4). Local `satellite_snapshots` retained as per-call cache. GEE pipeline still wired (`/api/satellite/vci`, `/trigger`, `/snapshots`) — engine `/api/v1/satellite/vci` returns MODIS VCI for Bulla Pesa, Garbatulla, Kinna. Tests 14/14. | ✅ Real Sentinel-2 / MODIS / CHIRPS at ward scale, surfaced via `/api/satellite` |
+| **Satellite drought pipeline** | ✅ **Supabase primary** (ward-level `satellite_indices`, `weather_data`, `api_latest_satellite_indices` / `api_latest_weather_data` views; 1,082 satellite rows + 20 weather rows + 2.24M cell rows for 5 active wards, PostGIS 3.4). Local `satellite_snapshots` retained as per-call cache. GEE pipeline still wired (`/api/satellite/vci`, `/trigger`, `/snapshots`) — engine `/api/v1/satellite/vci` returns MODIS VCI for the 5 active Isiolo wards (Wabera, Bulla Pesa, Ngare Mara, Burat, Oldonyiro; Garbatulla/Merti/Kinna retired 2026-07, see #38). Tests 14/14. | ✅ Real Sentinel-2 / MODIS / CHIRPS at ward scale, surfaced via `/api/satellite` |
 | **Reference data layer** | ✅ **Supabase source of truth** (2026-07-08). `wards` (5 active + 5 dormant), `ward_neighbors` (28), `ward_cells` (26,975), `pastoralists` (upsert-on-first-call), `ground_truth_calls` (primary write target — voice pipeline writes directly; local `ground_truth_reports` table dropped). PostgREST client `src/lib/supabase.ts` with 60 s cache; ward-id mapping `src/lib/wardMapping.ts` (Bula Pesa → 242). Local Postgres mirror kept for read fallback; 5-minute sync job (`syncJob.ts`) keeps `pastoralist_leads` + `weather_data` current. Verified 2026-07-08 (Mohamed Ali `+254712000004` upsert + NDVI 0.25272 + 2 real calls). | ✅ Same, with per-tenant secret rotation |
 | **Cross-service tenancy (engine ↔ api)** | ✅ HMAC-SHA256 attestation wired: api's `engine.ts` signs `X-Tenant-ID` with `TENANT_ATTESTATION_SECRET`; engine's `TenantAttestationMiddleware` verifies + calls `set_tenant()` so Postgres RLS on `gis_engine.*` enforces isolation. Dev mode (secret unset) passes through. | ✅ Same, with the secret rotated per environment |
 | **Language stack** | ✅ **Azure Speech (STT/TTS) wired end-to-end**, region `southafricanorth`. Neural voices `sw-KE-ZuriNeural`, `en-KE-AsiliaNeural`. Endpoints: `GET /api/speech/status`, `GET /api/speech/token` (browser SDK), `POST /api/speech/tts`, `GET /api/speech/brief.mp3?lang=sw` (Swahili audio brief for callbacks). Borana/Turkana/Samburu/Somali still upstream-only. | ✅ STT/TTS/MT for Swahili + Borana + Turkana + Samburu + Somali |
@@ -644,6 +644,49 @@ Full audit of Supabase-local write paths found 6 severe drifts, all now closed o
 - **A4**: Consent/STOP end-to-end verification on a real number.
 
 **Post-pilot backlog**: `chore/retired-ward-cleanup-supabase` (prune ward 243/244/249 rows from Supabase `satellite_indices`); `fix/interaction-writer-liveness` (diagnose the 2026-07-12 lead_interactions silence); Sentry / Grafana observability wiring.
+
+**D-series (WhatsApp channel + code health) — 2026-07-30, `feat/whatsapp-channel`:**
+
+- **D1 `feat(whatsapp)`** — WhatsApp shipped as a real channel, Phase 0/1
+  of `whatsapp-first-architecture.md`. Provider-agnostic
+  `WhatsappProvider` interface with two adapters — 360dialog (Meta Cloud
+  API via a BSP) and Evolution API (self-hosted Baileys) — swappable via
+  `WA_PROVIDER`, both converging on one shared turn handler
+  (`whatsappTurn.ts`). Welcome menu, Bula Pesa brief, Malisho water-point
+  location pins, and free-text conversation all live.
+- **D2 `fix(whatsapp)`** — live testing against a real linked WhatsApp
+  number (via Evolution) surfaced the bot repeating its opening question
+  every turn — `handleFreeText()` had zero conversation history. Fixed
+  with `recentWhatsappMessages()` feeding real prior turns to both the
+  LLM and the indicator extractor, a herder-led system prompt (indicators
+  woven in opportunistically instead of voice's rigid mandatory FLOW),
+  `MSAADA`/`HELP`/`MENU` discoverability, `STOP`/`SITAKI` opt-out parity
+  with SMS, and WhatsApp turns now logging to `lead_interactions` (the
+  same ops/trust-score feed ussd/sms/voice already write) alongside the
+  existing `whatsapp_messages` thread log.
+- **⚠️ Known blocker — Meta Business API verification**: 360dialog is
+  code-complete but Meta hasn't approved the underlying business account
+  yet, so it can't carry live production traffic. This is external/
+  administrative, not a code gap. Evolution API is the live-tested
+  substitute in the meantime (real QR-linked WhatsApp account,
+  end-to-end verified) — not a long-term production replacement at
+  scale. Flipping to 360dialog once Meta approves is a `WA_PROVIDER`
+  config change, no code change. Full detail:
+  [`whatsapp-first-architecture.md`](./Arda-link-AI-Docs/whatsapp-first-architecture.md#known-limitation-meta-business-api-verification).
+- **D3 `refactor(api)`** — `supabase.ts` (1942 lines), `openai.ts` (854),
+  `openData.ts` (1065), and `herderContext.ts` (920) each mixed many
+  unrelated domains behind one file. Split into `src/lib/{supabase,
+  openai,openData,herderContext}/` — a directory of domain modules + a
+  curated `index.ts` barrel per file, mirroring the existing
+  `src/lib/llm/` pattern. No behavior change; every importer repointed.
+- **D4 `fix(satellite)`** — `forecastJob.ts`'s ensemble fetch was silently
+  using the deterministic Open-Meteo endpoint + synthesised uncertainty
+  bounds since 2026-07-12 (the real ensemble host was unreachable from
+  Node then). Re-verified reachable; restored the real 39-member ICON
+  ensemble as primary, deterministic path as fallback only. Also
+  corrected 5 places in this file that still said the GEE pipeline was
+  "wired but not triggered" — `satelliteJob.ts` has triggered it on a
+  seasonal schedule for a while; that was a doc-drift bug, not a code gap.
 
 *Prior cycle (2026-07-07 baseline)*:
 * Satellite API routes + scheduler.
