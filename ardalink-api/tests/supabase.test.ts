@@ -15,7 +15,7 @@ beforeEach(() => {
 afterEach(async () => {
   vi.restoreAllMocks();
   // Purge the in-process cache so each test starts fresh.
-  const { clearSupabaseCache } = await import("../src/lib/supabase.js");
+  const { clearSupabaseCache } = await import("../src/lib/supabase/index.js");
   clearSupabaseCache();
 });
 
@@ -47,7 +47,7 @@ function jsonRes(body: unknown, status = 200): Response {
 
 describe("supabase client", () => {
   it("isSupabaseConfigured reads both env vars", async () => {
-    const { isSupabaseConfigured } = await import("../src/lib/supabase.js");
+    const { isSupabaseConfigured } = await import("../src/lib/supabase/index.js");
     expect(isSupabaseConfigured()).toBe(true);
 
     delete process.env.SUPABASE_URL;
@@ -63,7 +63,7 @@ describe("supabase client", () => {
       () => jsonRes([{ ward_id: "242", name: "Bulla Pesa" }]),
     ]);
 
-    const { listActiveWards } = await import("../src/lib/supabase.js");
+    const { listActiveWards } = await import("../src/lib/supabase/index.js");
     const first = await listActiveWards();
     const second = await listActiveWards();
 
@@ -75,7 +75,7 @@ describe("supabase client", () => {
 
   it("returns null on non-2xx and never throws", async () => {
     makeFetchMock([() => jsonRes({ error: "internal" }, 500)]);
-    const { listWards } = await import("../src/lib/supabase.js");
+    const { listWards } = await import("../src/lib/supabase/index.js");
     const rows = await listWards();
     expect(rows).toBeNull();
   });
@@ -85,7 +85,7 @@ describe("supabase client", () => {
       throw new Error("ECONNREFUSED");
     }) as unknown as typeof fetch;
 
-    const { latestSatelliteFor } = await import("../src/lib/supabase.js");
+    const { latestSatelliteFor } = await import("../src/lib/supabase/index.js");
     const sat = await latestSatelliteFor("242");
     expect(sat).toBeNull();
   });
@@ -101,7 +101,7 @@ describe("supabase client", () => {
     try {
       makeFetchMock([() => jsonRes([{ pastoralist_id: "abc" }])]);
 
-      const { pastoralistByPhone } = await import("../src/lib/supabase.js");
+      const { pastoralistByPhone } = await import("../src/lib/supabase/index.js");
       await pastoralistByPhone("+254712000004");
 
       expect(timeoutSpy).toHaveBeenCalled();
@@ -121,7 +121,7 @@ describe("supabase client", () => {
     try {
       makeFetchMock([() => jsonRes([{ call_id: "uuid-1" }])]);
 
-      const { insertGroundTruthCall } = await import("../src/lib/supabase.js");
+      const { insertGroundTruthCall } = await import("../src/lib/supabase/index.js");
       await insertGroundTruthCall({ ward_id: "242", bcs_score: 3 });
 
       // The writer runs after the AT XML response has been sent — a
@@ -138,7 +138,7 @@ describe("supabase client", () => {
       () => jsonRes([{ pastoralist_id: "abc", phone_number: "+254712" }]),
     ]);
 
-    const { upsertPastoralist } = await import("../src/lib/supabase.js");
+    const { upsertPastoralist } = await import("../src/lib/supabase/index.js");
     const row = await upsertPastoralist({
       phone_number: "+254712000004",
       full_name: "Mohamed Ali",
@@ -153,7 +153,7 @@ describe("supabase client", () => {
   it("insertGroundTruthCall returns null on non-2xx (local backup is authoritative)", async () => {
     makeFetchMock([() => jsonRes({ code: "23514" }, 400)]);
 
-    const { insertGroundTruthCall } = await import("../src/lib/supabase.js");
+    const { insertGroundTruthCall } = await import("../src/lib/supabase/index.js");
     const result = await insertGroundTruthCall({
       ward_id: "242",
       bcs_score: 2.5,
@@ -164,7 +164,7 @@ describe("supabase client", () => {
   it("hits the right URL path shape", async () => {
     const { calls } = makeFetchMock([() => jsonRes([])]);
 
-    const { listWardNeighbors } = await import("../src/lib/supabase.js");
+    const { listWardNeighbors } = await import("../src/lib/supabase/index.js");
     await listWardNeighbors("242");
 
     expect(calls[0]?.url).toContain(
@@ -176,7 +176,7 @@ describe("supabase client", () => {
   it("attaches apikey + Bearer on every request", async () => {
     const { calls } = makeFetchMock([() => jsonRes([])]);
 
-    const { listWards } = await import("../src/lib/supabase.js");
+    const { listWards } = await import("../src/lib/supabase/index.js");
     await listWards();
 
     const headers = calls[0]?.init?.headers as Record<string, string>;
@@ -188,7 +188,7 @@ describe("supabase client", () => {
 
   it("listWardCells hits ward_cells with ward filter", async () => {
     const { calls } = makeFetchMock([() => jsonRes([])]);
-    const { listWardCells } = await import("../src/lib/supabase.js");
+    const { listWardCells } = await import("../src/lib/supabase/index.js");
     await listWardCells("246");
     expect(calls[0]?.url).toContain("/rest/v1/ward_cells?");
     expect(calls[0]?.url).toContain("ward_id=eq.246");
@@ -206,7 +206,7 @@ describe("supabase client", () => {
           },
         ]),
     ]);
-    const { latestCellSnapshot } = await import("../src/lib/supabase.js");
+    const { latestCellSnapshot } = await import("../src/lib/supabase/index.js");
     const row = await latestCellSnapshot("246_1000_1_1");
     expect(row?.ndvi_mean).toBe(0.31);
     expect(row?.ndvi_anomaly).toBe(-0.05);
@@ -226,7 +226,7 @@ describe("supabase client", () => {
           { ward_cell_id: "246_b", ward_id: "246", period_end: "2026-06-30", ndvi_mean: 0.28 },
         ]),
     ]);
-    const { latestCellIndicesForWard } = await import("../src/lib/supabase.js");
+    const { latestCellIndicesForWard } = await import("../src/lib/supabase/index.js");
     const rows = await latestCellIndicesForWard("246");
     expect(rows).toHaveLength(2);
     // Step 1 URL — period_end lookup on the base table
@@ -244,7 +244,7 @@ describe("supabase client", () => {
 
   it("latestCellIndicesForWard returns empty when the ward has no cell history", async () => {
     makeFetchMock([() => jsonRes([])]);
-    const { latestCellIndicesForWard } = await import("../src/lib/supabase.js");
+    const { latestCellIndicesForWard } = await import("../src/lib/supabase/index.js");
     const rows = await latestCellIndicesForWard("999");
     expect(rows).toEqual([]);
   });
@@ -273,14 +273,14 @@ describe("supabase client", () => {
           },
         ]),
     ]);
-    const { nearestCellForCoordinates } = await import("../src/lib/supabase.js");
+    const { nearestCellForCoordinates } = await import("../src/lib/supabase/index.js");
     const cell = await nearestCellForCoordinates(0.4375, 37.4785, "246");
     expect(cell?.ward_cell_id).toBe("246_1000_near");
   });
 
   it("nearestCellForCoordinates returns null when ward has no cells", async () => {
     makeFetchMock([() => jsonRes([])]);
-    const { nearestCellForCoordinates } = await import("../src/lib/supabase.js");
+    const { nearestCellForCoordinates } = await import("../src/lib/supabase/index.js");
     const cell = await nearestCellForCoordinates(0.4375, 37.4785, "999");
     expect(cell).toBeNull();
   });
@@ -307,7 +307,7 @@ describe("supabase client", () => {
           },
         ]),
     ]);
-    const { wardCellStressSummary } = await import("../src/lib/supabase.js");
+    const { wardCellStressSummary } = await import("../src/lib/supabase/index.js");
     const s = await wardCellStressSummary("246");
     expect(s?.cellCount).toBe(4);
     expect(s?.cellsWithData).toBe(3);
@@ -320,7 +320,7 @@ describe("supabase client", () => {
 
   it("wardCellStressSummary returns null when Supabase is unreachable", async () => {
     makeFetchMock([() => jsonRes({}, 503)]);
-    const { wardCellStressSummary } = await import("../src/lib/supabase.js");
+    const { wardCellStressSummary } = await import("../src/lib/supabase/index.js");
     const s = await wardCellStressSummary("246");
     expect(s).toBeNull();
   });
@@ -337,7 +337,7 @@ describe("supabase client", () => {
           latest_period_end: "2026-06-30",
         }),
     ]);
-    const { refreshSatelliteIndicesLatest } = await import("../src/lib/supabase.js");
+    const { refreshSatelliteIndicesLatest } = await import("../src/lib/supabase/index.js");
     const result = await refreshSatelliteIndicesLatest();
     expect(result?.ok).toBe(true);
     expect(result?.upserted).toBe(5);
@@ -348,7 +348,7 @@ describe("supabase client", () => {
 
   it("upsertWeatherData passes p_* args verbatim", async () => {
     const { calls } = makeFetchMock([() => jsonRes({ weather_data_id: 42 })]);
-    const { upsertWeatherData } = await import("../src/lib/supabase.js");
+    const { upsertWeatherData } = await import("../src/lib/supabase/index.js");
     await upsertWeatherData({
       p_ward_id: "242",
       p_observed_date: "2026-06-30",
@@ -369,7 +369,7 @@ describe("supabase client", () => {
     const { calls } = makeFetchMock([
       () => jsonRes({ ok: true, cell_size_m: 500, upserted: 100 }),
     ]);
-    const { rebuildWardCells } = await import("../src/lib/supabase.js");
+    const { rebuildWardCells } = await import("../src/lib/supabase/index.js");
     await rebuildWardCells(500);
     const body = JSON.parse(calls[0]?.init?.body as string);
     expect(body.p_cell_size_m).toBe(500);
@@ -377,7 +377,7 @@ describe("supabase client", () => {
 
   it("sbRpc returns null on non-2xx so callers can fall back", async () => {
     makeFetchMock([() => jsonRes({ code: "42883" }, 404)]);
-    const { refreshSatelliteIndicesLatest } = await import("../src/lib/supabase.js");
+    const { refreshSatelliteIndicesLatest } = await import("../src/lib/supabase/index.js");
     const result = await refreshSatelliteIndicesLatest();
     expect(result).toBeNull();
   });

@@ -23,10 +23,12 @@ import {
   leadInteractionsTable,
   weatherDataTable,
   weatherForecastTable,
+  whatsappMessagesTable,
   type InsertPastoralistLead,
   type InsertLeadInteraction,
   type InsertWeatherData,
   type InsertWeatherForecast,
+  type InsertWhatsappMessage,
 } from "@workspace/db";
 import { logger } from "./logger.js";
 
@@ -113,6 +115,27 @@ export async function mirrorLeadInteraction(
     logger.warn(
       { err: String(err), channel: row.channel, phone: row.phoneNumber },
       "[LocalMirror] lead_interactions insert failed",
+    );
+  }
+}
+
+// ── whatsapp_messages ────────────────────────────────────────────────────
+
+/**
+ * Mirror a WhatsApp thread-log row into local Postgres. Plain INSERT —
+ * append-only, same as lead_interactions; duplicates are not expected
+ * but aren't a correctness problem if they happen (a retried webhook
+ * delivery just logs the same turn twice).
+ */
+export async function mirrorWhatsappMessage(
+  row: InsertWhatsappMessage,
+): Promise<void> {
+  try {
+    await db.insert(whatsappMessagesTable).values(row);
+  } catch (err) {
+    logger.warn(
+      { err: String(err), phone: row.phoneNumber, direction: row.direction },
+      "[LocalMirror] whatsapp_messages insert failed",
     );
   }
 }

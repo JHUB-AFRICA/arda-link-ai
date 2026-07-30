@@ -11,7 +11,7 @@
   "scripts": {
     "preinstall": "sh -c 'case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm\" >&2; exit 1 ;; esac'",
     "dev": "tsx watch src/index.ts",
-    "build": "pnpm run typecheck && esbuild src/index.ts --bundle --platform=node --target=node24 --format=esm --outfile=dist/index.mjs --external:@node-rs/* --external:better-sqlite3 --external:esbuild",
+    "build": "pnpm run typecheck && esbuild src/index.ts --bundle --platform=node --target=node24 --format=esm --outfile=dist/index.mjs --external:@node-rs/* --external:better-sqlite3 --external:esbuild --banner:js=\"import { createRequire as __createRequire } from 'module'; const require = __createRequire(import.meta.url);\"",
     "start": "node dist/index.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "echo 'eslint not yet configured' && exit 1",

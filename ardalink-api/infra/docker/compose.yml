@@ -10,6 +10,9 @@ name: ardalink
 #   api        — ardalink-api   (Express 5, port 3000)
 #   web        — ardalink-web   (nginx + static, port 8080)
 #   caddy      — reverse proxy with auto-TLS (ports 80/443)
+#   evolution-postgres, evolution-api — optional self-hosted WhatsApp
+#              gateway (profile "evolution"), see the "WhatsApp providers"
+#              section in README.md
 
 x-logging: &default-logging
   logging:
@@ -23,7 +26,7 @@ x-restart: &default-restart
 
 services:
   postgres:
-    <<: *default-restart
+    <<: [*default-restart, *default-logging]
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: ardalink
@@ -38,10 +41,9 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-    <<: *default-logging
 
   redis:
-    <<: *default-restart
+    <<: [*default-restart, *default-logging]
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
     volumes:
@@ -53,10 +55,9 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
-    <<: *default-logging
 
   engine:
-    <<: *default-restart
+    <<: [*default-restart, *default-logging]
     build:
       context: ../engine
       dockerfile: Dockerfile
@@ -79,10 +80,9 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:5001:5001"
-    <<: *default-logging
 
   api:
-    <<: *default-restart
+    <<: [*default-restart, *default-logging]
     build:
       context: ../api
       dockerfile: Dockerfile
@@ -104,7 +104,17 @@ services:
       SESSION_SECRET: ${SESSION_SECRET}
       JWT_SECRET: ${JWT_SECRET}
       TENANT_ATTESTATION_SECRET: ${TENANT_ATTESTATION_SECRET}
-      ARDALINK_ENGINE_URL: http://engine:5001
+      ARDALINK_ENGINE_BASE: http://engine:5001
+      # WhatsApp provider selection — default 360dialog, no local infra
+      # needed. Flip WA_PROVIDER=evolution to use the optional
+      # evolution-api service below (profile "evolution"); harmless
+      # no-op env vars when that profile isn't running.
+      WA_PROVIDER: ${WA_PROVIDER:-360dialog}
+      THREESIXTYDIALOG_API_KEY: ${THREESIXTYDIALOG_API_KEY:-}
+      THREESIXTYDIALOG_PHONE_NUMBER_ID: ${THREESIXTYDIALOG_PHONE_NUMBER_ID:-}
+      EVOLUTION_API_BASE_URL: http://evolution-api:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-dev_only_change_me}
+      EVOLUTION_INSTANCE_NAME: ${EVOLUTION_INSTANCE_NAME:-ardalink-dev}
     depends_on:
       postgres:
         condition: service_healthy
@@ -114,10 +124,9 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:3000:3000"
-    <<: *default-logging
 
   web:
-    <<: *default-restart
+    <<: [*default-restart, *default-logging]
     build:
       context: ../web
       dockerfile: Dockerfile
@@ -127,10 +136,51 @@ services:
       - api
     ports:
       - "127.0.0.1:8080:80"
-    <<: *default-logging
+
+  # Optional: self-hosted WhatsApp gateway (WA_PROVIDER=evolution).
+  # Bring up with: docker compose --profile evolution up
+  # Needs its own Postgres (schema isolation from ArdaLink's own
+  # database) but shares the existing `redis` service on a separate DB
+  # index. A true end-to-end test still needs a real Meta WABA phone
+  # number — this profile only gets the container running locally; see
+  # README.md's "WhatsApp providers" section for the manual smoke-test
+  # recipe (POST /instance/create, POST /message/sendText/:instance).
+  evolution-postgres:
+    <<: [*default-restart, *default-logging]
+    image: postgres:16-alpine
+    profiles: ["evolution"]
+    environment:
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: ${EVOLUTION_POSTGRES_PASSWORD:-evolution_dev_only}
+      POSTGRES_DB: evolution
+    volumes:
+      - evolution_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evolution -d evolution"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  evolution-api:
+    <<: [*default-restart, *default-logging]
+    image: evoapicloud/evolution-api:v2.3.7
+    profiles: ["evolution"]
+    environment:
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:${EVOLUTION_POSTGRES_PASSWORD:-evolution_dev_only}@evolution-postgres:5432/evolution
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis:6379/1
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-dev_only_change_me}
+    depends_on:
+      evolution-postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8081:8080"
 
   caddy:
-    <<: *default-restart
+    <<: [*default-restart, *default-logging]
     image: caddy:2-alpine
     profiles: ["tls"]
     ports:
@@ -143,10 +193,10 @@ services:
     depends_on:
       - api
       - web
-    <<: *default-logging
 
 volumes:
   pgdata:
   redisdata:
   caddy_data:
   caddy_config:
+  evolution_pgdata:

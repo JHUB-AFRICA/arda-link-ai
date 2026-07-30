@@ -513,9 +513,9 @@ Call-sites:
 
 **When Realtime becomes the herder default (roadmap):**
 
-- Herder-side 3G/4G coverage in Bula Pesa, Garbatulla, Merti wards
-  reliably supports sub-second round-trip latency (target: p95
-  < 1.5 s end-to-end)
+- Herder-side 3G/4G coverage in the 5 active wards (Wabera, Bulla Pesa,
+  Ngare Mara, Burat, Oldonyiro) reliably supports sub-second round-trip
+  latency (target: p95 < 1.5 s end-to-end)
 - Prompt suite handles Borana / Turkana / Samburu / Somali
   code-switching in the same session without dropping quality
 - Per-minute Realtime pricing drops below the deterministic total

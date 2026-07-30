@@ -101,7 +101,7 @@ function installSbMock(
   let queryResult: unknown[] | null = initialRows;
   let isConfigured = configured;
 
-  vi.doMock("../src/lib/supabase.js", () => ({
+  vi.doMock("../src/lib/supabase/index.js", () => ({
     isSupabaseConfigured: () => isConfigured,
     sbQuery: () => Promise.resolve(queryResult),
   }));
@@ -172,7 +172,7 @@ describe("syncJob — runSyncCycle", () => {
 
   afterEach(() => {
     vi.doUnmock("@workspace/db");
-    vi.doUnmock("../src/lib/supabase.js");
+    vi.doUnmock("../src/lib/supabase/index.js");
     vi.restoreAllMocks();
   });
 
@@ -205,7 +205,7 @@ describe("syncJob — runSyncCycle", () => {
     const lead = makeLead();
     // sbQuery returns the lead; SELECT finds no existing phone → insert
     let callCount = 0;
-    vi.doMock("../src/lib/supabase.js", () => ({
+    vi.doMock("../src/lib/supabase/index.js", () => ({
       isSupabaseConfigured: () => true,
       sbQuery: () =>
         Promise.resolve(callCount++ === 0 ? [lead] : []), // leads first, weather second
@@ -225,7 +225,7 @@ describe("syncJob — runSyncCycle", () => {
   it("counts existing lead as upserted (update path)", async () => {
     const lead = makeLead();
     let callCount = 0;
-    vi.doMock("../src/lib/supabase.js", () => ({
+    vi.doMock("../src/lib/supabase/index.js", () => ({
       isSupabaseConfigured: () => true,
       sbQuery: () =>
         Promise.resolve(callCount++ === 0 ? [lead] : []),
@@ -249,7 +249,7 @@ describe("syncJob — runSyncCycle", () => {
     const lead1 = makeLead("+254712000001", "2026-07-20T00:00:00Z");
     const lead2 = makeLead("+254712000002", "2026-07-21T00:00:00Z");
     let callCount = 0;
-    vi.doMock("../src/lib/supabase.js", () => ({
+    vi.doMock("../src/lib/supabase/index.js", () => ({
       isSupabaseConfigured: () => true,
       sbQuery: () =>
         Promise.resolve(callCount++ === 0 ? [lead1, lead2] : []),
@@ -269,7 +269,7 @@ describe("syncJob — runSyncCycle", () => {
   it("upserts weather_data row via batch insert", async () => {
     const weather = makeWeather();
     let callCount = 0;
-    vi.doMock("../src/lib/supabase.js", () => ({
+    vi.doMock("../src/lib/supabase/index.js", () => ({
       isSupabaseConfigured: () => true,
       sbQuery: () =>
         Promise.resolve(callCount++ === 0 ? [] : [weather]),
@@ -290,7 +290,7 @@ describe("syncJob — runSyncCycle", () => {
   it("swallows a lead UPDATE error and counts it as error", async () => {
     const lead = makeLead();
     let callCount = 0;
-    vi.doMock("../src/lib/supabase.js", () => ({
+    vi.doMock("../src/lib/supabase/index.js", () => ({
       isSupabaseConfigured: () => true,
       sbQuery: () =>
         Promise.resolve(callCount++ === 0 ? [lead] : []),
@@ -313,7 +313,7 @@ describe("syncJob — runSyncCycle", () => {
   it("weather sync failure does not affect leads result", async () => {
     const lead = makeLead();
     let callCount = 0;
-    vi.doMock("../src/lib/supabase.js", () => ({
+    vi.doMock("../src/lib/supabase/index.js", () => ({
       isSupabaseConfigured: () => true,
       sbQuery: () => {
         const n = callCount++;
@@ -346,7 +346,7 @@ describe("syncJob — runSyncCycle", () => {
 
   it("skips entirely when Supabase is not configured", async () => {
     let queryCalled = false;
-    vi.doMock("../src/lib/supabase.js", () => ({
+    vi.doMock("../src/lib/supabase/index.js", () => ({
       isSupabaseConfigured: () => false,
       sbQuery: () => {
         queryCalled = true;

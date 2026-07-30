@@ -43,25 +43,26 @@ satellite ──► ArdaLink Engine ──► herder's phone call
 | Local stack | ✅ `make up` |
 | LLM layer | ✅ Azure AI Foundry (`gpt-5-mini`) primary + z.ai fallback via provider-agnostic registry |
 | Speech (STT/TTS) | ✅ Azure Speech `southafricanorth`, `sw-KE-ZuriNeural` + `en-KE-AsiliaNeural`, endpoints live |
-| Voice pipeline (herder) | ✅ **Deterministic mode default** — AT `<Record>` → Azure Speech → GPT-5 Mini extract → `ground_truth_reports`. Verified 2026-07-07. |
+| Voice pipeline (herder) | ✅ **Deterministic mode default** — AT `<Record>` → Azure Speech → GPT-5 Mini extract → `ground_truth_calls` (Supabase). Verified 2026-07-07. |
 | Voice pipeline (upgrade path) | 🔜 Realtime (`gpt-4o-realtime-preview`) kept wired for browser demos and Phase-3 herder upgrade once bandwidth + pricing align |
 | Reference data | ✅ Supabase (PostGIS + ward / `satellite_indices` / `weather_data`) — populated + integrated 2026-07-08; local Postgres retained as backup mirror |
 | Voice demos | ✅ `/api/demo/voice/deterministic` (production pipeline in browser) + `/api/demo/voice/simulator` (realtime WS) |
-| Pilot | 🎯 Q3 2026 — 500 households, 3 wards |
+| WhatsApp channel | ✅ Shipped, live-tested (Evolution API) — ⚠️ 360dialog/Meta Cloud API path blocked on pending Meta Business verification |
+| Pilot | 🎯 Q3 2026 — 500 households, 5 active wards |
 
 ---
 
 ## Slide 5 · Architecture (1 diagram)
 
 ```
-Browser / Phone
+Browser / Phone / WhatsApp
      │
      ▼
 ardalink-api ──► ardalink-engine ──► Postgres
    (JWT)            (HMAC)              (RLS)
      │
      ▼
-Azure OpenAI · Cosmos DB · Africa's Talking · GEE
+Azure OpenAI · Supabase · Africa's Talking · GEE · 360dialog/Evolution
 ```
 
 Three layers of tenant enforcement: JWT → HMAC → RLS.
@@ -97,6 +98,7 @@ Three layers of tenant enforcement: JWT → HMAC → RLS.
 2. Test coverage thin → Phase 6 backlog
 3. Realtime cost spike → budget rail + flags
 4. Single cloud → cloud-agnostic Compose first, IaC deferred
+5. Meta Business API verification pending → Evolution API keeps WhatsApp live-tested meanwhile; config-only flip once approved
 
 ---
 
@@ -117,7 +119,7 @@ Three layers of tenant enforcement: JWT → HMAC → RLS.
 
 1. **Approve** the three migration PRs this week
 2. **Pick** the cloud target (recommend GCP)
-3. **Approve** the pilot tenant list (Bula Pesa, Garbatulla, Merti Sub-County — with Kinna as the third ward-scoped satellite demo)
+3. **Approve** the pilot tenant list — the 5 active Isiolo wards (Wabera, Bulla Pesa, Ngare Mara, Burat, Oldonyiro); Garbatulla/Merti/Kinna were retired 2026-07
 4. **Fund** the $50K pilot completion (per EXECUTIVE_INDEX)
 
 ---

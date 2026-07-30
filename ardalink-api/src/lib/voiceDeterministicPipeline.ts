@@ -23,7 +23,7 @@
 
 import { logger } from "./logger.js";
 import { getLastResult } from "./intelligence.js";
-import { extractIndicators, generateActionTag } from "./openai.js";
+import { extractIndicators, generateActionTag } from "./openai/index.js";
 import { computeTrustScore, logTrustScore } from "./trustScore.js";
 import { touchPastoralistLastContact } from "./pastoralistContact.js";
 import { fastTranscribe, isSpeechConfigured } from "./speech.js";
@@ -31,8 +31,9 @@ import {
   insertGroundTruthCall,
   isSupabaseConfigured,
   pastoralistByPhone,
-} from "./supabase.js";
-import { resolveHerderContext } from "./herderContext.js";
+} from "./supabase/index.js";
+import { mapExtractedIndicatorsToGroundTruthRow } from "./groundTruthMapping.js";
+import { resolveHerderContext } from "./herderContext/index.js";
 import { languageForCaller } from "./voiceCopy.js";
 import { sendSmsViaAt } from "./africastalking.js";
 
@@ -355,55 +356,17 @@ async function writeSupabaseMirror(args: SupabaseMirrorArgs): Promise<void> {
       );
       return;
     }
-    const trekDistanceKm =
-      args.indicators?.water_trekking_distance === "under_5km"
-        ? 2.5
-        : args.indicators?.water_trekking_distance === "5-10km"
-          ? 7.5
-          : args.indicators?.water_trekking_distance === "over_10km"
-            ? 12
-            : null;
-    // Supabase mortality_rate + offtake_rate are proportions (0-1). Our
-    // extractor returns categorical buckets; map them to representative
-    // rates within [0,1] so the CHECK constraints pass.
-    const mortalityRate =
-      args.indicators?.mortality_rate === "4-plus"
-        ? 0.15
-        : args.indicators?.mortality_rate === "1-3"
-          ? 0.05
-          : args.indicators?.mortality_rate === "none"
-            ? 0
-            : null;
-    const offtakeRate =
-      args.indicators?.offtake_rate === "early"
-        ? 0.6
-        : args.indicators?.offtake_rate === "normal"
-          ? 0.3
-          : args.indicators?.offtake_rate === "not_selling"
-            ? 0
-            : null;
-    // Supabase trust_score is a proportion [0,1]; our local score is 0-100.
-    const trustScoreNorm =
-      args.trustScore != null ? Math.max(0, Math.min(1, args.trustScore / 100)) : null;
-    const result = await insertGroundTruthCall({
-      pastoralist_id: past.pastoralist_id,
-      ward_id: wardId,
-      call_timestamp: new Date().toISOString(),
-      bcs_score: args.indicators?.bcs_score ?? null,
-      mortality_rate: mortalityRate,
-      offtake_rate: offtakeRate,
-      water_point_status: args.indicators?.water_point_status ?? null,
-      water_trek_distance_km: trekDistanceKm,
-      supplementary_feeding:
-        args.indicators?.supplementary_feeding === "yes"
-          ? true
-          : args.indicators?.supplementary_feeding === "no"
-            ? false
-            : null,
-      trust_score: trustScoreNorm,
-      source_language: args.sourceLanguage,
-      transcript: args.transcript,
-    });
+    const result = await insertGroundTruthCall(
+      mapExtractedIndicatorsToGroundTruthRow({
+        pastoralistId: past.pastoralist_id,
+        wardId,
+        indicators: args.indicators,
+        trustScore: args.trustScore,
+        transcript: args.transcript,
+        sourceLanguage: args.sourceLanguage,
+        channel: "voice",
+      }),
+    );
     if (result) {
       logger.info(
         {

@@ -50,9 +50,9 @@ sequenceDiagram
 
     Azure-->>API: response.done + full transcript
     API->>API: GPT-4o extraction pass<br/>(BCS, offtake, mortality, water...)
-    API->>DB: INSERT INTO ground_truth_reports
+    API->>DB: INSERT INTO ground_truth_calls (Supabase)
     AT->>API: POST /api/voice-events {callSessionState: Completed}
-    API->>DB: UPDATE call_duration_seconds, trust_score
+    API->>DB: (no update — all fields written at insert time)
 ```
 
 ### Call trigger conditions
@@ -269,11 +269,11 @@ After the call, GPT-4o processes the full transcript to extract structured data:
 ```mermaid
 flowchart LR
     Transcript["📝 Full call transcript\n(Swahili/Borana text)"]
-    GPT["GPT-4o\nextraction pass"]
+    GPT["GPT-5 Mini\nextraction pass"]
     BCS["BCS Score\n1.0–5.0"]
     Indicators["Herd Indicators\n(offtake, mortality,\nmilk, water...)"]
     Trust["Trust Score\n0–100"]
-    DB["ground_truth_reports\n(INSERT)"]
+    DB["ground_truth_calls\n(Supabase INSERT)"]
 
     Transcript --> GPT
     GPT --> BCS

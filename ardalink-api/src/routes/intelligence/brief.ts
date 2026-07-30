@@ -10,7 +10,7 @@ import {
   isSupabaseConfigured,
   recentGroundTruthCalls,
   type SbGroundTruthCallRead,
-} from "../../lib/supabase.js";
+} from "../../lib/supabase/index.js";
 
 const router: IRouter = Router();
 

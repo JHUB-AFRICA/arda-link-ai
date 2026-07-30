@@ -14,7 +14,7 @@ import { logger } from "../lib/logger.js";
 import {
   persistSatelliteVciSnapshot,
   isSupabaseConfigured,
-} from "../lib/supabase.js";
+} from "../lib/supabase/index.js";
 import { knownWardIds, tenantForWardId, wardIdForTenant } from "../lib/wardMapping.js";
 
 // Mirrors the engine's DEMO_WARDS in ardalink_engine/src/api/satellite.py.
