@@ -104,7 +104,7 @@ services:
       SESSION_SECRET: ${SESSION_SECRET}
       JWT_SECRET: ${JWT_SECRET}
       TENANT_ATTESTATION_SECRET: ${TENANT_ATTESTATION_SECRET}
-      ARDALINK_ENGINE_URL: http://engine:5001
+      ARDALINK_ENGINE_BASE: http://engine:5001
       # WhatsApp provider selection — default 360dialog, no local infra
       # needed. Flip WA_PROVIDER=evolution to use the optional
       # evolution-api service below (profile "evolution"); harmless
