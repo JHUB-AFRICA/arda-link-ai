@@ -13,7 +13,7 @@ import { logger } from "../../lib/logger.js";
 import {
   isSupabaseConfigured,
   recentLeadInteractions,
-} from "../../lib/supabase.js";
+} from "../../lib/supabase/index.js";
 
 const router: IRouter = Router();
 

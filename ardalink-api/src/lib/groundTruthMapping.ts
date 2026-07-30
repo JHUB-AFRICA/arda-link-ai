@@ -12,8 +12,8 @@
  * truth for that conversion.
  */
 
-import type { ExtractedIndicators } from "./openai.js";
-import type { SbGroundTruthCallInsert } from "./supabase.js";
+import type { ExtractedIndicators } from "./openai/index.js";
+import type { SbGroundTruthCallInsert } from "./supabase/index.js";
 
 export interface GroundTruthMappingInput {
   pastoralistId: string;

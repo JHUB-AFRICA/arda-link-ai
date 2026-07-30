@@ -24,7 +24,7 @@ import {
   isSupabaseConfigured,
   recentGroundTruthCalls,
   type SbGroundTruthCallRead,
-} from "./supabase.js";
+} from "./supabase/index.js";
 
 export interface ResolvedLocation {
   lat: number;
@@ -134,9 +134,9 @@ export const ISILO_WARDS: Array<{
  * endpoints can share the same window semantics as the per-county
  * path. Returns null for `slice="all"`.
  */
-export { timeSliceStart } from "./openData.js";
+export { timeSliceStart } from "./openData/index.js";
 
-export type { TimeSlice } from "./openData.js";
+export type { TimeSlice } from "./openData/index.js";
 
 /**
  * Compute per-ward aggregates for the active metric + time slice.

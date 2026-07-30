@@ -5,12 +5,12 @@ import {
   resolveHerderContext,
   buildLocalizedBrief,
   type HerderContext,
-} from "../lib/herderContext.js";
+} from "../lib/herderContext/index.js";
 import {
   upsertPastoralistLead,
   identityForPhone,
   logLeadInteraction,
-} from "../lib/supabase.js";
+} from "../lib/supabase/index.js";
 import { sendSmsViaAt, initiateOutboundCall } from "../lib/africastalking.js";
 
 // The 5 active Isiolo Sub-County wards, ordered so digit ↔ ward is

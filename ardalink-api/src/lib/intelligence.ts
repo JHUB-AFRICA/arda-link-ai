@@ -8,7 +8,7 @@ import {
   generateScript,
   type GeneratedScript,
   type PixelContext,
-} from "./openai.js";
+} from "./openai/index.js";
 import { initiateCall, storeCallSession } from "./voice.js";
 import { fetchClimateSnapshot, type ClimateSnapshot } from "./climate.js";
 import { computeForecast, type VegetationForecast } from "./predict.js";

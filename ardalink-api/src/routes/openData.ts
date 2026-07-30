@@ -9,7 +9,7 @@ import {
   probeOpenDataSources,
   OPEN_DATA_SOURCES,
   type PlanetaryComputerCollection,
-} from "../lib/openData.js";
+} from "../lib/openData/index.js";
 import { withTenantContext } from "../lib/tenancy-context.js";
 import { logger } from "../lib/logger.js";
 
@@ -478,7 +478,7 @@ router.get("/open-data/geo/report-pins", async (req, res): Promise<void> => {
   const slice = parseSlice(String(req.query.slice ?? "30d").toLowerCase());
   try {
     const { resolvePlaceName, timeSliceStart } = await import("../lib/geoHelpers.js");
-    const { isSupabaseConfigured, recentGroundTruthCalls } = await import("../lib/supabase.js");
+    const { isSupabaseConfigured, recentGroundTruthCalls } = await import("../lib/supabase/index.js");
     const since = timeSliceStart(slice);
     // Read from Supabase ground_truth_calls. Fields not present on Supabase
     // (reportedLocation, reportedQuadrant, waterPointName, ndviVsBaselinePercent,
@@ -570,7 +570,7 @@ router.get("/open-data/geo/per-county-aggregates", async (req, res): Promise<voi
   const sliceRaw = String(req.query.slice ?? "30d").toLowerCase();
   const slice = parseSlice(sliceRaw);
   try {
-    const { computePerCountyAggregates } = await import("../lib/openData.js");
+    const { computePerCountyAggregates } = await import("../lib/openData/index.js");
     const data = await computePerCountyAggregates(tenantId, metric, slice);
     res.json({
       tenant_id: tenantId,
@@ -595,7 +595,7 @@ router.get("/open-data/geo/per-county-aggregates", async (req, res): Promise<voi
  */
 router.get("/open-data/geo/county-presets", async (_req, res): Promise<void> => {
   const { COUNTY_PRESETS, DEFAULT_MAIN_COUNTIES } = await import(
-    "../lib/openData.js"
+    "../lib/openData/index.js"
   );
   res.json({
     pastoral: COUNTY_PRESETS.filter((c) => c.group === "pastoral"),
@@ -617,7 +617,7 @@ router.get("/open-data/geo/rankings", async (req, res): Promise<void> => {
   const slice = parseSlice(String(req.query.slice ?? "30d").toLowerCase());
   const selected = parseSelectedCounties(req.query.counties);
   try {
-    const { computeRankings } = await import("../lib/openData.js");
+    const { computeRankings } = await import("../lib/openData/index.js");
     const data = await computeRankings(tenantId, metric, slice, selected);
     res.json({
       tenant_id: tenantId,
@@ -642,7 +642,7 @@ router.get("/open-data/geo/insights", async (req, res): Promise<void> => {
   const slice = parseSlice(String(req.query.slice ?? "30d").toLowerCase());
   const selected = parseSelectedCounties(req.query.counties);
   try {
-    const { computeInsights } = await import("../lib/openData.js");
+    const { computeInsights } = await import("../lib/openData/index.js");
     const data = await computeInsights(tenantId, slice, selected);
     res.json({
       tenant_id: tenantId,
@@ -666,7 +666,7 @@ router.get("/open-data/geo/alert-markers", async (req, res): Promise<void> => {
   const tenantId = requireTenant(req);
   const slice = parseSlice(String(req.query.slice ?? "30d").toLowerCase());
   try {
-    const { computeAlertMarkers } = await import("../lib/openData.js");
+    const { computeAlertMarkers } = await import("../lib/openData/index.js");
     const markers = await computeAlertMarkers(tenantId, slice);
     res.json({
       tenant_id: tenantId,
@@ -694,7 +694,7 @@ router.get("/open-data/geo/time-travel", async (req, res): Promise<void> => {
   const selected = parseSelectedCounties(req.query.counties);
   try {
     const { computePerCountyAggregates, TIME_SLICE_LABELS } = await import(
-      "../lib/openData.js"
+      "../lib/openData/index.js"
     );
     const slices: Array<"live" | "7d" | "30d" | "90d" | "1y" | "all"> = [
       "7d", "30d", "90d", "1y", "all",

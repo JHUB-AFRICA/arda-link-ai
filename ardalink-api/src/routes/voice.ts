@@ -2,8 +2,8 @@ import { Router, type IRouter, type Request } from "express";
 import { logger } from "../lib/logger.js";
 import { getLastResult } from "../lib/intelligence.js";
 import { processDeterministicVoiceRecording } from "../lib/voiceDeterministicPipeline.js";
-import { resolveHerderContext } from "../lib/herderContext.js";
-import { logLeadInteraction } from "../lib/supabase.js";
+import { resolveHerderContext } from "../lib/herderContext/index.js";
+import { logLeadInteraction } from "../lib/supabase/index.js";
 import {
   categoryLabelFor,
   dtmfConfirmation,

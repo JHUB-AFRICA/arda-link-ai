@@ -20,10 +20,10 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import {
   resolveHerderContext,
   buildLocalizedBrief,
-} from "../../lib/herderContext.js";
+} from "../../lib/herderContext/index.js";
 import { centroidForTenant, nearestWorkingKnownPoints } from "../../lib/wpdx.js";
 import { languageForCaller } from "../../lib/voiceCopy.js";
-import { extractIndicators } from "../../lib/openai.js";
+import { extractIndicators } from "../../lib/openai/index.js";
 import { buildWhatsappSystemPrompt } from "../../lib/whatsappConversation.js";
 
 const router: IRouter = Router();

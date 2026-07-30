@@ -23,7 +23,7 @@
 
 import { logger } from "./logger.js";
 import { getLastResult } from "./intelligence.js";
-import { extractIndicators, generateActionTag } from "./openai.js";
+import { extractIndicators, generateActionTag } from "./openai/index.js";
 import { computeTrustScore, logTrustScore } from "./trustScore.js";
 import { touchPastoralistLastContact } from "./pastoralistContact.js";
 import { fastTranscribe, isSpeechConfigured } from "./speech.js";
@@ -31,9 +31,9 @@ import {
   insertGroundTruthCall,
   isSupabaseConfigured,
   pastoralistByPhone,
-} from "./supabase.js";
+} from "./supabase/index.js";
 import { mapExtractedIndicatorsToGroundTruthRow } from "./groundTruthMapping.js";
-import { resolveHerderContext } from "./herderContext.js";
+import { resolveHerderContext } from "./herderContext/index.js";
 import { languageForCaller } from "./voiceCopy.js";
 import { sendSmsViaAt } from "./africastalking.js";
 

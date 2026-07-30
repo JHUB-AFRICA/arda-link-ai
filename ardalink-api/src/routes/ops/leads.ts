@@ -27,7 +27,7 @@ import {
   setLeadStatus,
   upsertPastoralist,
   type SbPastoralistLead,
-} from "../../lib/supabase.js";
+} from "../../lib/supabase/index.js";
 import { sendSmsViaAt } from "../../lib/africastalking.js";
 
 const router: IRouter = Router();

@@ -3,11 +3,11 @@ import { logger } from "../lib/logger.js";
 import {
   resolveHerderContext,
   buildLocalizedBrief,
-} from "../lib/herderContext.js";
+} from "../lib/herderContext/index.js";
 import { centroidForTenant, formatUssdLines } from "../lib/wpdx.js";
 import { languageForCaller } from "../lib/voiceCopy.js";
 import { initiateOutboundCall, sendSmsViaAt } from "../lib/africastalking.js";
-import { logLeadInteraction } from "../lib/supabase.js";
+import { logLeadInteraction } from "../lib/supabase/index.js";
 
 const DEFAULT_TENANT_ID =
   process.env.DETERMINISTIC_TENANT_ID ?? "bula-pesa";

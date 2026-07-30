@@ -22,7 +22,7 @@
 import { eq, and } from "drizzle-orm";
 import { db, pastoralistsTable } from "@workspace/db";
 import { logger } from "./logger.js";
-import { resolveHerderContext } from "./herderContext.js";
+import { resolveHerderContext } from "./herderContext/index.js";
 import { languageForCaller } from "./voiceCopy.js";
 import { sendWhatsappTemplate } from "./whatsappProviderRegistry.js";
 import type { WaTemplateComponent } from "./whatsappProvider.js";
