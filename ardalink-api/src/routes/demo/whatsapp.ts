@@ -95,7 +95,11 @@ async function replyFor(
   }
 
   const { complete } = await import("../../lib/llm/index.js");
-  const systemPrompt = buildWhatsappSystemPrompt(ctx, lang);
+  // Demo simulator keeps no message history of its own — by the time
+  // this branch runs, seenPhones already has `from` (the first message
+  // always goes to the welcome-list branch above), so this is never
+  // the true first turn.
+  const systemPrompt = buildWhatsappSystemPrompt(ctx, lang, true);
   const [llmResponse, indicators] = await Promise.all([
     complete(
       "multilingual",

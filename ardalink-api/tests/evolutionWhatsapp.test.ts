@@ -129,7 +129,7 @@ interface Fx {
   lang: "sw" | "en";
   hasPrior: boolean;
   loggedMessages: Array<Record<string, unknown>>;
-  sentLists: Array<{ phone: string }>;
+  sentButtons: Array<{ phone: string }>;
 }
 
 const fx: Fx = {
@@ -143,10 +143,10 @@ const fx: Fx = {
   lang: "sw",
   hasPrior: false,
   loggedMessages: [],
-  sentLists: [],
+  sentButtons: [],
 };
 
-vi.mock("../src/lib/herderContext.js", () => ({
+vi.mock("../src/lib/herderContext/index.js", () => ({
   resolveHerderContext: async () => fx.ctx,
   buildLocalizedBrief: () => "brief",
 }));
@@ -157,21 +157,25 @@ vi.mock("../src/lib/wpdx.js", () => ({
 }));
 vi.mock("../src/lib/whatsappProviderRegistry.js", () => ({
   sendWhatsappSessionMessage: async () => ({ ok: true, messageId: "wamid.test" }),
-  sendWhatsappInteractiveList: async (phone: string) => {
-    fx.sentLists.push({ phone });
-    return { ok: true, messageId: "wamid.list" };
+  sendWhatsappInteractiveButtons: async (phone: string) => {
+    fx.sentButtons.push({ phone });
+    return { ok: true, messageId: "wamid.buttons" };
   },
   sendWhatsappLocation: async () => ({ ok: true, messageId: "wamid.loc" }),
 }));
-vi.mock("../src/lib/supabase.js", () => ({
+vi.mock("../src/lib/supabase/index.js", () => ({
   logWhatsappMessage: async (row: Record<string, unknown>) => {
     fx.loggedMessages.push(row);
   },
   hasPriorWhatsappMessages: async () => fx.hasPrior,
+  recentWhatsappMessages: async () => [],
   insertGroundTruthCall: async () => ({ call_id: "c1", call_timestamp: "now" }),
   isSupabaseConfigured: () => true,
+  logLeadInteraction: async () => undefined,
+  setLeadStatus: async () => true,
+  markPastoralistOptedOut: async () => true,
 }));
-vi.mock("../src/lib/openai.js", () => ({
+vi.mock("../src/lib/openai/index.js", () => ({
   extractIndicators: async () => null,
   generateActionTag: async () => "Report",
 }));
@@ -189,7 +193,7 @@ let app: Express;
 beforeEach(async () => {
   fx.hasPrior = false;
   fx.loggedMessages = [];
-  fx.sentLists = [];
+  fx.sentButtons = [];
   const { default: evolutionWhatsappRouter } = await import(
     "../src/routes/evolutionWhatsapp.js"
   );
@@ -215,8 +219,8 @@ describe("POST /api/evolution-whatsapp-webhook", () => {
       });
     expect(res.status).toBe(200);
     await new Promise((r) => setTimeout(r, 0));
-    expect(fx.sentLists).toHaveLength(1);
-    expect(fx.sentLists[0].phone).toBe("+254712345699");
+    expect(fx.sentButtons).toHaveLength(1);
+    expect(fx.sentButtons[0].phone).toBe("+254712345699");
   });
 
   it("returns 200 and does nothing for an unrecognized/echo payload", async () => {
@@ -226,6 +230,6 @@ describe("POST /api/evolution-whatsapp-webhook", () => {
     });
     expect(res.status).toBe(200);
     await new Promise((r) => setTimeout(r, 0));
-    expect(fx.sentLists).toHaveLength(0);
+    expect(fx.sentButtons).toHaveLength(0);
   });
 });
