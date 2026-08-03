@@ -43,16 +43,25 @@ export class MockClient implements LlmClient {
     // dashboard will render. Useful for visual smoke tests.
     const lastUser = [...req.messages].reverse().find((m) => m.role === 'user');
     const echoed = lastUser?.content.slice(0, 200) ?? '(no user message)';
-    // Always return JSON so callers that pass jsonSchema get parsed
-    // content. Real providers handle both via response_format.
-    const content = JSON.stringify({
-      summary: `[MOCK ${this.name}/${this.model}] Brief: ${echoed.slice(0, 80)}...`,
-      actions: [
-        'Mock action 1: send a herd check',
-        'Mock action 2: recruit a NE-quadrant correspondent',
-        'Mock action 3: defer the satellite refresh',
-      ],
-    });
+    // Only wrap as JSON when the caller actually asked for a schema —
+    // matches every real provider's response_format contract (see
+    // zai.ts/minimax.ts/azure.ts: they only force JSON when
+    // req.jsonSchema is set). A plain multilingual/chat request (no
+    // schema) must get plain text back, same as it would from a real
+    // provider — this used to always JSON-wrap regardless of task,
+    // which meant a bare `{"summary":"[MOCK ...` object was sent
+    // verbatim as a WhatsApp reply the one time the real z.ai→minimax
+    // fallback chain bottomed out to mock in a live conversation.
+    const content = req.jsonSchema
+      ? JSON.stringify({
+          summary: `[MOCK ${this.name}/${this.model}] Brief: ${echoed.slice(0, 80)}...`,
+          actions: [
+            'Mock action 1: send a herd check',
+            'Mock action 2: recruit a NE-quadrant correspondent',
+            'Mock action 3: defer the satellite refresh',
+          ],
+        })
+      : `[MOCK ${this.name}/${this.model}] ${echoed.slice(0, 200)}`;
     return {
       content,
       usage: {

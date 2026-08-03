@@ -429,9 +429,24 @@ async function handleFreeText(
       : Promise.resolve("WhatsApp Report"),
   ]);
 
-  const reply = llmResponse.content || (
-    lang === "sw" ? "Asante kwa ujumbe wako." : "Thanks for your message."
-  );
+  const safeDefault =
+    lang === "sw" ? "Asante kwa ujumbe wako." : "Thanks for your message.";
+  // Hard backstop: MockClient (used when no real provider is reachable —
+  // see llm/providers/mock.ts) must never reach a live herder. Observed
+  // once in practice: the real z.ai→minimax fallback chain bottomed out
+  // mid-conversation and the raw mock content nearly went out verbatim.
+  // If this ever fires, fail safe to the same default reply used for an
+  // empty completion rather than surface a degraded/placeholder answer.
+  if (llmResponse.provider === "mock") {
+    logger.error(
+      { from, provider: llmResponse.provider, model: llmResponse.model },
+      "[WhatsApp] Free-text turn: LLM registry fell back to mock — sending safe default instead of mock content",
+    );
+  }
+  const reply =
+    llmResponse.provider === "mock"
+      ? safeDefault
+      : llmResponse.content || safeDefault;
   await sendWhatsappSessionMessage(from, reply);
   logOutbound(from, ctx, "text", reply);
   logInteraction(from, ctx, "free_text", rawText, reply);
@@ -491,8 +506,27 @@ export async function processInboundWhatsappMessage(
   tenantId: string = DEFAULT_TENANT_ID,
 ): Promise<void> {
   if (msg.type === "status") {
+    // Prefer msg.from (already normalized by the provider route's
+    // toE164FromJid) over the raw status.recipientId — the raw JID
+    // has no "+" and, for groups/LIDs, a different suffix than what
+    // message rows use, which was splitting one conversation's status
+    // receipts and its actual messages under two different
+    // phone_number values (observed for real: a group's ERROR
+    // delivery statuses were invisible against its own message thread).
+    const phoneNumber = msg.from ?? msg.status?.recipientId ?? "unknown";
+    if (msg.status?.status === "ERROR") {
+      // Every other status (SERVER_ACK/DELIVERY_ACK/READ) is routine
+      // and logged at info-via-DB only. ERROR means the recipient never
+      // actually got the message — observed for real against a group
+      // chat where every single outbound send failed silently; nothing
+      // previously distinguished this from ordinary delivery noise.
+      logger.warn(
+        { phoneNumber, messageId: msg.status?.id },
+        "[WhatsApp] Delivery ERROR — recipient did not receive a sent message",
+      );
+    }
     void logWhatsappMessage({
-      phone_number: msg.status?.recipientId ?? msg.from ?? "unknown",
+      phone_number: phoneNumber,
       direction: "status",
       message_type: "status",
       body_text: msg.status?.status ?? null,

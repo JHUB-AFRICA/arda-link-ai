@@ -35,8 +35,18 @@ interface EvoWebhookBody {
   };
 }
 
+// Strips whichever WhatsApp JID suffix is present — individual chats
+// (@s.whatsapp.net), groups (@g.us), and Baileys' privacy-preserving
+// "linked ID" used on some status callbacks (@lid) — before prepending
+// "+". Previously only @s.whatsapp.net was stripped, so every group
+// message's phone_number ended up literally "+<id>@g.us": harmless for
+// individual chats but it meant a group's identifier here didn't match
+// whatever a status-callback path derived separately (see the fix in
+// processInboundWhatsappMessage's status branch below, in
+// whatsappTurn.ts — same conversation was ending up split across two
+// different phone_number values, observed for real in the local mirror).
 function toE164FromJid(jid: string): string {
-  return `+${jid.replace(/@s\.whatsapp\.net$/, "")}`;
+  return `+${jid.replace(/@(s\.whatsapp\.net|g\.us|lid)$/, "")}`;
 }
 
 /**

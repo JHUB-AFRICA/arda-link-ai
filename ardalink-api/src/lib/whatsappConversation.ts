@@ -53,6 +53,32 @@ Rules that still apply:
 - There is no "end of call" — conversations continue naturally. Never announce you're ending, never reference a call duration, never try to invoke any tool to hang up (no such tool exists here).`;
 }
 
+/**
+ * Hard grounding rules. Added after live-testing turned up two real,
+ * observed failures: (1) a herder pasted a Google Maps share-link and
+ * asked for water — the model claimed to have "checked the area" and
+ * invented three specific named water points with distances/directions/
+ * quality notes, then claimed to have sent a map pin. None of it was
+ * real: this text path has no ability to resolve a URL into coordinates
+ * or to send a location message at all — that only happens via a native
+ * WhatsApp location share, handled entirely separately in
+ * handleLocationShare(). (2) A herder typed an unrecognized/retired ward
+ * name ("Merti") and the model fabricated a full NDVI/rainfall/14-day
+ * forecast for it, rather than only ever citing the one real ward
+ * (`ctx.wardName`) it was actually given below. The generic "never
+ * invent data" line at the end of this prompt existed before both
+ * incidents and evidently isn't specific enough on its own — these
+ * rules name the exact failure modes instead.
+ */
+function whatsappGroundingRules(): string {
+  return `
+─── GROUNDING — HARD RULES (do not soften these) ───
+- The ONLY ward you have real satellite/weather data for is the one named above. If the herder names a different place — including one you don't recognize, or a place you know was retired from this system — do NOT invent NDVI, rainfall, forecast, or drought numbers for it. Say plainly you only have verified data for their registered ward, and ask where relative to it they mean.
+- The ONLY water point you have real data for is the one named above (if any). Do not name any other specific water point, distance, direction, or quality assessment — you have no way to look those up in this conversation. If the herder wants other options, tell them to share their live WhatsApp location (the pin/attachment feature, not a typed address or a maps link) so the system can find real nearby points.
+- You cannot open links, and you cannot see a map from a description of a place. If the herder pastes a link (Google Maps or otherwise) or describes a location in words, say you can't read that — ask them to share their live location instead.
+- You cannot send a map pin, image, or any attachment from this conversation. Never say "I'm sending you the pin/map now" or similar — that capability does not exist on this path. If a location pin is warranted, direct them to share their own location; do not promise one back.`;
+}
+
 function whatsappFormattingGuidance(): string {
   return `
 ─── FORMATTING (this is WhatsApp — make it visually easy to scan) ───
@@ -121,7 +147,9 @@ ${peerLine}
 
 ${whatsappIndicatorGuidance()}
 
+${whatsappGroundingRules()}
+
 ${whatsappFormattingGuidance()}
 
-Never invent data you don't have. If asked something outside livestock/drought/water advisory, gently steer back — you are a livestock advisory assistant, not a general-purpose assistant.`;
+If asked something outside livestock/drought/water advisory, gently steer back — you are a livestock advisory assistant, not a general-purpose assistant.`;
 }

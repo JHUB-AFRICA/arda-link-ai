@@ -35,6 +35,7 @@ interface Fx {
   }>;
   indicators: Record<string, unknown> | null;
   llmContent: string;
+  llmProvider: string;
   sentSessionMessages: Array<{ phone: string; text: string }>;
   sentButtons: Array<{ phone: string }>;
   sentLocations: Array<{ phone: string; lat: number; lon: number; name: string }>;
@@ -75,6 +76,7 @@ const fx: Fx = {
   ],
   indicators: null,
   llmContent: "Asante, nimeelewa.",
+  llmProvider: "test-provider",
   sentSessionMessages: [],
   sentButtons: [],
   sentLocations: [],
@@ -183,8 +185,12 @@ vi.mock("../src/lib/llm/index.js", () => ({
     fx.lastCompleteMessages = req.messages;
     return {
       content: fx.llmContent,
-      provider: "mock",
-      model: "mock",
+      // Defaults to a non-colliding name — whatsappTurn.ts treats
+      // provider === "mock" as a real MockClient fallback and swaps in
+      // a safe default reply rather than trusting the content (see the
+      // mock-leak fix + the dedicated regression test below).
+      provider: fx.llmProvider,
+      model: "test-model",
       cached: false,
       usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
       latencyMs: 1,
@@ -212,6 +218,7 @@ beforeEach(async () => {
   };
   fx.hasPrior = true;
   fx.indicators = null;
+  fx.llmProvider = "test-provider";
   fx.sentSessionMessages = [];
   fx.sentButtons = [];
   fx.sentLocations = [];
@@ -303,6 +310,25 @@ describe("POST /api/whatsapp-webhook", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(fx.sentSessionMessages).toHaveLength(1);
     expect(fx.sentSessionMessages[0].text).toBe(fx.llmContent);
+  });
+
+  it("never sends raw MockClient content to a live conversation", async () => {
+    // Regression test for a real incident: the z.ai->minimax fallback
+    // chain bottomed out to MockClient mid-conversation and its raw
+    // placeholder JSON ("{\"summary\":\"[MOCK ...") went out verbatim
+    // as the WhatsApp reply. provider === "mock" must always be
+    // swapped for the safe default, regardless of what content the
+    // (untrusted) mock response carries.
+    fx.llmProvider = "mock";
+    fx.llmContent = '{"summary":"[MOCK z/glm-4.5-flash] Brief: ..."}';
+    const res = await request(app)
+      .post("/api/whatsapp-webhook")
+      .send(webhookBody({ type: "text", text: { body: "Ng'ombe wangu ni wagonjwa" } }));
+    expect(res.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(fx.sentSessionMessages).toHaveLength(1);
+    expect(fx.sentSessionMessages[0].text).not.toContain("MOCK");
+    expect(fx.sentSessionMessages[0].text).toBe("Asante kwa ujumbe wako.");
   });
 
   it("writes a ground_truth_calls row with channel=whatsapp when indicators are collected", async () => {

@@ -119,7 +119,17 @@ export const hasPriorWhatsappMessages = async (
       { err: String(err), phone },
       "[Supabase] hasPriorWhatsappMessages local fallback failed",
     );
-    return false;
+    // Fail toward "yes, seen before" — same reasoning as the comment
+    // above this function: on total failure (both Supabase and the
+    // local mirror unreachable) we cannot tell first-contact from an
+    // ongoing thread, and defaulting to false re-sends the welcome
+    // menu into a live conversation. Observed for real: one tester got
+    // welcome_list 6 times across an active thread. Worst case of
+    // defaulting true instead is a genuine first-time sender occasionally
+    // not getting the welcome menu — recoverable any time via
+    // MSAADA/HELP/MENU — which is a smaller failure than repeatedly
+    // interrupting an ongoing conversation.
+    return true;
   }
 };
 
