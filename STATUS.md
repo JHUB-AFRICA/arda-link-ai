@@ -688,6 +688,57 @@ Full audit of Supabase-local write paths found 6 severe drifts, all now closed o
   "wired but not triggered" — `satelliteJob.ts` has triggered it on a
   seasonal schedule for a while; that was a doc-drift bug, not a code gap.
 
+**E-series (Piosphere zones + Operator data-management console) — 2026-08-03, `feat/piosphere-zones` + `feat/operator-console`:**
+
+- **E1 `feat(piosphere)`** — species-specific grazing-ring radii
+  (cattle 5km / shoat 8km / camel 15km, per ward) around every water
+  point. Herder shares a location pin or picks a species via WhatsApp;
+  the engine reuses the existing ward-footprint VCI GEE query,
+  parameterized to the ring's centre + radius, cached by
+  `{water_node_id}:{species_group}` (never by raw herder GPS). No new
+  geometry storage — rings are computed on read via haversine distance,
+  since this schema has no PostGIS. Scoped to Swahili-only, all 5 active
+  wards from day one.
+- **E2 `feat(operator-console)`** — this surfaced a real bug: the
+  engine's `water_nodes` table silently mixed 12 fabricated demo rows
+  (`source IS NULL`, left over from the original scaffold) with 193 real
+  WPDx/OSM rows, with no way to tell them apart or stop an advisory from
+  anchoring on a fictional point. Built the operator data-management
+  console in response — not just a water-sources patch, per an explicit
+  scope call to go broad: water-node edit/verify/soft-delete, species-ring
+  radius tuning, a `ground_truth_corrections` layer that respects
+  `ground_truth_calls`' append-only invariant (corrections are additive,
+  never an UPDATE on the original row), pastoralist editing, and a full
+  `admin_audit_log` trail behind every write. `water_nodes` gained
+  `verified`/`deleted_at`; `/api/v1/grazing/advisory` now filters
+  `WHERE verified = true AND deleted_at IS NULL` so a fake seed point can
+  never again be served as a herder's nearest water.
+- **E3 `fix(operator-console)`** — post-merge completeness pass caught
+  two gaps: the Species Radii tab had no list endpoint (write-only, blind
+  to current values) — added `GET /api/v1/admin/species-ring-radii`
+  end-to-end; and `PastoralistEditDialog` had hand-rolled its own
+  `Pastoralist` type (`location: string | null`) diverging from the real
+  generated one (`location?: string`), a type error masked locally by a
+  pnpm 11/node 22 vs CI's pinned pnpm 9/node 24 mismatch. Fixed by reusing
+  the real `@workspace/api-client-react` type. Re-verified against CI's
+  exact toolchain: full typecheck, 69 web tests, production build, 402 API
+  tests, engine ruff + 40 pytest — all green.
+- **⚠️ Known blocker — `ground_truth_corrections` not yet on live
+  Supabase**: migration `0009_ground_truth_corrections.up.sql` was applied
+  to the local Postgres mirror, but `ground_truth_calls`' source of truth
+  is the live Supabase project, not this mirror — same for its correction
+  layer. Confirmed via a direct PostgREST probe
+  (`GET .../rest/v1/ground_truth_corrections` → 404) that the table does
+  not exist there yet. This is administrative, not a code gap:
+  `insertGroundTruthCorrection()` fails soft (same non-2xx→null contract
+  as every other Supabase write in this repo) rather than crashing, but
+  every correction an operator submits right now silently no-ops. Needs
+  the migration's `CREATE TABLE IF NOT EXISTS public.ground_truth_corrections`
+  run by hand via the Supabase SQL editor (no direct Postgres connection
+  string or management token is available to automate this). Blocks Phase
+  3 of the console (ground-truth correction) only — water sources, species
+  radii, and pastoralist editing are unaffected and fully live.
+
 *Prior cycle (2026-07-07 baseline)*:
 * Satellite API routes + scheduler.
 * Engine ↔ api tenant attestation (HMAC-SHA256 over `TENANT_ATTESTATION_SECRET`).
