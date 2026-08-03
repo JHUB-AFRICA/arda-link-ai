@@ -60,6 +60,13 @@ export {
   type SbGroundTruthCallInsert,
   insertGroundTruthCall,
   recentGroundTruthCalls,
+  type SbGroundTruthCorrection,
+  type SbGroundTruthCorrectionInsert,
+  type CorrectableGroundTruthField,
+  CORRECTABLE_GROUND_TRUTH_FIELDS,
+  insertGroundTruthCorrection,
+  correctionsForCallIds,
+  latestCorrectionFor,
 } from "./groundTruth.js";
 
 export {

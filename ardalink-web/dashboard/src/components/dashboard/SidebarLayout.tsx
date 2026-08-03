@@ -9,9 +9,9 @@ import {
 import { Sidebar } from "./Sidebar";
 
 interface SidebarLayoutProps {
-  tab: "map" | "pastoralists" | "groundtruth" | "demos";
+  tab: "map" | "pastoralists" | "groundtruth" | "demos" | "admin";
   statusData: any;
-  onNavigate: (next: "map" | "pastoralists" | "groundtruth" | "demos") => void;
+  onNavigate: (next: "map" | "pastoralists" | "groundtruth" | "demos" | "admin") => void;
   navOpen: boolean;
   setNavOpen: (open: boolean) => void;
 }

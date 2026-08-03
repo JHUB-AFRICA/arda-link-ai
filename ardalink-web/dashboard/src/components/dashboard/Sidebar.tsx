@@ -1,9 +1,9 @@
-import { Satellite, Users, ClipboardList, Radio, AlertTriangle } from "lucide-react";
+import { Satellite, Users, ClipboardList, Radio, AlertTriangle, Database } from "lucide-react";
 
 interface SidebarProps {
-  tab: "map" | "pastoralists" | "groundtruth" | "demos";
+  tab: "map" | "pastoralists" | "groundtruth" | "demos" | "admin";
   statusData: any;
-  onNavigate: (next: "map" | "pastoralists" | "groundtruth" | "demos") => void;
+  onNavigate: (next: "map" | "pastoralists" | "groundtruth" | "demos" | "admin") => void;
 }
 
 /** Navigation sidebar with system status and alert indicators */
@@ -74,6 +74,17 @@ export function Sidebar({ tab, statusData, onNavigate }: SidebarProps) {
           }`}
         >
           <ClipboardList className="w-4 h-4" /> Ground Truth
+        </button>
+        <button
+          data-testid="nav-admin"
+          onClick={() => onNavigate("admin")}
+          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+            tab === "admin"
+              ? "bg-amber-600/20 text-amber-400 border border-amber-600/30"
+              : "text-gray-400 hover:text-gray-200 hover:bg-gray-800"
+          }`}
+        >
+          <Database className="w-4 h-4" /> Data Management
         </button>
         <button
           data-testid="nav-demos"

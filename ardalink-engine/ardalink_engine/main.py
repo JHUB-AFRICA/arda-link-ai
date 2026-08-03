@@ -24,7 +24,7 @@ from contextlib import asynccontextmanager  # noqa: E402
 
 from fastapi import FastAPI  # noqa: E402
 
-from ardalink_engine.src.api import baseline, grazing, satellite  # noqa: E402
+from ardalink_engine.src.api import admin_water, baseline, grazing, satellite  # noqa: E402
 from ardalink_engine.src.api.tenancy_middleware import TenantAttestationMiddleware  # noqa: E402
 from ardalink_engine.src.config import settings  # noqa: E402
 from ardalink_engine.src.db.client import db_client  # noqa: E402
@@ -61,6 +61,7 @@ app.add_middleware(TenantAttestationMiddleware)
 app.include_router(baseline.router)
 app.include_router(satellite.router)
 app.include_router(grazing.router)
+app.include_router(admin_water.router)
 
 
 @app.get("/health", tags=["meta"])

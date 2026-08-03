@@ -103,6 +103,7 @@ export const peerSignalForWard = async (
  * When present, this overrides WPDx snapshot status per point.
  */
 export interface SbWaterPointGroundTruth {
+  call_id: string;
   water_point_name: string;
   water_point_status: string;
   call_timestamp: string;
@@ -122,7 +123,7 @@ export const recentWaterPointGroundTruth = async (
   const cutoff = new Date(Date.now() - daysWindow * 24 * 60 * 60 * 1000)
     .toISOString();
   const path =
-    `ground_truth_calls?select=water_point_name,water_point_status,call_timestamp,ward_id` +
+    `ground_truth_calls?select=call_id,water_point_name,water_point_status,call_timestamp,ward_id` +
     `&water_point_name=not.is.null&water_point_status=not.is.null` +
     `&call_timestamp=gte.${encodeURIComponent(cutoff)}` +
     `&order=call_timestamp.desc&limit=200`;

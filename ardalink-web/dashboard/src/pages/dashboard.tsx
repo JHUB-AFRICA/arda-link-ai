@@ -21,6 +21,7 @@ import CallbackLog from "@/components/dashboard/CallbackLog";
 import TimeSeriesPanel from "@/components/dashboard/TimeSeriesPanel";
 import { MapTab } from "@/components/dashboard/MapTab";
 import { PastoralistsTab } from "@/components/dashboard/PastoralistsTab";
+import { AdminConsoleTab } from "@/components/dashboard/AdminConsoleTab";
 import { DemosTab } from "@/components/dashboard/DemosTab";
 import { SidebarLayout } from "@/components/dashboard/SidebarLayout";
 import { TopBar } from "@/components/dashboard/TopBar";
@@ -29,7 +30,7 @@ import { IntelligenceBriefHeader } from "@/components/dashboard/IntelligenceBrie
 // --- Main Dashboard ---
 export default function Dashboard({ session }: { session?: import("@/components/AuthGate").SessionInfo }) {
   const [tab, setTab] = useState<
-    "map" | "pastoralists" | "groundtruth" | "demos"
+    "map" | "pastoralists" | "groundtruth" | "demos" | "admin"
   >("map");
   const [navOpen, setNavOpen] = useState(false);
   const [callOpen, setCallOpen] = useState(false);
@@ -86,7 +87,7 @@ export default function Dashboard({ session }: { session?: import("@/components/
   const d = statusData?.last_run as any;
   const f = forecastData as any;
 
-const navigate = (next: "map" | "pastoralists" | "groundtruth" | "demos") => {
+const navigate = (next: "map" | "pastoralists" | "groundtruth" | "demos" | "admin") => {
     setTab(next);
     setNavOpen(false);
   };
@@ -163,6 +164,9 @@ const navigate = (next: "map" | "pastoralists" | "groundtruth" | "demos") => {
 
           {/* --- Tab: Demo Simulators --- */}
           {tab === "demos" && <DemosTab />}
+
+          {/* --- Tab: Data Management (operator console) --- */}
+          {tab === "admin" && <AdminConsoleTab />}
         </div>
       </div>
       <ChatFloatingButton onClick={() => setChatOpen(true)} />

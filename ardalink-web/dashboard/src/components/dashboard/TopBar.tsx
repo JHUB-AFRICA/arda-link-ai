@@ -5,7 +5,7 @@ import { UserMenu } from "@/components/UserMenu";
 import type { SessionInfo } from "@/components/AuthGate";
 
 interface TopBarProps {
-  tab: "map" | "pastoralists" | "groundtruth" | "demos";
+  tab: "map" | "pastoralists" | "groundtruth" | "demos" | "admin";
   statusData: any;
   forecastData: any;
   handleTriggerCheck: () => void;

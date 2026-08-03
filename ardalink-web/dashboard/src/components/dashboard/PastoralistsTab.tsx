@@ -1,4 +1,5 @@
-import { Trash2 } from "lucide-react";
+import { useState } from "react";
+import { Trash2, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -9,6 +10,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PastoralistForm } from "./PastoralistForm";
+import { PastoralistEditDialog } from "./PastoralistEditDialog";
 
 interface PastoralistsTabProps {
   pastoralistsData: any[] | undefined;
@@ -22,6 +24,10 @@ export function PastoralistsTab({
   loadingPastoralists,
   handleDeletePastoralist,
 }: PastoralistsTabProps) {
+  const [editing, setEditing] = useState<
+    import("@workspace/api-client-react").Pastoralist | null
+  >(null);
+
   return (
     <div className="flex-1 flex flex-col md:flex-row p-3 sm:p-6 gap-4 sm:gap-6 overflow-y-auto">
       <div className="flex-1 bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden flex flex-col">
@@ -85,6 +91,15 @@ export function PastoralistsTab({
                         <Button
                           variant="ghost"
                           size="icon"
+                          onClick={() => setEditing(p)}
+                          className="h-8 w-8 text-gray-500 hover:text-gray-200 hover:bg-gray-800"
+                          data-testid={`btn-edit-${p.id}`}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           onClick={() => handleDeletePastoralist(p.id)}
                           className="h-8 w-8 text-gray-500 hover:text-red-400 hover:bg-red-950/30"
                           data-testid={`btn-delete-${p.id}`}
@@ -102,6 +117,7 @@ export function PastoralistsTab({
       </div>
 
       <PastoralistForm />
+      <PastoralistEditDialog pastoralist={editing} onClose={() => setEditing(null)} />
     </div>
   );
 }

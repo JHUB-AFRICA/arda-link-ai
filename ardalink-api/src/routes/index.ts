@@ -28,6 +28,7 @@ import smsSubscriptionRouter from "./smsSubscription.js";
 import whatsappRouter from "./whatsapp.js";
 import evolutionWhatsappRouter from "./evolutionWhatsapp.js";
 import opsWhatsappAlertsRouter from "./ops/whatsappAlerts.js";
+import opsAdminRouter from "./ops/admin.js";
 import demoRouter from "./demo/index.js";
 
 const router: IRouter = Router();
@@ -62,6 +63,7 @@ router.use(smsSubscriptionRouter);
 router.use(whatsappRouter);
 router.use(evolutionWhatsappRouter);
 router.use(opsWhatsappAlertsRouter);
+router.use(opsAdminRouter);
 
 // Demo routes (for local testing without Africa's Talking)
 router.use("/demo", demoRouter);

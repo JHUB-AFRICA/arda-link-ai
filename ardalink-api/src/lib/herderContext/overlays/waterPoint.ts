@@ -11,7 +11,7 @@
  * truth.
  */
 
-import { recentWaterPointGroundTruth } from "../../supabase/index.js";
+import { recentWaterPointGroundTruth, latestCorrectionFor } from "../../supabase/index.js";
 import { centroidForTenant, nearestWorkingKnownPoints } from "../../wpdx.js";
 import { tenantForWardId } from "../../wardMapping.js";
 import type { HerderContext } from "../types.js";
@@ -23,7 +23,19 @@ export async function overlayNearestWaterPoint(
     centroidForTenant(tenantForWardId(ctx.wardId)) ??
     centroidForTenant("bula-pesa");
   if (!origin) return ctx;
-  const overrides = (await recentWaterPointGroundTruth(90)) ?? [];
+  const rawOverrides = (await recentWaterPointGroundTruth(90)) ?? [];
+  // Operator-review layer (migration 0009): if an operator has corrected
+  // a specific call's water_point_status, prefer that corrected value
+  // over the raw herder/LLM-extracted one before it ever reaches
+  // nearestWorkingKnownPoints' ranking. Corrections are looked up
+  // per-row rather than bulk-fetched since this list is already capped
+  // (limit=200) and infrequent (90-day window) — not a hot path.
+  const overrides = await Promise.all(
+    rawOverrides.map(async (o) => {
+      const correction = await latestCorrectionFor(o.call_id, "water_point_status");
+      return correction ? { ...o, water_point_status: correction.corrected_value } : o;
+    }),
+  );
   const nearest = nearestWorkingKnownPoints(origin, 1, overrides);
   const top = nearest[0];
   if (!top) return ctx;

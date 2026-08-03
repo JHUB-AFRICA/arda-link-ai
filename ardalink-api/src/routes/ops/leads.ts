@@ -28,6 +28,7 @@ import {
   upsertPastoralist,
   type SbPastoralistLead,
 } from "../../lib/supabase/index.js";
+import { recordAudit } from "../../lib/adminAudit.js";
 import { sendSmsViaAt } from "../../lib/africastalking.js";
 
 const router: IRouter = Router();
@@ -150,6 +151,17 @@ router.post(
       logger.warn({ err, phone: lead?.phone_number }, "[ops/leads] verify: welcome SMS failed"),
     );
 
+    void recordAudit({
+      actorSub: req.tenant?.sub ?? opsUser,
+      tenantId: req.tenant?.tenant_id ?? "unknown",
+      resource: "pastoralist_lead",
+      resourceId: leadId,
+      action: "verify",
+      before: lead,
+      after: { status: "verified", promoted_pastoralist_id: promoted.pastoralist_id },
+      reason: body.note ?? null,
+    });
+
     res.json({
       ok: true,
       lead_id: leadId,
@@ -189,6 +201,16 @@ router.post(
       return;
     }
     const ok = await setLeadStatus(phone, "declined");
+    if (ok) {
+      void recordAudit({
+        actorSub: req.tenant?.sub ?? "unknown",
+        tenantId: req.tenant?.tenant_id ?? "unknown",
+        resource: "pastoralist_lead",
+        resourceId: leadId,
+        action: "update",
+        after: { status: "declined" },
+      });
+    }
     res.json({ ok, lead_id: leadId, status: ok ? "declined" : "error" });
   },
 );

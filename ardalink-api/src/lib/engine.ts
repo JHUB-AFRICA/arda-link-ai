@@ -330,3 +330,150 @@ export async function triggerSatelliteRefresh(
   );
   return res;
 }
+
+// ── Operator data-management console: engine-owned tables ──────────────
+// Mirrors ardalink_engine/src/api/admin_water.py's pydantic models.
+// These are engine-internal calls proxied from src/routes/ops/admin.ts —
+// the dashboard never talks to the engine directly. Callers there are
+// responsible for calling recordAudit() around each of these; this file
+// only performs the actual mutation.
+
+export interface AdminWaterNode {
+  wpdxId: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  waterSourceType: string;
+  functionalStatus: string;
+  source: string | null;
+  verified: boolean;
+  deletedAt: string | null;
+}
+
+function mapAdminWaterNode(row: {
+  wpdx_id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  water_source_type: string;
+  functional_status: string;
+  source: string | null;
+  verified: boolean;
+  deleted_at: string | null;
+}): AdminWaterNode {
+  return {
+    wpdxId: row.wpdx_id,
+    name: row.name,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    waterSourceType: row.water_source_type,
+    functionalStatus: row.functional_status,
+    source: row.source,
+    verified: row.verified,
+    deletedAt: row.deleted_at,
+  };
+}
+
+export async function fetchAdminWaterNodes(
+  tenantId: string = "bula-pesa",
+): Promise<AdminWaterNode[] | null> {
+  const res = await engineFetch<Array<Parameters<typeof mapAdminWaterNode>[0]>>(
+    "/api/v1/admin/water-nodes",
+    { tenantId },
+  );
+  return res ? res.map(mapAdminWaterNode) : null;
+}
+
+export async function updateAdminWaterNode(
+  wpdxId: string,
+  updates: Partial<{
+    name: string;
+    waterSourceType: string;
+    functionalStatus: string;
+    latitude: number;
+    longitude: number;
+  }>,
+  tenantId: string = "bula-pesa",
+): Promise<AdminWaterNode | null> {
+  const body: Record<string, unknown> = {};
+  if (updates.name !== undefined) body["name"] = updates.name;
+  if (updates.waterSourceType !== undefined) body["water_source_type"] = updates.waterSourceType;
+  if (updates.functionalStatus !== undefined) body["functional_status"] = updates.functionalStatus;
+  if (updates.latitude !== undefined) body["latitude"] = updates.latitude;
+  if (updates.longitude !== undefined) body["longitude"] = updates.longitude;
+
+  const res = await engineFetch<Parameters<typeof mapAdminWaterNode>[0]>(
+    `/api/v1/admin/water-nodes/${encodeURIComponent(wpdxId)}`,
+    {
+      tenantId,
+      init: {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+    },
+  );
+  return res ? mapAdminWaterNode(res) : null;
+}
+
+async function setWaterNodeVerification(
+  wpdxId: string,
+  verified: boolean,
+  tenantId: string,
+): Promise<AdminWaterNode | null> {
+  const action = verified ? "verify" : "unverify";
+  const res = await engineFetch<Parameters<typeof mapAdminWaterNode>[0]>(
+    `/api/v1/admin/water-nodes/${encodeURIComponent(wpdxId)}/${action}`,
+    { tenantId, init: { method: "POST" } },
+  );
+  return res ? mapAdminWaterNode(res) : null;
+}
+
+export const verifyAdminWaterNode = (wpdxId: string, tenantId = "bula-pesa") =>
+  setWaterNodeVerification(wpdxId, true, tenantId);
+
+export const unverifyAdminWaterNode = (wpdxId: string, tenantId = "bula-pesa") =>
+  setWaterNodeVerification(wpdxId, false, tenantId);
+
+export async function deleteAdminWaterNode(
+  wpdxId: string,
+  tenantId: string = "bula-pesa",
+): Promise<AdminWaterNode | null> {
+  const res = await engineFetch<Parameters<typeof mapAdminWaterNode>[0]>(
+    `/api/v1/admin/water-nodes/${encodeURIComponent(wpdxId)}`,
+    { tenantId, init: { method: "DELETE" } },
+  );
+  return res ? mapAdminWaterNode(res) : null;
+}
+
+export async function updateAdminSpeciesRingRadius(
+  wardId: string,
+  speciesGroup: "cattle" | "shoat" | "camel",
+  radiusKm: number,
+  tenantId: string = "bula-pesa",
+): Promise<{ wardId: string; speciesGroup: string; radiusKm: number; source: string } | null> {
+  const res = await engineFetch<{
+    ward_id: string;
+    species_group: string;
+    radius_km: number;
+    source: string;
+  }>(
+    `/api/v1/admin/species-ring-radii/${encodeURIComponent(wardId)}/${encodeURIComponent(speciesGroup)}`,
+    {
+      tenantId,
+      init: {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ radius_km: radiusKm }),
+      },
+    },
+  );
+  if (!res) return null;
+  return {
+    wardId: res.ward_id,
+    speciesGroup: res.species_group,
+    radiusKm: res.radius_km,
+    source: res.source,
+  };
+}
+

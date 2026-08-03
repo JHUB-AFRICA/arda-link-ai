@@ -98,3 +98,75 @@ export const recentGroundTruthCalls = (
     { mode },
   );
 };
+
+// ── Ground-truth corrections (operator review layer) ───────────────────
+// See migration 0009's header: ground_truth_calls stays append-only.
+// Corrections are a separate, additive table — one row per corrected
+// field, referencing the original call_id, never an UPDATE on the
+// original row.
+
+/** Allowlist of fields an operator may correct — never a free-form
+ * column name. Kept in sync with routes/ops/admin.ts's validation. */
+export const CORRECTABLE_GROUND_TRUTH_FIELDS = [
+  "bcs_score",
+  "water_point_status",
+  "mortality_rate",
+  "offtake_rate",
+  "milk_production_liters",
+  "water_trek_distance_km",
+] as const;
+export type CorrectableGroundTruthField = (typeof CORRECTABLE_GROUND_TRUTH_FIELDS)[number];
+
+export interface SbGroundTruthCorrectionInsert {
+  call_id: string;
+  corrected_by: string;
+  field: CorrectableGroundTruthField;
+  original_value: string | null;
+  corrected_value: string;
+  reason: string;
+}
+
+export interface SbGroundTruthCorrection extends SbGroundTruthCorrectionInsert {
+  id: number;
+  corrected_at: string;
+}
+
+export const insertGroundTruthCorrection = (
+  row: SbGroundTruthCorrectionInsert,
+  mode: SupabaseMode = "interactive",
+) =>
+  sbInsert<SbGroundTruthCorrection>(
+    "ground_truth_corrections",
+    row as unknown as Record<string, unknown>,
+    { mode },
+  );
+
+/** All corrections for a set of call_ids, most recent first. Used to
+ * left-join corrections onto recentGroundTruthCalls() results. */
+export const correctionsForCallIds = (
+  callIds: string[],
+  mode: SupabaseMode = "batch",
+) => {
+  if (callIds.length === 0) return Promise.resolve<SbGroundTruthCorrection[] | null>([]);
+  const inList = callIds.map((id) => `"${id}"`).join(",");
+  return sbGet<SbGroundTruthCorrection>(
+    `ground_truth_corrections?call_id=in.(${inList})&order=corrected_at.desc`,
+    { mode },
+  );
+};
+
+/** The single most recent correction for one call_id + field, or null.
+ * This is the function the water-point overlay (and any future
+ * consumer) calls to decide whether to prefer a correction over the
+ * raw ground-truth value. */
+export const latestCorrectionFor = async (
+  callId: string,
+  field: CorrectableGroundTruthField,
+  mode: SupabaseMode = "interactive",
+): Promise<SbGroundTruthCorrection | null> => {
+  const rows = await sbGet<SbGroundTruthCorrection>(
+    `ground_truth_corrections?call_id=eq.${encodeURIComponent(callId)}&field=eq.${field}&order=corrected_at.desc&limit=1`,
+    { mode },
+  );
+  return rows?.[0] ?? null;
+};
