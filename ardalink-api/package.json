@@ -23,7 +23,7 @@
     "vci-backfill": "tsx scripts/run-vci-backfill.ts"
   },
   "dependencies": {
-    "@google/earthengine": "^1.7.36",
+    "@google/earthengine": "^1.7.37",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "cors": "^2.8.5",
