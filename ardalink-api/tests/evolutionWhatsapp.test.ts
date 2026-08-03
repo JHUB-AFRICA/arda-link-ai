@@ -93,7 +93,7 @@ describe("fromEvolutionWebhook", () => {
     expect(result).toMatchObject({ type: "button_reply", replyId: "ongea_na_ai" });
   });
 
-  it("parses a location message (shape unverified)", () => {
+  it("parses a static location share (verified against a real payload)", () => {
     const result = fromEvolutionWebhook({
       event: "messages.upsert",
       data: {
@@ -104,6 +104,47 @@ describe("fromEvolutionWebhook", () => {
       },
     });
     expect(result).toMatchObject({ type: "location", location: { lat: 0.34, lon: 37.58 } });
+  });
+
+  it("parses a live location share the same way as a static one", () => {
+    // Evolution's own compiled webhook formatter (checked directly
+    // against the running v2.3.7 container) treats locationMessage and
+    // liveLocationMessage identically, reading the same
+    // degreesLatitude/degreesLongitude fields off either — this was
+    // previously not handled at all, so tapping "Share Live Location"
+    // instead of "Send Current Location" silently dropped the message.
+    const result = fromEvolutionWebhook({
+      event: "messages.upsert",
+      data: {
+        key: { remoteJid: "254712345678@s.whatsapp.net", fromMe: false },
+        message: {
+          liveLocationMessage: { degreesLatitude: 0.3532143, degreesLongitude: 37.5830788 },
+        },
+      },
+    });
+    expect(result).toMatchObject({
+      type: "location",
+      location: { lat: 0.3532143, lon: 37.5830788 },
+    });
+  });
+
+  it("normalizes a group JID (@g.us) without leaking the suffix into phone_number", () => {
+    const result = fromEvolutionWebhook({
+      event: "messages.upsert",
+      data: {
+        key: { remoteJid: "120363426513200023@g.us", fromMe: false },
+        message: { conversation: "hello" },
+      },
+    });
+    expect(result?.from).toBe("+120363426513200023");
+  });
+
+  it("normalizes a status callback's @lid JID the same way as a message JID", () => {
+    const result = fromEvolutionWebhook({
+      event: "messages.update",
+      data: { remoteJid: "148013565612164@lid", keyId: "ABC123", status: "DELIVERY_ACK" },
+    });
+    expect(result?.from).toBe("+148013565612164");
   });
 
   it("parses an audio message (shape unverified)", () => {

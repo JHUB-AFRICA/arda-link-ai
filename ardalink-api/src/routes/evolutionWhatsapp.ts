@@ -23,6 +23,18 @@ interface EvoWebhookBody {
       listResponseMessage?: { singleSelectReply?: { selectedRowId?: string } };
       buttonsResponseMessage?: { selectedButtonId?: string };
       locationMessage?: { degreesLatitude?: number; degreesLongitude?: number };
+      // WhatsApp's "Share Live Location" (continuously-updating pin, as
+      // opposed to "Send Current Location"'s one-time locationMessage)
+      // arrives as this sibling key — confirmed against this exact
+      // Evolution build (v2.3.7, bundled Baileys 7.0.0-rc.9): its
+      // compiled webhook payload builder emits locationMessage and
+      // liveLocationMessage side by side, and its own inbound formatter
+      // treats them identically (`e==="locationMessage"||e==="liveLocationMessage"`),
+      // reading the exact same degreesLatitude/degreesLongitude fields
+      // off either one. Previously only locationMessage was checked, so
+      // a herder tapping "Share Live Location" instead of "Send Current
+      // Location" got silently dropped — no reply, no acknowledgment.
+      liveLocationMessage?: { degreesLatitude?: number; degreesLongitude?: number };
       audioMessage?: unknown;
     };
     messageType?: string;
@@ -50,12 +62,16 @@ function toE164FromJid(jid: string): string {
 }
 
 /**
- * KNOWN GAP: only plain-text `data.message.conversation` is confirmed
- * against Evolution's real source. The list-reply / button-reply /
- * location / audio branches below are inferred from general Baileys
- * protocol knowledge, NOT verified against Evolution's source or a live
- * instance. Do not trust these beyond text until confirmed against a
- * real Evolution deployment.
+ * KNOWN GAP: plain-text `data.message.conversation` and the
+ * locationMessage/liveLocationMessage branch are both confirmed against
+ * a real Evolution deployment — a genuine tester's static location
+ * share was captured with exactly the degreesLatitude/degreesLongitude
+ * shape assumed here, and Evolution's own compiled webhook formatter
+ * (checked directly in the running v2.3.7 container) confirms it treats
+ * liveLocationMessage identically. The list-reply / button-reply / audio
+ * branches remain inferred from general Baileys protocol knowledge, NOT
+ * verified against a live instance — do not trust those beyond text/
+ * location until confirmed for real.
  */
 export function fromEvolutionWebhook(
   body: EvoWebhookBody,
@@ -96,13 +112,24 @@ export function fromEvolutionWebhook(
   if (buttonId) {
     return { from, type: "button_reply", replyId: buttonId, raw: body.data };
   }
-  if (msg.locationMessage) {
+  // Static "Send Current Location" and continuously-updating "Share Live
+  // Location" both land here, treated identically — matching Evolution's
+  // own webhook formatter, which does the same (see the interface comment
+  // above). NOT YET LIVE-VERIFIED: whether Evolution fires a fresh
+  // messages.upsert for every subsequent live-location tick (which would
+  // re-trigger handleLocationShare's species-selection prompt repeatedly
+  // for the whole share duration — the same repeat-prompt failure mode
+  // just fixed for the welcome menu) or only once. If real testing shows
+  // repeat ticks, the fix is to key off the live-location payload's
+  // sequenceNumber (0 = first tick) and only prompt on that one.
+  const loc = msg.locationMessage ?? msg.liveLocationMessage;
+  if (loc) {
     return {
       from,
       type: "location",
       location: {
-        lat: msg.locationMessage.degreesLatitude ?? 0,
-        lon: msg.locationMessage.degreesLongitude ?? 0,
+        lat: loc.degreesLatitude ?? 0,
+        lon: loc.degreesLongitude ?? 0,
       },
       raw: body.data,
     };
