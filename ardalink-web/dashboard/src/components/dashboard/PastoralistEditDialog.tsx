@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { readToken, getListPastoralistsQueryKey } from "@workspace/api-client-react";
+import {
+  readToken,
+  getListPastoralistsQueryKey,
+  type Pastoralist,
+} from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -22,15 +26,6 @@ import { useToast } from "@/hooks/use-toast";
  * already established for other ops-panel action endpoints
  * (LeadsSection.tsx's verify/decline).
  */
-interface Pastoralist {
-  id: number;
-  name: string;
-  phone: string;
-  location: string | null;
-  waterSource: string | null;
-  alertsEnabled: boolean;
-}
-
 export function PastoralistEditDialog({
   pastoralist,
   onClose,

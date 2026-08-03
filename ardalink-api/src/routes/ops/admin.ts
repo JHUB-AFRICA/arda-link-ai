@@ -23,6 +23,7 @@ import {
   verifyAdminWaterNode,
   unverifyAdminWaterNode,
   deleteAdminWaterNode,
+  fetchAdminSpeciesRingRadii,
   updateAdminSpeciesRingRadius,
 } from "../../lib/engine.js";
 import {
@@ -167,6 +168,16 @@ router.delete("/ops/water-nodes/:wpdxId", async (req, res): Promise<void> => {
 });
 
 // ── Species ring radii (engine-owned, proxied) ──────────────────────────
+
+router.get("/ops/species-ring-radii", async (req, res): Promise<void> => {
+  const { tenantId } = actorFrom(req);
+  const radii = await fetchAdminSpeciesRingRadii(tenantId);
+  if (radii === null) {
+    res.status(502).json({ error: "engine_unreachable" });
+    return;
+  }
+  res.json({ count: radii.length, speciesRingRadii: radii });
+});
 
 router.patch(
   "/ops/species-ring-radii/:wardId/:speciesGroup",

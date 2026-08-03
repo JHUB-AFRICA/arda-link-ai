@@ -446,12 +446,43 @@ export async function deleteAdminWaterNode(
   return res ? mapAdminWaterNode(res) : null;
 }
 
+export interface AdminSpeciesRingRadius {
+  wardId: string;
+  speciesGroup: string;
+  radiusKm: number;
+  source: string;
+}
+
+function mapAdminSpeciesRingRadius(row: {
+  ward_id: string;
+  species_group: string;
+  radius_km: number;
+  source: string;
+}): AdminSpeciesRingRadius {
+  return {
+    wardId: row.ward_id,
+    speciesGroup: row.species_group,
+    radiusKm: row.radius_km,
+    source: row.source,
+  };
+}
+
+export async function fetchAdminSpeciesRingRadii(
+  tenantId: string = "bula-pesa",
+): Promise<AdminSpeciesRingRadius[] | null> {
+  const res = await engineFetch<Array<Parameters<typeof mapAdminSpeciesRingRadius>[0]>>(
+    "/api/v1/admin/species-ring-radii",
+    { tenantId },
+  );
+  return res ? res.map(mapAdminSpeciesRingRadius) : null;
+}
+
 export async function updateAdminSpeciesRingRadius(
   wardId: string,
   speciesGroup: "cattle" | "shoat" | "camel",
   radiusKm: number,
   tenantId: string = "bula-pesa",
-): Promise<{ wardId: string; speciesGroup: string; radiusKm: number; source: string } | null> {
+): Promise<AdminSpeciesRingRadius | null> {
   const res = await engineFetch<{
     ward_id: string;
     species_group: string;
@@ -468,12 +499,6 @@ export async function updateAdminSpeciesRingRadius(
       },
     },
   );
-  if (!res) return null;
-  return {
-    wardId: res.ward_id,
-    speciesGroup: res.species_group,
-    radiusKm: res.radius_km,
-    source: res.source,
-  };
+  return res ? mapAdminSpeciesRingRadius(res) : null;
 }
 

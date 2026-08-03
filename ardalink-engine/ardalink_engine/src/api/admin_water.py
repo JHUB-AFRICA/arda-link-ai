@@ -178,6 +178,27 @@ class SpeciesRingRadiusRow(BaseModel):
     updated_at: str
 
 
+def _to_species_ring_radius_row(row: dict) -> SpeciesRingRadiusRow:
+    return SpeciesRingRadiusRow(
+        ward_id=row["ward_id"],
+        species_group=row["species_group"],
+        radius_km=row["radius_km"],
+        source=row["source"],
+        updated_at=row["updated_at"].isoformat(),
+    )
+
+
+@router.get("/species-ring-radii", response_model=list[SpeciesRingRadiusRow])
+def list_species_ring_radii(request: Request, tenant_id: str | None = None) -> list[SpeciesRingRadiusRow]:
+    """List every (ward, species) radius row — lets the console show
+    current values instead of being a blind write-only tuning form."""
+    _require_tenant(resolve_tenant_id(request, tenant_id))
+    rows = db_client.fetch_all(
+        f'SELECT * FROM "{db_client.schema}".species_ring_radii ORDER BY ward_id, species_group'
+    )
+    return [_to_species_ring_radius_row(r) for r in rows]
+
+
 @router.patch("/species-ring-radii/{ward_id}/{species_group}", response_model=SpeciesRingRadiusRow)
 def update_species_ring_radius(
     ward_id: str, species_group: str, body: SpeciesRingRadiusUpdate,
@@ -202,10 +223,4 @@ def update_species_ring_radius(
         (ward_id, species_group),
     )
     logger.info("species_ring_radii %s/%s set to %.1fkm by operator", ward_id, species_group, body.radius_km)
-    return SpeciesRingRadiusRow(
-        ward_id=row["ward_id"],
-        species_group=row["species_group"],
-        radius_km=row["radius_km"],
-        source=row["source"],
-        updated_at=row["updated_at"].isoformat(),
-    )
+    return _to_species_ring_radius_row(row)

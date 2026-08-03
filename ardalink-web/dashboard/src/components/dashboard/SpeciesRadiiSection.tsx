@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { CircleDot, Loader2 } from "lucide-react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { readToken } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,14 +30,46 @@ function authHeaders(): Record<string, string> {
   return tok ? { Authorization: `Bearer ${tok}` } : {};
 }
 
+interface SpeciesRingRadius {
+  wardId: string;
+  speciesGroup: string;
+  radiusKm: number;
+  source: string;
+}
+
 export function SpeciesRadiiSection() {
   const { toast } = useToast();
-  // Local-only draft values, keyed "wardId:species" — this panel doesn't
-  // list current values from the engine (no GET endpoint for this table
-  // exists yet), it's a direct-entry tuning form. An operator sets a new
-  // radius; the engine returns and persists the authoritative value.
+  const queryClient = useQueryClient();
+
+  const { data } = useQuery({
+    queryKey: ["ops-species-ring-radii"],
+    queryFn: async (): Promise<SpeciesRingRadius[]> => {
+      const r = await fetch("/api/ops/species-ring-radii", { headers: authHeaders() });
+      if (!r.ok) throw new Error(`list failed: ${r.status}`);
+      const body = (await r.json()) as { speciesRingRadii: SpeciesRingRadius[] };
+      return body.speciesRingRadii;
+    },
+  });
+
+  // Draft values, keyed "wardId:species" — seeded from the current
+  // engine-side values once loaded, then edited locally until "Set".
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [savedKey, setSavedKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!data) return;
+    setDrafts((prev) => {
+      const next = { ...prev };
+      for (const row of data) {
+        const key = `${row.wardId}:${row.speciesGroup}`;
+        if (next[key] === undefined) next[key] = String(row.radiusKm);
+      }
+      return next;
+    });
+  }, [data]);
+
+  const currentRow = (wardId: string, species: string): SpeciesRingRadius | null =>
+    data?.find((r) => r.wardId === wardId && r.speciesGroup === species) ?? null;
 
   const updateM = useMutation({
     mutationFn: async ({
@@ -61,6 +93,7 @@ export function SpeciesRadiiSection() {
       const key = `${vars.wardId}:${vars.speciesGroup}`;
       setSavedKey(key);
       toast({ title: `${vars.speciesGroup} radius set to ${vars.radiusKm}km` });
+      void queryClient.invalidateQueries({ queryKey: ["ops-species-ring-radii"] });
       setTimeout(() => setSavedKey((k) => (k === key ? null : k)), 2000);
     },
     onError: () => toast({ title: "Failed to update radius", variant: "destructive" }),
@@ -87,8 +120,10 @@ export function SpeciesRadiiSection() {
             <div className="grid grid-cols-3 gap-3">
               {SPECIES_GROUPS.map((species) => {
                 const key = `${ward.id}:${species}`;
+                const current = currentRow(ward.id, species);
                 return (
-                  <div key={key} className="flex items-center gap-2">
+                  <div key={key} className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
                     <span className="w-14 shrink-0 text-xs capitalize text-muted-foreground">
                       {species}
                     </span>
@@ -123,6 +158,12 @@ export function SpeciesRadiiSection() {
                         "Set"
                       )}
                     </Button>
+                    </div>
+                    {current && (
+                      <span className="pl-16 text-[10px] text-muted-foreground">
+                        current: {current.radiusKm}km ({current.source})
+                      </span>
+                    )}
                   </div>
                 );
               })}
