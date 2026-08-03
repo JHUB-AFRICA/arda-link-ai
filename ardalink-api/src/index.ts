@@ -6,9 +6,20 @@ import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const here = resolve(fileURLToPath(import.meta.url), "..");
-if (existsSync(resolve(here, ".env.local"))) {
-  loadEnv({ path: resolve(here, ".env.local"), override: false });
+// Package root — two levels up from this file's own directory in both
+// layouts this ever runs from: src/index.ts (dev, via tsx) sits in
+// <root>/src, and the bundled dist/index.mjs (production/systemd) sits
+// in <root>/dist. Previously this only went up ONE level, which
+// resolved to src/ or dist/ itself — .env.local was never actually
+// found there in *either* layout, so existsSync() silently skipped
+// loadEnv() every time. This went unnoticed because most secrets also
+// came from systemd's EnvironmentFile=, but GOOGLE_SERVICE_ACCOUNT_JSON
+// has to go through this path specifically (its multi-line PEM key gets
+// corrupted by systemd's env-file parser) — with this fallback broken,
+// it silently ended up undefined instead.
+const packageRoot = resolve(fileURLToPath(import.meta.url), "../..");
+if (existsSync(resolve(packageRoot, ".env.local"))) {
+  loadEnv({ path: resolve(packageRoot, ".env.local"), override: false });
 }
 import "dotenv/config";
 

@@ -32,7 +32,24 @@ async function sbRpc<T>(
       );
       return null;
     }
-    return (await res.json()) as T;
+    // Some Postgres functions (e.g. upsert_weather_data) are void-returning
+    // and PostgREST answers 2xx with an empty body — that's success, not
+    // malformed JSON. Previously this went straight to res.json(), which
+    // threw "Unexpected end of JSON input" on every single successful call
+    // and logged it identically to a real RPC failure. Read as text first
+    // so an empty-but-ok body returns null quietly; a genuinely malformed
+    // non-empty body still gets logged.
+    const text = await res.text();
+    if (!text) return null;
+    try {
+      return JSON.parse(text) as T;
+    } catch (err) {
+      logger.warn(
+        { err, rpc: name, body: text.slice(0, 300) },
+        "[Supabase] RPC returned invalid JSON",
+      );
+      return null;
+    }
   } catch (err) {
     logger.warn({ err, rpc: name }, "[Supabase] RPC failed");
     return null;
