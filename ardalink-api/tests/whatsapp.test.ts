@@ -50,6 +50,8 @@ interface Fx {
   leadStatusCalls: Array<{ phone: string; status: string }>;
   optedOutPhones: string[];
   lastCompleteMessages: Array<{ role: string; content: string }>;
+  pendingLocation: { lat: number; lon: number } | null;
+  grazingAdvisory: Record<string, unknown> | null;
 }
 
 const fx: Fx = {
@@ -83,6 +85,8 @@ const fx: Fx = {
   leadStatusCalls: [],
   optedOutPhones: [],
   lastCompleteMessages: [],
+  pendingLocation: null,
+  grazingAdvisory: null,
 };
 
 vi.mock("../src/lib/herderContext/index.js", () => ({
@@ -148,6 +152,16 @@ vi.mock("../src/lib/openai/index.js", () => ({
   generateActionTag: async () => "WhatsApp Report",
 }));
 
+vi.mock("../src/lib/grazingRingPending.js", () => ({
+  upsertPendingLocation: async () => {},
+  getPendingLocation: async () => fx.pendingLocation,
+  clearPendingLocation: async () => {},
+}));
+
+vi.mock("../src/lib/engine.js", () => ({
+  fetchGrazingAdvisory: async () => fx.grazingAdvisory,
+}));
+
 vi.mock("../src/lib/trustScore.js", () => ({
   computeTrustScore: () => ({ score: 70, flags: [] }),
   logTrustScore: vi.fn(),
@@ -208,6 +222,8 @@ beforeEach(async () => {
   fx.leadStatusCalls = [];
   fx.optedOutPhones = [];
   fx.lastCompleteMessages = [];
+  fx.pendingLocation = null;
+  fx.grazingAdvisory = null;
 
   const { default: whatsappRouter } = await import("../src/routes/whatsapp.js");
   app = express();

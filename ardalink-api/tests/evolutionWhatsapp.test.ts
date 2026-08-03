@@ -187,6 +187,14 @@ vi.mock("../src/lib/pastoralistContact.js", () => ({
   touchPastoralistLastContact: vi.fn(async () => undefined),
 }));
 vi.mock("../src/lib/intelligence.js", () => ({ getLastResult: () => null }));
+vi.mock("../src/lib/grazingRingPending.js", () => ({
+  upsertPendingLocation: async () => {},
+  getPendingLocation: async () => null,
+  clearPendingLocation: async () => {},
+}));
+vi.mock("../src/lib/engine.js", () => ({
+  fetchGrazingAdvisory: async () => null,
+}));
 
 let app: Express;
 

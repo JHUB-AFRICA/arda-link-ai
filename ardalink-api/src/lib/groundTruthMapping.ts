@@ -24,6 +24,10 @@ export interface GroundTruthMappingInput {
   transcript: string;
   sourceLanguage: string;
   channel: "voice" | "sms" | "ussd" | "whatsapp";
+  /** Best-effort coordinates from a recent WhatsApp location share —
+   * see migration 0007_ground_truth_calls_location. */
+  reportedLat?: number | null;
+  reportedLon?: number | null;
 }
 
 export function mapExtractedIndicatorsToGroundTruthRow(
@@ -86,5 +90,7 @@ export function mapExtractedIndicatorsToGroundTruthRow(
     source_language: input.sourceLanguage,
     transcript: input.transcript,
     channel: input.channel,
+    reported_lat: input.reportedLat ?? null,
+    reported_lon: input.reportedLon ?? null,
   };
 }

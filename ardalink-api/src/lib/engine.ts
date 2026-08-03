@@ -234,6 +234,81 @@ export async function fetchSatelliteVCI(
   return res;
 }
 
+// Species-aware grazing advisory (piosphere zones). Mirrors
+// ardalink_engine/src/api/grazing.py's GrazingAdvisory pydantic model.
+export interface GrazingNearestWaterNode {
+  name: string;
+  distanceKm: number;
+  direction: string;
+  functionalStatus: string;
+}
+
+export interface GrazingAdvisory {
+  nearestWaterNode: GrazingNearestWaterNode | null;
+  speciesGroup: "cattle" | "shoat" | "camel";
+  radiusKm: number;
+  inRing: boolean;
+  vci: number | null;
+  ndviNow: number | null;
+  dataSources: { water: string; vegetation: string };
+}
+
+/**
+ * Fetch a species-aware grazing advisory for a herder's current location
+ * from the engine's `/api/v1/grazing/advisory` endpoint. Returns `null`
+ * when the engine is unreachable or GEE is not configured.
+ *
+ * Chains into the same live-GEE path as `fetchSatelliteVCI` (first touch
+ * per water point takes 15-30s; the engine caches by water-point+species,
+ * so repeat callers near the same point are fast) — same long timeout.
+ */
+export async function fetchGrazingAdvisory(
+  lat: number,
+  lon: number,
+  speciesGroup: "cattle" | "shoat" | "camel",
+  tenantId: string = "bula-pesa",
+): Promise<GrazingAdvisory | null> {
+  const qs = new URLSearchParams({
+    lat: String(lat),
+    lon: String(lon),
+    species_group: speciesGroup,
+  });
+  const res = await engineFetch<{
+    nearest_water_node: {
+      name: string;
+      distance_km: number;
+      direction: string;
+      functional_status: string;
+    } | null;
+    species_group: "cattle" | "shoat" | "camel";
+    radius_km: number;
+    in_ring: boolean;
+    vci: number | null;
+    ndvi_now: number | null;
+    data_sources: { water: string; vegetation: string };
+  }>(`/api/v1/grazing/advisory?${qs.toString()}`, {
+    tenantId,
+    timeoutMs: LIVE_GEE_TIMEOUT_MS,
+  });
+  if (!res) return null;
+  return {
+    nearestWaterNode: res.nearest_water_node
+      ? {
+          name: res.nearest_water_node.name,
+          distanceKm: res.nearest_water_node.distance_km,
+          direction: res.nearest_water_node.direction,
+          functionalStatus: res.nearest_water_node.functional_status,
+        }
+      : null,
+    speciesGroup: res.species_group,
+    radiusKm: res.radius_km,
+    inRing: res.in_ring,
+    vci: res.vci,
+    ndviNow: res.ndvi_now,
+    dataSources: res.data_sources,
+  };
+}
+
 /**
  * Trigger VCI fetch for all demo wards. Used by the satellite scheduler.
  * Returns `null` when the engine is unreachable.

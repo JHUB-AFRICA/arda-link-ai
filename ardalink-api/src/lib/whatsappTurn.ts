@@ -26,6 +26,8 @@ import {
   sendWhatsappInteractiveButtons,
   sendWhatsappLocation,
 } from "./whatsappProviderRegistry.js";
+import { fetchGrazingAdvisory, type GrazingAdvisory } from "./engine.js";
+import { upsertPendingLocation, getPendingLocation } from "./grazingRingPending.js";
 import {
   logWhatsappMessage,
   logLeadInteraction,
@@ -225,6 +227,115 @@ async function handleOngeaAck(
   logInteraction(from, ctx, "ongea_na_ai", "ongea_na_ai", text);
 }
 
+const GRAZING_SPECIES_BUTTON_IDS: Record<string, "cattle" | "shoat" | "camel"> = {
+  grazing_species_cattle: "cattle",
+  grazing_species_shoat: "shoat",
+  grazing_species_camel: "camel",
+};
+
+/**
+ * A herder just shared their GPS location. We don't know their species
+ * yet (no such field exists in Supabase's pastoralists table today — see
+ * the piosphere-zones plan), so ask via 3 buttons before we can call the
+ * engine's ring-scoped advisory. The location is stashed in
+ * grazing_ring_pending until the button reply arrives (a separate
+ * webhook turn) — see that table's migration (0006) for why.
+ */
+async function handleLocationShare(
+  from: string,
+  ctx: HerderContext,
+  lang: "sw" | "en",
+  lat: number,
+  lon: number,
+  tenantId: string,
+): Promise<void> {
+  await upsertPendingLocation(from, lat, lon, tenantId);
+  await sendWhatsappInteractiveButtons(
+    from,
+    lang === "sw" ? "Mifugo yako ni gani?" : "Which animals do you keep?",
+    [
+      { id: "grazing_species_cattle", title: "Ng'ombe" },
+      { id: "grazing_species_shoat", title: "Mbuzi/Kondoo" },
+      { id: "grazing_species_camel", title: "Ngamia" },
+    ],
+  );
+  logOutbound(from, ctx, "interactive_buttons", "grazing_species_prompt");
+  logInteraction(from, ctx, "grazing_location_share", `${lat},${lon}`, "grazing_species_prompt");
+}
+
+/** Swahili/English grazing-condition gloss from VCI — same rough
+ * tiering as the choropleth's own color bands (see geoHelpers.ts). */
+function grazingConditionText(vci: number | null, lang: "sw" | "en"): string {
+  if (vci === null) return lang === "sw" ? "haijulikani" : "unknown";
+  if (vci >= 60) return lang === "sw" ? "nzuri" : "good";
+  if (vci >= 30) return lang === "sw" ? "wastani" : "fair";
+  return lang === "sw" ? "mbaya" : "poor";
+}
+
+function formatGrazingAdvisory(advisory: GrazingAdvisory, lang: "sw" | "en"): string {
+  if (!advisory.nearestWaterNode) {
+    return lang === "sw"
+      ? "Hatuna data ya maji karibu na eneo lako bado."
+      : "No water-point data for your area yet.";
+  }
+  const { name, distanceKm, direction } = advisory.nearestWaterNode;
+  const condition = grazingConditionText(advisory.vci, lang);
+  if (lang === "sw") {
+    const reach = advisory.inRing
+      ? "Mifugo yako inaweza kufika."
+      : "Mifugo yako HAIWEZI kufika huko (ni mbali sana).";
+    return `Maji karibu: ${name} (${distanceKm}km ${direction}). Malisho: ${condition}. ${reach}`;
+  }
+  const reach = advisory.inRing
+    ? "Your herd can reach it."
+    : "Your herd CANNOT reach it (too far).";
+  return `Nearest water: ${name} (${distanceKm}km ${direction}). Grazing: ${condition}. ${reach}`;
+}
+
+/**
+ * The herder tapped a species button after sharing location. Look up the
+ * pending location (may be missing/stale — e.g. >15 min since share) and
+ * call the engine's ring-scoped advisory.
+ *
+ * Deliberately does NOT clear grazing_ring_pending on success — leaving
+ * it in place (it still ages out via getPendingLocation's own 15-minute
+ * staleness check) lets a ground-truth free-text report made shortly
+ * afterward in the same conversation carry these coordinates through to
+ * ground_truth_calls.reported_lat/lon (see handleFreeText below and
+ * migration 0007) for QA against the ring advisory. Re-tapping a species
+ * button within that window just re-fetches (cache-hit, harmless).
+ */
+async function handleGrazingSpeciesReply(
+  from: string,
+  ctx: HerderContext,
+  lang: "sw" | "en",
+  speciesGroup: "cattle" | "shoat" | "camel",
+  tenantId: string,
+): Promise<void> {
+  const pending = await getPendingLocation(from);
+  if (!pending) {
+    const text =
+      lang === "sw"
+        ? "Tafadhali tuma tena mahali ulipo (share location)."
+        : "Please share your location again.";
+    await sendWhatsappSessionMessage(from, text);
+    logOutbound(from, ctx, "text", text);
+    logInteraction(from, ctx, "grazing_species_reply", speciesGroup, text);
+    return;
+  }
+
+  const advisory = await fetchGrazingAdvisory(pending.lat, pending.lon, speciesGroup, tenantId);
+  const text = advisory
+    ? formatGrazingAdvisory(advisory, lang)
+    : lang === "sw"
+      ? "Samahani, huduma ya malisho haipatikani kwa sasa."
+      : "Sorry, the grazing advisory isn't available right now.";
+
+  await sendWhatsappSessionMessage(from, text);
+  logOutbound(from, ctx, "text", text);
+  logInteraction(from, ctx, "grazing_species_reply", speciesGroup, text);
+}
+
 async function handleAudioNote(
   from: string,
   ctx: HerderContext,
@@ -344,6 +455,14 @@ async function handleFreeText(
       endReason: "unknown",
     });
     logTrustScore(from, null, trust);
+    // Best-effort: carry through coordinates from a recent location
+    // share (grazing_ring_pending, still-fresh within its own 15-minute
+    // staleness window — see handleGrazingSpeciesReply's docstring for
+    // why that row isn't cleared on use) so this ground-truth row can
+    // later be QA'd against the piosphere-ring advisory it followed.
+    // null when no location share preceded this report — expected and
+    // fine, not every ground-truth turn follows a location share.
+    const recentLocation = await getPendingLocation(from);
     void insertGroundTruthCall(
       mapExtractedIndicatorsToGroundTruthRow({
         pastoralistId: ctx.pastoralistId,
@@ -353,6 +472,8 @@ async function handleFreeText(
         transcript,
         sourceLanguage: lang,
         channel: "whatsapp",
+        reportedLat: recentLocation?.lat,
+        reportedLon: recentLocation?.lon,
       }),
     );
   }
@@ -385,8 +506,14 @@ export async function processInboundWhatsappMessage(
 
   if (msg.type === "location" && msg.location) {
     logInbound(msg.from, ctx, "location", null, msg.raw);
-    // Phase 0/1: log only. No herder-GPS-driven feature exists yet
-    // anywhere in the codebase — this just lands the first rows of it.
+    await handleLocationShare(
+      msg.from,
+      ctx,
+      lang,
+      msg.location.lat,
+      msg.location.lon,
+      tenantId,
+    );
     return;
   }
 
@@ -404,6 +531,14 @@ export async function processInboundWhatsappMessage(
       await handleMalisho(msg.from, ctx, lang);
     } else if (msg.replyId === "ongea_na_ai") {
       await handleOngeaAck(msg.from, ctx, lang);
+    } else if (msg.replyId && msg.replyId in GRAZING_SPECIES_BUTTON_IDS) {
+      await handleGrazingSpeciesReply(
+        msg.from,
+        ctx,
+        lang,
+        GRAZING_SPECIES_BUTTON_IDS[msg.replyId]!,
+        tenantId,
+      );
     }
     return;
   }

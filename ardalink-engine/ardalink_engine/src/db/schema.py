@@ -203,6 +203,37 @@ def _ddl(schema: str) -> list[str]:
             PRIMARY KEY (tenant_id, ward_id, month, band)
         )
         ''',
+        # --- Piosphere zones: species-specific grazing radius per ward --------
+        # A "ring" is just a circle (water point + radius) — no geometry is
+        # stored anywhere in this schema (no PostGIS), so ring membership is
+        # computed on read via haversine distance against water_nodes. This
+        # table holds only the radius config, tunable per ward once real
+        # field/veterinary data replaces the placeholder seed values.
+        # species_group is a grazing-behavior category, deliberately NOT the
+        # same as core_math/energy.py's SPECIES_PROFILES (lifecycle stages
+        # like doe/ewe/lamb) — different concept, don't conflate them.
+        f'''
+        CREATE TABLE IF NOT EXISTS "{schema}".species_ring_radii (
+            ward_id       TEXT NOT NULL,
+            species_group TEXT NOT NULL CHECK (species_group IN ('cattle', 'shoat', 'camel')),
+            radius_km     DOUBLE PRECISION NOT NULL,
+            source        TEXT NOT NULL DEFAULT 'default_seed',
+            updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+            PRIMARY KEY (ward_id, species_group)
+        )
+        ''',
+        # Water-source provenance (WPDx vs OSM-imported vs herder-reported).
+        # Optional for ring logic itself, useful for QA on import quality.
+        f'ALTER TABLE "{schema}".water_nodes ADD COLUMN IF NOT EXISTS source TEXT',
+        # Operator verification + soft delete for the data-management
+        # console. Deliberately just column-existence DDL here — the
+        # actual verified=true BACKFILL for already-imported wpdx/osm rows
+        # is a one-time script (scripts/backfill_water_node_verification.py),
+        # NOT run on every boot like the rest of this file: doing it here
+        # would silently re-flip verified back to true on restart even
+        # after an operator deliberately un-verified a point.
+        f'ALTER TABLE "{schema}".water_nodes ADD COLUMN IF NOT EXISTS verified BOOLEAN NOT NULL DEFAULT false',
+        f'ALTER TABLE "{schema}".water_nodes ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ',
     ]
 
 

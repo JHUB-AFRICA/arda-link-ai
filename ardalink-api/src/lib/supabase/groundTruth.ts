@@ -56,6 +56,12 @@ export interface SbGroundTruthCallInsert {
    * level (see migration 0005_add_whatsapp_support) for rows written
    * before this field existed; new callers should always set it. */
   channel?: "voice" | "sms" | "ussd" | "whatsapp";
+  /** Best-effort coordinates from a recent WhatsApp location share
+   * (see migration 0007_ground_truth_calls_location) — null when no
+   * location share preceded the report, or it aged out. QA aid for
+   * joining against piosphere-ring advisories, not guaranteed present. */
+  reported_lat?: number | null;
+  reported_lon?: number | null;
 }
 
 /**

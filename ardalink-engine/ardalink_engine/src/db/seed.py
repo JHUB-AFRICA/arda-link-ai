@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 
-from ..geo.wards import WARD_NAMES, WARDS, haversine_km
+from ..geo.wards import NAME_TO_WARDCODE, WARD_NAMES, WARDS, haversine_km
 from ..logging_config import get_logger
 from .client import DatabaseClient
 
@@ -53,6 +53,34 @@ _WATER_NODES: list[tuple] = [
     ("WPDX-ISL-0011", "Bulla Pesa Urban Borehole", 0.3555, 37.5862, "borehole", "functional", "2026-05-10", 2),
     ("WPDX-ISL-0012", "Sericho Emergency Borehole", 0.7601, 38.8800, "borehole", "functional", "2026-05-01", 4),
 ]
+
+
+# The 5 wards with active pilot tenants as of 2026-07 (Garbatulla/Merti/Kinna
+# retired). Piosphere ring radii are only seeded for these — the other 5 wards
+# in WARDS exist for the rangeland matrix/corridors but aren't pilot-active.
+_ACTIVE_WARD_NAMES: list[str] = ["Bulla Pesa", "Wabera", "Burat", "Ngare Mara", "Oldonyiro"]
+
+# Placeholder grazing radii (km) per species group, uniform across wards.
+# NOT authoritative — pending real pastoral/veterinary sign-off before pilot
+# launch. Illustrative ranges only (cattle ~5-10km, shoat ~8-15km, camel
+# ~20-30km+ per FAO watering-interval guidance); seeded conservatively at the
+# low end of each range until field/ground-truth data justifies widening them.
+_SPECIES_RING_RADII_KM: dict[str, float] = {
+    "cattle": 5.0,
+    "shoat": 8.0,
+    "camel": 15.0,
+}
+
+
+def _build_species_ring_rows() -> list[tuple]:
+    """One row per (active ward, species group), keyed by IEBC wardcode to
+    match the ward_id convention already used in baseline_aggregate/pixel."""
+    rows: list[tuple] = []
+    for ward_name in _ACTIVE_WARD_NAMES:
+        ward_id = NAME_TO_WARDCODE[ward_name]
+        for species_group, radius_km in _SPECIES_RING_RADII_KM.items():
+            rows.append((ward_id, species_group, radius_km, "default_seed"))
+    return rows
 
 
 def _build_corridor_rows() -> list[tuple]:
@@ -107,6 +135,18 @@ def seed_all(client: DatabaseClient) -> dict[str, int]:
                 )
                 logger.info("Seeded water_nodes")
 
+            # Species ring radii (piosphere zones)
+            cur.execute(f'SELECT COUNT(*) FROM "{client.schema}".species_ring_radii')
+            if cur.fetchone()[0] == 0:
+                cur.executemany(
+                    f'''INSERT INTO "{client.schema}".species_ring_radii
+                        (ward_id, species_group, radius_km, source)
+                        VALUES (%s, %s, %s, %s)
+                        ON CONFLICT (ward_id, species_group) DO NOTHING''',
+                    _build_species_ring_rows(),
+                )
+                logger.info("Seeded species_ring_radii")
+
             # Livestock corridors
             cur.execute(f'SELECT COUNT(*) FROM "{client.schema}".livestock_corridors')
             if cur.fetchone()[0] == 0:
@@ -119,7 +159,7 @@ def seed_all(client: DatabaseClient) -> dict[str, int]:
                 )
                 logger.info("Seeded livestock_corridors")
 
-            for table in ("isiolo_rangeland_matrix", "water_nodes", "livestock_corridors"):
+            for table in ("isiolo_rangeland_matrix", "water_nodes", "species_ring_radii", "livestock_corridors"):
                 cur.execute(f'SELECT COUNT(*) FROM "{client.schema}".{table}')
                 counts[table] = cur.fetchone()[0]
 
