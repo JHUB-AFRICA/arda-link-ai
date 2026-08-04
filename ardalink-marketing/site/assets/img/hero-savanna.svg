@@ -1,40 +1,61 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900">
   <defs>
     <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#19233a"/>
-      <stop offset=".56" stop-color="#a94d31"/>
-      <stop offset="1" stop-color="#f59e0b"/>
+      <stop offset="0" stop-color="#0B0B12"/>
+      <stop offset="0.55" stop-color="#1C1220"/>
+      <stop offset="1" stop-color="#0B0B12"/>
     </linearGradient>
     <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
-      <stop stop-color="#543522"/>
-      <stop offset="1" stop-color="#16141a"/>
+      <stop offset="0" stop-color="#221A14"/>
+      <stop offset="1" stop-color="#120D0A"/>
     </linearGradient>
-    <radialGradient id="sun"><stop stop-color="#fff4bd"/><stop offset=".3" stop-color="#ffd36a" stop-opacity=".8"/><stop offset="1" stop-color="#f59e0b" stop-opacity="0"/></radialGradient>
-    <linearGradient id="signal" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#38bdf8"/><stop offset="1" stop-color="#84cc16"/></linearGradient>
-    <filter id="blur"><feGaussianBlur stdDeviation="28"/></filter>
+    <linearGradient id="beam" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F59E0B" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#F59E0B" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#F59E0B" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#F59E0B" stop-opacity="0"/>
+    </radialGradient>
   </defs>
   <rect width="1600" height="900" fill="url(#sky)"/>
-  <circle cx="1190" cy="310" r="260" fill="url(#sun)" filter="url(#blur)"/>
-  <circle cx="1190" cy="310" r="96" fill="#ffd878" opacity=".95"/>
-  <path d="M0 550 C180 470 310 490 500 565 C700 645 830 485 1020 515 C1220 548 1380 445 1600 500 V900 H0Z" fill="#5a3826" opacity=".75"/>
-  <path d="M0 650 C240 552 410 635 610 665 C820 697 1000 558 1210 610 C1390 650 1490 560 1600 590 V900 H0Z" fill="url(#ground)"/>
-  <path d="M0 788 C290 700 450 770 710 746 C970 722 1180 804 1600 710 V900 H0Z" fill="#0e1118"/>
-  <g fill="#11131a">
-    <path d="M390 720 l18 -82 13 13 13 -34 16 34 25 -18 14 87Z"/>
-    <path d="M454 735 l13 -58 10 8 10 -25 13 28 18 -11 10 60Z"/>
-    <path d="M650 760 l22 -92 16 17 15 -41 18 45 29 -17 15 91Z"/>
-    <path d="M704 765 l12 -61 12 10 9 -23 14 26 18 -9 11 57Z"/>
+  <!-- stars -->
+  <g fill="#F5F5F4" opacity="0.5">
+    <circle cx="120" cy="90" r="1.6"/><circle cx="260" cy="150" r="1.2"/>
+    <circle cx="1400" cy="80" r="1.6"/><circle cx="1500" cy="180" r="1.2"/>
+    <circle cx="900" cy="60" r="1.4"/><circle cx="700" cy="120" r="1.2"/>
+    <circle cx="1200" cy="140" r="1.4"/><circle cx="60" cy="220" r="1.2"/>
   </g>
-  <g fill="none" stroke="url(#signal)" stroke-width="4" opacity=".85">
-    <path d="M1030 238 Q1270 70 1510 238"/>
-    <path d="M1080 300 Q1270 164 1460 300"/>
-    <path d="M1130 360 Q1270 255 1410 360"/>
+  <!-- satellite -->
+  <g transform="translate(1180,150) rotate(18)">
+    <rect x="-14" y="-6" width="28" height="12" rx="2" fill="#F5F5F4"/>
+    <rect x="-46" y="-3" width="28" height="18" rx="1.5" fill="#38BDF8" opacity="0.85"/>
+    <rect x="18" y="-3" width="28" height="18" rx="1.5" fill="#38BDF8" opacity="0.85"/>
+    <circle cx="0" cy="0" r="5" fill="#F59E0B"/>
   </g>
-  <g transform="translate(1268 390)">
-    <rect width="116" height="190" rx="18" fill="#10141d" stroke="#e8f1e4" stroke-width="4"/>
-    <rect x="11" y="22" width="94" height="118" rx="8" fill="#1b3040"/>
-    <path d="M20 113 Q48 72 74 98 Q88 110 100 88" fill="none" stroke="#84cc16" stroke-width="5"/>
-    <circle cx="58" cy="162" r="9" fill="#f59e0b"/>
+  <!-- signal beam from satellite down to phone -->
+  <path d="M 1180 165 L 760 640 L 1000 640 L 1180 165 Z" fill="url(#beam)"/>
+  <!-- rolling ground silhouette -->
+  <path d="M 0 620 Q 250 560 480 610 T 900 600 T 1300 630 T 1600 600 L 1600 900 L 0 900 Z"
+        fill="url(#ground)"/>
+  <path d="M 0 660 Q 300 610 620 655 T 1100 650 T 1600 660 L 1600 900 L 0 900 Z"
+        fill="#0B0B12" opacity="0.55"/>
+  <!-- acacia silhouettes -->
+  <g fill="#1A130E">
+    <path d="M 220 660 L 224 600 L 216 600 Z"/>
+    <ellipse cx="220" cy="592" rx="46" ry="14"/>
+    <path d="M 1360 680 L 1364 610 L 1356 610 Z"/>
+    <ellipse cx="1360" cy="602" rx="56" ry="16"/>
+    <path d="M 1460 700 L 1463 650 L 1457 650 Z"/>
+    <ellipse cx="1460" cy="645" rx="34" ry="10"/>
   </g>
-  <rect x="42" y="42" width="1516" height="816" rx="22" fill="none" stroke="#fff4d6" stroke-opacity=".25"/>
+  <!-- phone catching the signal -->
+  <g transform="translate(880,650)">
+    <rect x="-46" y="-90" width="92" height="180" rx="16" fill="#15151F" stroke="#2A2A38" stroke-width="3"/>
+    <rect x="-36" y="-76" width="72" height="140" rx="6" fill="#0B0B12"/>
+    <circle r="70" fill="url(#glow)"/>
+    <path d="M -18 -6 Q 0 -30 18 -6" stroke="#F59E0B" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <path d="M -28 4 Q 0 -40 28 4" stroke="#F59E0B" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.6"/>
+    <circle cy="10" r="6" fill="#F59E0B"/>
+  </g>
 </svg>

@@ -1,24 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" preserveAspectRatio="xMidYMid slice">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#123442"/><stop offset="1" stop-color="#10151e"/></linearGradient>
+    <linearGradient id="bg-800x1000" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1C1C28"/>
+      <stop offset="1" stop-color="#0B0B12"/>
+    </linearGradient>
   </defs>
-  <rect width="800" height="1000" fill="url(#bg)"/>
-  <circle cx="130" cy="170" r="230" fill="#38bdf8" opacity=".12"/>
-  <g transform="translate(218 104)">
-    <rect width="364" height="720" rx="42" fill="#0c1018" stroke="#667483" stroke-width="8"/>
-    <rect x="20" y="58" width="324" height="588" rx="18" fill="#10242d"/>
-    <rect x="137" y="25" width="90" height="12" rx="6" fill="#3a424d"/>
-    <circle cx="182" cy="681" r="27" fill="#1b2730" stroke="#38bdf8" stroke-width="4"/>
-    <text x="44" y="111" fill="#f5f5f4" font-family="Arial, sans-serif" font-size="22" font-weight="700">ArdaLink</text>
-    <text x="44" y="148" fill="#a8a29e" font-family="Arial, sans-serif" font-size="16">*123*8#</text>
-    <rect x="44" y="182" width="276" height="314" rx="12" fill="#183b48" stroke="#38bdf8" stroke-opacity=".4"/>
-    <text x="68" y="222" fill="#f5f5f4" font-family="Arial, sans-serif" font-size="20" font-weight="700">Bula Pesa</text>
-    <text x="68" y="270" fill="#d7eef5" font-family="Arial, sans-serif" font-size="18">1  Malisho</text>
-    <text x="68" y="315" fill="#d7eef5" font-family="Arial, sans-serif" font-size="18">2  Maji karibu</text>
-    <text x="68" y="360" fill="#d7eef5" font-family="Arial, sans-serif" font-size="18">3  Ongea nasi</text>
-    <line x1="68" y1="394" x2="296" y2="394" stroke="#38bdf8" stroke-opacity=".35"/>
-    <text x="68" y="439" fill="#a8a29e" font-family="Arial, sans-serif" font-size="16">Chagua 1, 2 au 3</text>
-    <rect x="44" y="534" width="276" height="54" rx="10" fill="#38bdf8"/>
-    <text x="182" y="569" text-anchor="middle" fill="#10131d" font-family="Arial, sans-serif" font-size="18" font-weight="700">Tuma</text>
+  <rect width="800" height="1000" fill="url(#bg-800x1000)"/>
+  <rect x="6" y="6" width="788" height="988" rx="18" fill="none" stroke="#2A2A38" stroke-width="1.4"/>
+  <g transform="translate(400.0,480.0)">
+    <rect x="-110" y="-190" width="220" height="380" rx="30" fill="#15151F" stroke="#2A2A38" stroke-width="3"/>
+    <rect x="-92" y="-166" width="184" height="290" rx="10" fill="#0B0B12"/>
+    <rect x="-24" y="-182" width="48" height="6" rx="3" fill="#2A2A38"/>
   </g>
+  <text x="330.0" y="370.0" font-family="ui-monospace, SFMono-Regular, monospace" font-size="15" fill="#A8A29E">*123*8#</text>
+  <line x1="330.0" y1="384.0" x2="470.0" y2="384.0" stroke="#2A2A38" stroke-width="1.5"/>
+  <text x="330.0" y="410.0" font-family="ui-monospace, SFMono-Regular, monospace" font-size="17" fill="#38BDF8">1. Bula Pesa</text><text x="330.0" y="444.0" font-family="ui-monospace, SFMono-Regular, monospace" font-size="17" fill="#F5F5F4">2. Malisho</text><text x="330.0" y="478.0" font-family="ui-monospace, SFMono-Regular, monospace" font-size="17" fill="#F5F5F4">3. Ongea na AI</text><text x="330.0" y="512.0" font-family="ui-monospace, SFMono-Regular, monospace" font-size="17" fill="#F5F5F4">4. Toka</text>
+  <text x="400.0" y="960" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="20" font-weight="700" fill="#F5F5F4">USSD *123*8#</text>
 </svg>

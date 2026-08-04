@@ -1,1 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"><rect width="400" height="400" rx="24" fill="#32252c"/><circle cx="200" cy="155" r="82" fill="#ff3c00" opacity=".16"/><path d="M155 139 Q161 103 199 103 Q237 103 245 139 L267 160 Q275 171 265 182 L241 197 Q229 204 220 192 L207 178 Q183 196 160 181 Q137 166 145 150Z" fill="#ff3c00"/><path d="M166 139 Q200 116 234 139" fill="none" stroke="#ffe0d6" stroke-width="8" stroke-linecap="round"/><text x="200" y="292" text-anchor="middle" fill="#f5f5f4" font-family="Arial,sans-serif" font-size="30" font-weight="700">CALL</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <circle cx="200.0" cy="200.0" r="140" fill="#15151F" stroke="#F59E0B" stroke-width="3"/>
+  <g transform="translate(200.0,200.0)" fill="none" stroke="#F59E0B" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M -18 -14 C -18 -22 -10 -24 -4 -14 C 0 -8 -2 -4 -8 0 C -4 10 4 16 14 18 C 18 12 22 12 26 16 C 34 22 30 32 18 32 C -4 32 -22 8 -18 -14 Z"/>
+  </g>
+</svg>

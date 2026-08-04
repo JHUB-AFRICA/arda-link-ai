@@ -1,8 +1,42 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 600" preserveAspectRatio="xMidYMid slice">
-  <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#17253a"/><stop offset="1" stop-color="#15151f"/></linearGradient><linearGradient id="line" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#f59e0b"/><stop offset=".5" stop-color="#ff3c00"/><stop offset="1" stop-color="#38bdf8"/></linearGradient></defs>
-  <rect width="1600" height="600" fill="url(#bg)"/>
-  <path d="M260 302 H1340" fill="none" stroke="url(#line)" stroke-width="8" stroke-linecap="round"/>
-  <g transform="translate(120 138)"><rect width="280" height="328" rx="28" fill="#202a3b" stroke="#f59e0b" stroke-width="3"/><circle cx="140" cy="120" r="62" fill="#f59e0b" opacity=".2"/><path d="M86 139 L140 70 L194 139Z" fill="none" stroke="#f59e0b" stroke-width="9"/><path d="M140 70v112 M86 139h108" stroke="#f59e0b" stroke-width="9"/><text x="140" y="256" text-anchor="middle" fill="#f5f5f4" font-family="Arial,sans-serif" font-size="26" font-weight="700">SATELLITE</text><text x="140" y="290" text-anchor="middle" fill="#a8a29e" font-family="Arial,sans-serif" font-size="18">sees the ward</text></g>
-  <g transform="translate(660 138)"><rect width="280" height="328" rx="28" fill="#30232b" stroke="#ff3c00" stroke-width="3"/><circle cx="140" cy="120" r="62" fill="#ff3c00" opacity=".2"/><path d="M140 66 l20 39 44 6 -32 31 8 44 -40 -21 -40 21 8 -44 -32 -31 44 -6Z" fill="#ff3c00"/><text x="140" y="256" text-anchor="middle" fill="#f5f5f4" font-family="Arial,sans-serif" font-size="26" font-weight="700">AI BRIEF</text><text x="140" y="290" text-anchor="middle" fill="#a8a29e" font-family="Arial,sans-serif" font-size="18">explains the risk</text></g>
-  <g transform="translate(1200 138)"><rect width="280" height="328" rx="28" fill="#1b2d35" stroke="#38bdf8" stroke-width="3"/><circle cx="140" cy="120" r="62" fill="#38bdf8" opacity=".2"/><rect x="106" y="65" width="68" height="112" rx="13" fill="none" stroke="#38bdf8" stroke-width="8"/><path d="M120 94h40 M120 115h40 M120 136h28" stroke="#38bdf8" stroke-width="7" stroke-linecap="round"/><text x="140" y="256" text-anchor="middle" fill="#f5f5f4" font-family="Arial,sans-serif" font-size="26" font-weight="700">PHONE</text><text x="140" y="290" text-anchor="middle" fill="#a8a29e" font-family="Arial,sans-serif" font-size="18">delivers the next step</text></g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 600">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#2A2A38"/>
+    </marker>
+  </defs>
+  <rect width="1600" height="600" fill="#0B0B12"/>
+  <path d="M 292 290.0 L 588 290.0" stroke="#2A2A38" stroke-width="3" marker-end="url(#arrow)"/><path d="M 732 290.0 L 1028 290.0" stroke="#2A2A38" stroke-width="3" marker-end="url(#arrow)"/><path d="M 1172 290.0 L 1428 290.0" stroke="#2A2A38" stroke-width="3" marker-end="url(#arrow)"/>
+  
+  <circle cx="220" cy="290.0" r="64" fill="#1C1C28" stroke="#38BDF8" stroke-width="3"/>
+  <text x="220" y="410.0" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="19" font-weight="700" fill="#F5F5F4">Satellite</text>
+  <circle cx="660" cy="290.0" r="64" fill="#1C1C28" stroke="#F59E0B" stroke-width="3"/>
+  <text x="660" y="410.0" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="19" font-weight="700" fill="#F5F5F4">ArdaLink AI</text>
+  <circle cx="1100" cy="290.0" r="64" fill="#1C1C28" stroke="#FF3C00" stroke-width="3"/>
+  <text x="1100" y="410.0" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="19" font-weight="700" fill="#F5F5F4">Voice · USSD · SMS · WhatsApp</text>
+  <circle cx="1500" cy="290.0" r="64" fill="#1C1C28" stroke="#84CC16" stroke-width="3"/>
+  <text x="1500" y="410.0" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="19" font-weight="700" fill="#F5F5F4">Herder decides</text>
+  
+  <!-- satellite glyph -->
+  <g transform="translate(220,290.0)" fill="none" stroke="#38BDF8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="-8" y="-4" width="16" height="8" rx="1.5" fill="#F5F5F4" stroke="none"/>
+    <rect x="-30" y="-2" width="16" height="12" rx="1.5"/>
+    <rect x="14" y="-2" width="16" height="12" rx="1.5"/>
+  </g>
+  <!-- AI / brief glyph -->
+  <g transform="translate(660,290.0)" fill="none" stroke="#F59E0B" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="-26" y="-30" width="52" height="60" rx="8"/>
+    <line x1="-14" y1="-10" x2="14" y2="-10"/>
+    <line x1="-14" y1="2" x2="14" y2="2"/>
+    <line x1="-14" y1="14" x2="4" y2="14"/>
+  </g>
+  <!-- phone/channels glyph -->
+  <g transform="translate(1100,290.0)" fill="none" stroke="#FF3C00" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="-18" y="-32" width="36" height="64" rx="8"/>
+    <line x1="-8" y1="24" x2="8" y2="24"/>
+  </g>
+  <!-- herder glyph -->
+  <g transform="translate(1500,290.0)" fill="none" stroke="#84CC16" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="0" cy="-18" r="12"/>
+    <path d="M -20 30 C -20 6 20 6 20 30"/>
+  </g>
 </svg>

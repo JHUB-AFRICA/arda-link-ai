@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 700">
+  <defs>
+    <linearGradient id="bg-1000x700" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1C1C28"/>
+      <stop offset="1" stop-color="#0B0B12"/>
+    </linearGradient>
+  </defs>
+  <rect width="1000" height="700" fill="url(#bg-1000x700)"/>
+  <text x="60" y="70" font-family="Inter, sans-serif" font-size="15" font-weight="700" letter-spacing="2" fill="#84CC16">PHASE 1</text>
+  <text x="60" y="104" font-family="Inter, sans-serif" font-size="26" font-weight="800" fill="#F5F5F4">Earn trust — free brief, free call, free data</text>
+  <g transform="translate(500.0,400.0)">
+    <circle r="90" fill="none" stroke="#84CC16" stroke-width="4" stroke-dasharray="4 8"/>
+    <g fill="none" stroke="#84CC16" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="0" cy="-30" r="16"/>
+      <path d="M -26 40 C -26 8 26 8 26 40"/>
+    </g>
+    <path d="M 60 -30 L 110 -30" stroke="#2A2A38" stroke-width="3" marker-end="url(#arrow1)"/>
+  </g>
+  <defs><marker id="arrow1" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#2A2A38"/></marker></defs>
+  <g transform="translate(710.0,370.0)">
+    <rect x="-70" y="-40" width="140" height="90" rx="12" fill="#15151F" stroke="#2A2A38"/>
+    <text x="0" y="-12" text-anchor="middle" font-family="Inter, sans-serif" font-size="13" fill="#A8A29E">Cost to herder</text>
+    <text x="0" y="24" text-anchor="middle" font-family="Inter, sans-serif" font-size="30" font-weight="800" fill="#84CC16">KES 0</text>
+  </g>
+</svg>

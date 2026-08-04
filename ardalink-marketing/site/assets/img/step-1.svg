@@ -1,1 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"><rect width="400" height="400" rx="24" fill="#202a3b"/><circle cx="200" cy="155" r="82" fill="#f59e0b" opacity=".16"/><path d="M151 177 Q149 118 200 105 Q251 118 249 177 L232 160 H168Z" fill="none" stroke="#f59e0b" stroke-width="12" stroke-linejoin="round"/><path d="M200 104v111 M151 177h98" stroke="#f59e0b" stroke-width="8"/><text x="200" y="292" text-anchor="middle" fill="#f5f5f4" font-family="Arial,sans-serif" font-size="30" font-weight="700">DIAL</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <circle cx="200.0" cy="200.0" r="140" fill="#15151F" stroke="#F59E0B" stroke-width="3"/>
+  <g transform="translate(200.0,200.0)" fill="none" stroke="#F59E0B" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M -10 -26 L 10 -26 L 10 26 L -10 26 Z"/>
+  </g>
+</svg>

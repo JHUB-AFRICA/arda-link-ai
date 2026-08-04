@@ -22,6 +22,7 @@
       <div class="nav-links">
         <a href="how-it-works.html">How it works</a>
         <a href="demo.html" style="color: var(--primary);">Demo</a>
+        <a href="business.html">Impact</a>
         <a class="cta" href="demo.html">Try the demo ↗</a>
       </div>
     </nav>
@@ -34,8 +35,10 @@
         <h1 class="fade-up">The herder's journey,<br/>start to finish.</h1>
         <p class="lede fade-up delay-1">
           What she actually sees and hears. The exact menus, the
-          exact replies. Sandbox-verified end-to-end &mdash; what you
-          see here is what the live phone will see.
+          exact replies. The WhatsApp conversation below is live-tested
+          with real pastoralists today; voice and USSD are
+          sandbox-verified end-to-end and follow the same script the
+          live phone will hear.
         </p>
       </div>
     </section>
@@ -78,6 +81,28 @@
       </div>
     </section>
 
+    <!-- ONE WHATSAPP CONVERSATION -->
+    <section>
+      <div class="container">
+        <span class="kicker fade-up">One WhatsApp conversation</span>
+        <h2 class="fade-up">She shares her location. We answer for her herd, specifically.</h2>
+        <pre class="code fade-up" style="margin-top: 20px;"><span class="dim">Mchungaji</span>  Niko na ng'ombe, mbuzi, na ngamia. Wako kiu.
+<span class="dim">Mchungaji</span>  <span class="cyan">[location pin shared 📍]</span>
+
+<span class="ok">ArdaLink</span>   Mifugo yako ni gani? <span class="dim">(buttons: Ng'ombe · Mbuzi/Kondoo · Ngamia)</span>
+<span class="dim">Mchungaji</span>  <span class="cyan">[taps: Ng'ombe]</span>
+
+<span class="ok">ArdaLink</span>   Maji karibu: Bulla Pesa Borehole (2.4km NE).
+                       Malisho: wastani. Mifugo yako inaweza kufika.</pre>
+        <p class="dim fade-up" style="margin-top: 12px; font-size: .9rem;">
+          The distance her cattle can reach is different from her goats
+          or her camels — the answer is scoped per species, not a
+          generic radius, using a live satellite read on pasture
+          condition around the nearest working water point.
+        </p>
+      </div>
+    </section>
+
     <!-- ONE FULL SESSION -->
     <section>
       <div class="container">
@@ -104,7 +129,7 @@
 <span class="dim">←</span> <span class="ok">200</span>  <span class="cyan">END</span> Malisho / Water points:
                        1. Bulla Pesa Borehole (SW, ~2km)
                        2. Ngare Mara Spring (NE, ~9km)
-                       3. Kambi Garba Dam (SE, ~14km)
+                       3. Burat Community Dam (SE, ~14km)
 
 <span class="dim">→</span> POST /api/ussd-callback  text=<span class="ok">"4"</span>
 <span class="dim">←</span> <span class="ok">200</span>  <span class="cyan">END</span> Asante. Kwaheri.</pre>
@@ -136,7 +161,7 @@
           </div>
           <div class="fade-up delay-1">
             <div class="photo" style="aspect-ratio: 4 / 5; border-radius: var(--radius-lg);">
-              <img src="assets/img/channel-voice.svg" alt="AI-generated product illustration of an ArdaLink voice call" />
+              <img src="assets/img/channel-voice.svg" alt="Illustration of an ArdaLink voice call" />
             </div>
           </div>
         </div>
@@ -162,6 +187,7 @@
       <div class="meta">
         <a href="how-it-works.html">How it works</a>
         <a href="demo.html">Demo</a>
+        <a href="business.html">Impact</a>
         <a href="https://github.com/JHUB-AFRICA/arda-link-ai" rel="noopener">GitHub</a>
       </div>
     </div>

@@ -1,24 +1,31 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" preserveAspectRatio="xMidYMid slice">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#202c42"/><stop offset="1" stop-color="#10131d"/></linearGradient>
-    <linearGradient id="screen" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#253f4c"/><stop offset="1" stop-color="#14212a"/></linearGradient>
+    <linearGradient id="bg-800x1000" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1C1C28"/>
+      <stop offset="1" stop-color="#0B0B12"/>
+    </linearGradient>
   </defs>
-  <rect width="800" height="1000" fill="url(#bg)"/>
-  <circle cx="640" cy="160" r="210" fill="#38bdf8" opacity=".13"/>
-  <g transform="translate(218 104)">
-    <rect width="364" height="720" rx="42" fill="#0c1018" stroke="#667483" stroke-width="8"/>
-    <rect x="20" y="58" width="324" height="588" rx="18" fill="url(#screen)"/>
-    <rect x="137" y="25" width="90" height="12" rx="6" fill="#3a424d"/>
-    <circle cx="182" cy="681" r="27" fill="#1b2730" stroke="#38bdf8" stroke-width="4"/>
-    <path d="M182 690v-22 M171 679h22" stroke="#38bdf8" stroke-width="4" stroke-linecap="round"/>
-    <text x="44" y="108" fill="#f5f5f4" font-family="Arial, sans-serif" font-size="22" font-weight="700">ArdaLink</text>
-    <text x="44" y="147" fill="#a8a29e" font-family="Arial, sans-serif" font-size="17">Incoming call</text>
-    <circle cx="182" cy="285" r="84" fill="#38bdf8" opacity=".16"/>
-    <path d="M142 266 Q182 228 222 266 L239 287 Q246 298 237 307 L211 324 Q198 331 188 319 L177 306 Q159 316 143 302 Q126 287 142 266Z" fill="#38bdf8"/>
-    <path d="M157 269 Q182 251 207 269" fill="none" stroke="#e8f7ff" stroke-width="7" stroke-linecap="round"/>
-    <text x="182" y="424" text-anchor="middle" fill="#f5f5f4" font-family="Arial, sans-serif" font-size="24" font-weight="700">ArdaLink</text>
-    <text x="182" y="462" text-anchor="middle" fill="#a8a29e" font-family="Arial, sans-serif" font-size="17">Sauti ya malisho iko tayari</text>
-    <rect x="63" y="520" width="238" height="58" rx="29" fill="#84cc16"/>
-    <text x="182" y="557" text-anchor="middle" fill="#10131d" font-family="Arial, sans-serif" font-size="18" font-weight="700">Pokea simu</text>
+  <rect width="800" height="1000" fill="url(#bg-800x1000)"/>
+  <rect x="6" y="6" width="788" height="988" rx="18" fill="none" stroke="#2A2A38" stroke-width="1.4"/>
+  <g transform="translate(400.0,480.0)">
+    <rect x="-110" y="-190" width="220" height="380" rx="30" fill="#15151F" stroke="#2A2A38" stroke-width="3"/>
+    <rect x="-92" y="-166" width="184" height="290" rx="10" fill="#0B0B12"/>
+    <rect x="-24" y="-182" width="48" height="6" rx="3" fill="#2A2A38"/>
   </g>
+  <g transform="translate(400.0,480.0)">
+    <!-- waveform -->
+    <g stroke="#FF3C00" stroke-width="7" stroke-linecap="round">
+      <line x1="-64" y1="-10" x2="-64" y2="10"/>
+      <line x1="-40" y1="-30" x2="-40" y2="30"/>
+      <line x1="-16" y1="-46" x2="-16" y2="46"/>
+      <line x1="8" y1="-30" x2="8" y2="30"/>
+      <line x1="32" y1="-52" x2="32" y2="52"/>
+      <line x1="56" y1="-18" x2="56" y2="18"/>
+    </g>
+    <!-- handset glyph -->
+    <g transform="translate(0,100)" stroke="#F5F5F4" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M -30 -14 C -30 -30 -14 -34 -6 -20 C -2 -13 -4 -8 -10 -4 C -6 8 2 16 14 20 C 18 14 23 12 30 16 C 44 24 40 40 24 40 C -4 40 -30 14 -30 -14 Z" fill="#FF3C00" stroke="none"/>
+    </g>
+  </g>
+  <text x="400.0" y="960" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="20" font-weight="700" fill="#F5F5F4">Voice call</text>
 </svg>

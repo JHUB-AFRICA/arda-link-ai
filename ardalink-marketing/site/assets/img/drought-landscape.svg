@@ -1,21 +1,24 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" preserveAspectRatio="xMidYMid slice">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700">
   <defs>
-    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#202c49"/><stop offset=".62" stop-color="#c3613c"/><stop offset="1" stop-color="#f2a33a"/></linearGradient>
-    <linearGradient id="earth" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#8e4a2c"/><stop offset="1" stop-color="#251b1d"/></linearGradient>
+    <linearGradient id="bg-1200x700" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1C1C28"/>
+      <stop offset="1" stop-color="#0B0B12"/>
+    </linearGradient>
   </defs>
-  <rect width="1200" height="700" fill="url(#sky)"/>
-  <circle cx="250" cy="190" r="100" fill="#ffe09a" opacity=".85"/>
-  <path d="M0 400 Q210 325 410 420 T810 390 T1200 405 V700 H0Z" fill="#5e3929"/>
-  <path d="M0 500 Q180 422 380 505 T770 470 T1200 505 V700 H0Z" fill="url(#earth)"/>
-  <g fill="none" stroke="#d9894a" stroke-width="5" stroke-linecap="round" opacity=".8">
-    <path d="M60 555 l95 -28 86 39 99 -36 90 42 95 -38 105 43 92 -42 108 38 98 -36"/>
-    <path d="M20 640 l92 -30 86 32 105 -35 87 39 96 -32 99 38 105 -42 110 35 100 -30"/>
-    <path d="M336 478 l45 -28 M500 510 l51 -24 M736 462 l48 -27 M890 518 l57 -25"/>
+  <rect width="1200" height="700" fill="url(#bg-1200x700)"/>
+  <path d="M 0 420 Q 300 380 600 410 T 1200 400 L 1200 700 L 0 700 Z" fill="#2A1E12"/>
+  <g stroke="#1A1208" stroke-width="3" fill="none" opacity="0.8">
+    <path d="M 120 470 L 180 520 L 150 580"/>
+    <path d="M 400 450 L 460 510 L 420 560 L 470 600"/>
+    <path d="M 700 480 L 640 530 L 690 590"/>
+    <path d="M 950 460 L 1010 520 L 970 570"/>
   </g>
-  <g fill="#14151c">
-    <path d="M842 505 l12 -52 12 12 12 -25 13 28 20 -14 12 51Z"/>
-    <path d="M880 512 l9 -38 10 7 8 -18 11 20 14 -8 8 37Z"/>
-    <path d="M966 518 l10 -43 11 10 11 -22 12 23 19 -11 12 43Z"/>
+  <!-- pasture-health stress readout, top-right -->
+  <g transform="translate(940,60)">
+    <rect width="220" height="120" rx="12" fill="#15151F" stroke="#2A2A38"/>
+    <text x="16" y="34" font-family="Inter, sans-serif" font-size="13" fill="#A8A29E">Pasture vs normal</text>
+    <text x="16" y="76" font-family="Inter, sans-serif" font-size="34" font-weight="800" fill="#DC2626">-38%</text>
+    <text x="16" y="100" font-family="Inter, sans-serif" font-size="12" fill="#DC2626">Severity: high</text>
   </g>
-  <rect x="24" y="24" width="1152" height="652" rx="20" fill="none" stroke="#fff0c2" stroke-opacity=".35" stroke-width="2"/>
+  <text x="40" y="660" font-family="Inter, sans-serif" font-size="16" fill="#A8A29E">Isiolo County, dry season</text>
 </svg>

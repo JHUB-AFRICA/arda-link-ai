@@ -1,26 +1,24 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000" preserveAspectRatio="xMidYMid slice">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 1000">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#3c2b38"/><stop offset="1" stop-color="#11131d"/></linearGradient>
+    <linearGradient id="bg-800x1000" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1C1C28"/>
+      <stop offset="1" stop-color="#0B0B12"/>
+    </linearGradient>
   </defs>
-  <rect width="800" height="1000" fill="url(#bg)"/>
-  <circle cx="650" cy="760" r="260" fill="#f59e0b" opacity=".12"/>
-  <g transform="translate(218 104)">
-    <rect width="364" height="720" rx="42" fill="#0c1018" stroke="#667483" stroke-width="8"/>
-    <rect x="20" y="58" width="324" height="588" rx="18" fill="#20202c"/>
-    <rect x="137" y="25" width="90" height="12" rx="6" fill="#3a424d"/>
-    <circle cx="182" cy="681" r="27" fill="#1b2730" stroke="#f59e0b" stroke-width="4"/>
-    <text x="44" y="111" fill="#f5f5f4" font-family="Arial, sans-serif" font-size="22" font-weight="700">Messages</text>
-    <text x="44" y="148" fill="#a8a29e" font-family="Arial, sans-serif" font-size="16">ArdaLink</text>
-    <rect x="48" y="196" width="235" height="82" rx="18" fill="#343444"/>
-    <text x="70" y="231" fill="#f5f5f4" font-family="Arial, sans-serif" font-size="18" font-weight="700">BULA</text>
-    <text x="70" y="258" fill="#a8a29e" font-family="Arial, sans-serif" font-size="14">09:42</text>
-    <rect x="82" y="326" width="234" height="176" rx="18" fill="#f59e0b"/>
-    <text x="105" y="362" fill="#211923" font-family="Arial, sans-serif" font-size="17" font-weight="700">ArdaLink brief</text>
-    <text x="105" y="399" fill="#211923" font-family="Arial, sans-serif" font-size="15">Maji iko kilomita 6</text>
-    <text x="105" y="425" fill="#211923" font-family="Arial, sans-serif" font-size="15">kaskazini. Malisho</text>
-    <text x="105" y="451" fill="#211923" font-family="Arial, sans-serif" font-size="15">bado ni salama.</text>
-    <text x="105" y="478" fill="#6b3b1c" font-family="Arial, sans-serif" font-size="13">09:43 · delivered</text>
-    <rect x="48" y="552" width="268" height="46" rx="23" fill="#343444"/>
-    <text x="182" y="581" text-anchor="middle" fill="#a8a29e" font-family="Arial, sans-serif" font-size="15">Reply BULA</text>
+  <rect width="800" height="1000" fill="url(#bg-800x1000)"/>
+  <rect x="6" y="6" width="788" height="988" rx="18" fill="none" stroke="#2A2A38" stroke-width="1.4"/>
+  <g transform="translate(400.0,480.0)">
+    <rect x="-110" y="-190" width="220" height="380" rx="30" fill="#15151F" stroke="#2A2A38" stroke-width="3"/>
+    <rect x="-92" y="-166" width="184" height="290" rx="10" fill="#0B0B12"/>
+    <rect x="-24" y="-182" width="48" height="6" rx="3" fill="#2A2A38"/>
   </g>
+  <!-- outgoing bubble -->
+  <rect x="370.0" y="370.0" width="90" height="42" rx="14" fill="#F59E0B"/>
+  <text x="415.0" y="396.0" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, monospace" font-size="18" font-weight="700" fill="#0B0B12">BULA</text>
+  <!-- reply bubble -->
+  <rect x="322.0" y="430.0" width="156" height="90" rx="14" fill="#1C1C28" stroke="#2A2A38" stroke-width="1.5"/>
+  <text x="400.0" y="456.0" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="13" fill="#F5F5F4">Bula Pesa: pasture</text>
+  <text x="400.0" y="476.0" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="13" fill="#F5F5F4">-38% vs normal.</text>
+  <text x="400.0" y="496.0" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="13" fill="#F59E0B">Hatari: high.</text>
+  <text x="400.0" y="960" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="20" font-weight="700" fill="#F5F5F4">SMS keyword</text>
 </svg>

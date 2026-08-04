@@ -1,1 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"><rect width="400" height="400" rx="24" fill="#2b2735"/><circle cx="200" cy="155" r="82" fill="#f59e0b" opacity=".16"/><circle cx="200" cy="155" r="65" fill="none" stroke="#f59e0b" stroke-width="11"/><path d="M162 155 l25 26 53 -58" fill="none" stroke="#f59e0b" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/><text x="200" y="292" text-anchor="middle" fill="#f5f5f4" font-family="Arial,sans-serif" font-size="30" font-weight="700">REMEMBER</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400">
+  <circle cx="200.0" cy="200.0" r="140" fill="#15151F" stroke="#F59E0B" stroke-width="3"/>
+  <g transform="translate(200.0,200.0)" fill="none" stroke="#F59E0B" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M -20 10 A 20 20 0 1 1 20 10"/>
+  </g>
+</svg>

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 700">
+  <defs>
+    <linearGradient id="bg-1000x700" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1C1C28"/>
+      <stop offset="1" stop-color="#0B0B12"/>
+    </linearGradient>
+  </defs>
+  <rect width="1000" height="700" fill="url(#bg-1000x700)"/>
+  <text x="60" y="70" font-family="Inter, sans-serif" font-size="15" font-weight="700" letter-spacing="2" fill="#FF3C00">PHASE 2</text>
+  <text x="60" y="104" font-family="Inter, sans-serif" font-size="26" font-weight="800" fill="#F5F5F4">Marketplace — match a buyer or feed seller</text>
+  <g transform="translate(350.0,400.0)" fill="none" stroke="#FF3C00" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="0" cy="-30" r="16"/>
+    <path d="M -26 40 C -26 8 26 8 26 40"/>
+  </g>
+  <path d="M 410.0 370.0 L 590.0 370.0" stroke="#2A2A38" stroke-width="3" marker-end="url(#arrow2)" marker-start="url(#arrow2r)"/>
+  <defs>
+    <marker id="arrow2" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#2A2A38"/></marker>
+    <marker id="arrow2r" markerWidth="10" markerHeight="10" refX="2" refY="5" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z" fill="#2A2A38"/></marker>
+  </defs>
+  <g transform="translate(650.0,400.0)" fill="none" stroke="#F59E0B" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="-24" y="-24" width="48" height="48" rx="8"/>
+    <path d="M -10 0 L -2 10 L 12 -10"/>
+  </g>
+  <g transform="translate(500.0,490.0)">
+    <rect x="-90" y="-26" width="180" height="52" rx="26" fill="#15151F" stroke="#2A2A38"/>
+    <text x="0" y="6" text-anchor="middle" font-family="Inter, sans-serif" font-size="14" fill="#A8A29E">Small commission on the deal</text>
+  </g>
+</svg>

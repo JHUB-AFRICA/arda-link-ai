@@ -1,24 +1,24 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" preserveAspectRatio="xMidYMid slice">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f1a83b"/><stop offset=".5" stop-color="#a9442d"/><stop offset="1" stop-color="#211923"/></linearGradient>
-    <linearGradient id="soil" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#9f5731"/><stop offset="1" stop-color="#211923"/></linearGradient>
+    <linearGradient id="bg-800x800" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1C1C28"/>
+      <stop offset="1" stop-color="#0B0B12"/>
+    </linearGradient>
   </defs>
-  <rect width="800" height="800" fill="url(#bg)"/>
-  <circle cx="165" cy="190" r="88" fill="#ffe39b" opacity=".75"/>
-  <path d="M0 450 Q160 360 310 450 T620 425 T800 455 V800 H0Z" fill="url(#soil)"/>
-  <path d="M0 605 Q135 570 270 615 T540 590 T800 620 V800 H0Z" fill="#241b1d"/>
-  <g fill="none" stroke="#d98745" stroke-width="5" stroke-linecap="round" opacity=".75">
-    <path d="M60 680 l80 -25 64 35 76 -29 82 39 86 -28 80 32 86 -40 90 32"/>
-    <path d="M120 744 l54 -24 58 18 67 -31 74 30 70 -21 60 23 75 -28"/>
-    <path d="M258 518 l38 -20 M333 557 l42 -17 M530 500 l36 -22 M615 550 l41 -16"/>
+  <rect width="800" height="800" fill="url(#bg-800x800)"/>
+  <path d="M 0 560 Q 200 520 400 550 T 800 540 L 800 800 L 0 800 Z" fill="#241A10"/>
+  <g transform="translate(400.0,420.0)" fill="none" stroke="#A8A29E" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="0" cy="10" rx="90" ry="46"/>
+    <path d="M -70 -10 C -90 -30 -80 -60 -55 -55 C -40 -70 -10 -68 5 -50"/>
+    <circle cx="-70" cy="-40" r="18"/>
+    <line x1="-55" y1="34" x2="-55" y2="70"/>
+    <line x1="-10" y1="40" x2="-10" y2="78"/>
+    <line x1="40" y1="38" x2="42" y2="76"/>
+    <line x1="75" y1="24" x2="80" y2="60"/>
   </g>
-  <g transform="translate(280 342)" fill="#171820" stroke="#f5c06d" stroke-width="5" stroke-linejoin="round">
-    <path d="M40 118 Q37 60 78 40 Q125 18 222 49 Q286 70 300 124 L277 159 L78 158Z"/>
-    <path d="M265 81 Q300 32 334 43 Q363 53 348 85 L321 113Z"/>
-    <path d="M316 52 l37 -30 M327 60 l44 -7" fill="none"/>
-    <path d="M98 153 l-5 83 M247 154 l12 83 M131 154 l-12 83 M286 149 l25 80" fill="none"/>
-    <path d="M48 105 Q8 75 19 40 Q26 19 48 23 L74 62Z"/>
-    <circle cx="320" cy="76" r="5" fill="#f59e0b" stroke="none"/>
+  <g fill="#DC2626" opacity="0.85">
+    <circle cx="312.0" cy="368.0" r="4"/>
+    <text x="330.0" y="330.0" font-family="Inter, sans-serif" font-size="14" fill="#DC2626">Body condition: thin</text>
   </g>
-  <rect x="28" y="28" width="744" height="744" rx="20" fill="none" stroke="#fff0c2" stroke-opacity=".35" stroke-width="2"/>
+  <text x="40" y="760" font-family="Inter, sans-serif" font-size="16" fill="#A8A29E">The cost of a missed signal</text>
 </svg>

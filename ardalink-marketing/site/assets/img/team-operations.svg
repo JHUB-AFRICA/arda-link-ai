@@ -1,8 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 700" preserveAspectRatio="xMidYMid slice">
-  <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#24404a"/><stop offset="1" stop-color="#151522"/></linearGradient></defs>
-  <rect width="600" height="700" fill="url(#bg)"/><circle cx="490" cy="108" r="170" fill="#38bdf8" opacity=".18"/>
-  <path d="M76 700 Q100 508 300 490 Q500 508 524 700Z" fill="#38bdf8"/><path d="M169 700 Q192 540 300 520 Q408 540 431 700Z" fill="#17212c"/>
-  <ellipse cx="300" cy="320" rx="112" ry="140" fill="#6d402f"/><path d="M184 320 Q169 164 300 134 Q431 164 416 320 L393 258 Q350 204 300 216 Q250 204 207 258Z" fill="#171820"/>
-  <ellipse cx="258" cy="338" rx="12" ry="8" fill="#171820"/><ellipse cx="342" cy="338" rx="12" ry="8" fill="#171820"/><path d="M270 402 Q300 418 330 402" fill="none" stroke="#171820" stroke-width="7" stroke-linecap="round"/>
-  <rect x="28" y="28" width="544" height="644" rx="20" fill="none" stroke="#8de3ff" stroke-opacity=".4" stroke-width="2"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 700">
+  <defs>
+    <linearGradient id="bg-600x700" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1C1C28"/>
+      <stop offset="1" stop-color="#0B0B12"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="700" fill="url(#bg-600x700)"/>
+  <circle cx="300.0" cy="330.0" r="120" fill="#15151F" stroke="#38BDF8" stroke-width="4"/>
+  <text x="300.0" y="375.0" text-anchor="middle" font-family="Inter, sans-serif" font-size="90" font-weight="800" fill="#38BDF8">O</text>
+  <text x="300.0" y="650" text-anchor="middle" font-family="Inter, sans-serif" font-size="14" fill="#71717A" letter-spacing="1">PHOTO PENDING</text>
 </svg>

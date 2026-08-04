@@ -477,6 +477,7 @@ section .section-lede {
 .channel.accent  { border-top: 4px solid var(--accent); }
 .channel.primary { border-top: 4px solid var(--primary); }
 .channel.info    { border-top: 4px solid var(--info); }
+.channel.ok      { border-top: 4px solid var(--ok); }
 
 /* ── Flow diagram (5 steps) ─────────────────────────────────────────── */
 
