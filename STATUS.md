@@ -739,6 +739,108 @@ Full audit of Supabase-local write paths found 6 severe drifts, all now closed o
   3 of the console (ground-truth correction) only — water sources, species
   radii, and pastoralist editing are unaffected and fully live.
 
+**F-series (Evolution conversation audit + infra fixes + live location) — 2026-08-03/04:**
+
+- **F1 `fix(whatsapp)`** — audited real conversations from the local
+  `whatsapp_messages` mirror (the actual channel real testers were using)
+  and found four live bugs, all fixed and redeployed: (1) `handleFreeText`
+  fabricated specific named water points, distances, and a fake "sending
+  the map pin now" when a tester pasted an unparseable Google Maps link,
+  and invented a full NDVI/rainfall forecast for "Merti," a ward retired
+  in #38 — the system prompt now has explicit named grounding rules
+  instead of a generic "don't invent data" line. (2) A raw MockClient
+  response (`{"summary":"[MOCK ...`) reached a live group chat once when
+  the z.ai→minimax fallback chain bottomed out — `mock.ts` now only
+  JSON-wraps when a schema was requested, and `whatsappTurn.ts` hard-fails
+  to a safe default whenever `provider === "mock"`. (3) `welcome_list` was
+  sent 6 times into one active thread — `hasPriorWhatsappMessages()`
+  failed to `false` on total lookup failure, re-triggering "first
+  contact"; flipped to fail toward `true`. (4) A group chat's delivery
+  receipts were split from its own message thread under two different
+  `phone_number` values (`+120363...@g.us` vs `120363...@g.us`, no `+`) —
+  `toE164FromJid()` only stripped the individual-chat JID suffix, and the
+  status handler preferred the raw un-normalized JID over the
+  already-normalized one; both fixed, `ERROR` deliveries now log at warn
+  level instead of blending into routine ACK noise.
+- **F2 `feat(whatsapp)`** — researched WhatsApp's two location-sharing
+  features: confirmed (via a real tester's captured payload) the existing
+  one-time "Send Current Location" parsing is correct end-to-end, and
+  found — by inspecting the running Evolution v2.3.7 container's own
+  compiled webhook formatter directly — that "Share Live Location"
+  (`liveLocationMessage`) uses the identical `degreesLatitude`/
+  `degreesLongitude` shape but was never checked for, silently dropping
+  the message. Added. Open, flagged-not-resolved question: whether
+  Evolution fires a fresh webhook per live-location tick (would repeat
+  the species-prompt for the whole share duration, same failure mode as
+  F1's #3) — needs a real multi-minute live-location test to confirm.
+- **F3 `fix(infra)`** — the restart to deploy F1/F2 surfaced two
+  background-job bugs, both root-caused and fixed: systemd's
+  `EnvironmentFile=` parser was silently corrupting
+  `GOOGLE_SERVICE_ACCOUNT_JSON`'s escaped `\n` sequences (dropping the
+  backslash), breaking Earth Engine auth with an opaque OpenSSL
+  "DECODER routines::unsupported" error — masked a second, older bug
+  where `src/index.ts`'s own dotenv fallback resolved paths relative to
+  the running file's own directory (`dist/` or `src/`) instead of the
+  package root, so it had been silently no-op'ing in every build. Fixed
+  both (that one var now bypasses systemd's parser entirely, regenerated
+  fresh from `.env.local` every start; the dotenv path now correctly
+  resolves two levels up in both layouts). Also fixed `sbRpc()` calling
+  `res.json()` unconditionally on 2xx responses — void-returning Postgres
+  functions answer 2xx with an empty body, so every successful
+  `upsert_weather_data` call was throwing and logging identically to a
+  real failure. Verified live post-redeploy: WaterBodies' Sentinel-2 scan
+  now completes, and the same ForecastJob run that used to log 5 RPC
+  failures now runs clean.
+- **Security + code quality sweep, 2026-08-04**: full sweep across all
+  three services. Findings:
+  - **Structural, not a code bug**: the entire project runs from an NTFS
+    drive mounted `fuseblk` with `uid=0,gid=0,allow_other` — every file,
+    including every secret (`.env.local`, the GEE service-account key),
+    shows as world-readable/writable (`-rwxrwxrwx`) and `chmod` is a
+    silent no-op since there's no real underlying ACL to change. This is
+    a local-dev-machine-only risk (any other local user/process can read
+    every secret) but must not be assumed away when planning any of the
+    real deployment scenarios below — those need a real Linux filesystem
+    with actual permission enforcement.
+  - **CORS is fully open** (`app.use(cors())`, no origin allowlist) on an
+    API that now includes destructive operator-console actions (delete
+    water node, decline lead) — should be restricted to the real
+    dashboard origin(s) before this goes anywhere beyond local testing.
+  - **No rate limiting exists anywhere in the codebase** — confirmed
+    zero `express-rate-limit`-style dependency, zero Redis-based counters
+    despite `security.md` documenting a whole Redis rate-limit design
+    (10 voice calls/hour, 3/day, etc.) that was checked directly and does
+    not exist in the current source. `/api/auth/login` has no
+    attempt-throttling either. `security.md` also claimed bcrypt; the
+    real implementation is `scryptSync` (stronger, and correctly
+    implements a decoy-hash timing-attack mitigation against user
+    enumeration — a good pattern worth keeping, just previously
+    undocumented). Rewrote `security.md` to match reality.
+  - **JWT stored in dashboard `localStorage`** (`ardalink.jwt`) — standard
+    but XSS-exposed; no XSS vector was found in this sweep (checked every
+    `dangerouslySetInnerHTML` — the one hit is shadcn's chart-theme CSS
+    injection, fixed config only, not user data), so this is a
+    defense-in-depth note rather than an active vulnerability.
+  - **Dependency audit**: 30 advisories exist repo-wide, but 29 of them
+    are devDependency-only (test tooling: `vitest`, `eslint`, `archiver`
+    via `testcontainers` — never shipped, never network-reachable in
+    production). Production-dependency exposure is genuinely small: 1
+    moderate (`uuid`, transitive via `@google/earthengine`→`googleapis`)
+    in `ardalink-api`, 3 (1 high, 1 moderate, 1 low, all `postcss`/
+    `esbuild` inside Vite's dev-server toolchain, not the built `dist/`
+    actually served) in `ardalink-web`, 1 moderate (`cryptography`
+    49.0.0→50.0.0) in `ardalink-engine`.
+  - **Code quality**: near-zero TODO/FIXME/HACK markers repo-wide (the
+    only grep hits were `+254711XXXXXX` placeholder phone numbers, not
+    real markers), zero stray `console.log` debug statements. SQL in the
+    engine consistently parameterizes real values via `%s`; the only
+    dynamic-identifier interpolation is the fixed, non-user-controlled
+    schema name (`db_client.schema`) and, in one place
+    (`admin_water.py`'s water-node PATCH), column names built from a
+    tightly-typed Pydantic model's own declared fields — safe today, but
+    would become a column-injection vector if that model ever adds an
+    `extra="allow"` catch-all.
+
 *Prior cycle (2026-07-07 baseline)*:
 * Satellite API routes + scheduler.
 * Engine ↔ api tenant attestation (HMAC-SHA256 over `TENANT_ATTESTATION_SECRET`).

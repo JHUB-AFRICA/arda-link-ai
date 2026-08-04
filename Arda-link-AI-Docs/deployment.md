@@ -1,267 +1,259 @@
 # ArdaLink AI — Deployment
 
-> This document covers local development with Docker Compose and production hosting options for the ArdaLink platform.
+> This document is the strategic view: what's actually running today, and
+> the concrete scenarios for what comes next. For the step-by-step
+> mechanics of the containerized stack (bringing services up, switching
+> WhatsApp providers, health-check commands), see
+> [`ardalink-api/infra/docker/RUNBOOK.md`](../ardalink-api/infra/docker/RUNBOOK.md)
+> — that document is current and does not need duplicating here.
+
+**Rewritten 2026-08-04** — the previous version of this document described
+a generic Docker Compose stack (6 services, no WhatsApp channel, no
+Supabase) and a hypothetical DigitalOcean/Hetzner/AWS/Azure comparison
+that was never acted on. Neither reflected what actually exists. This
+version is grounded in the real, currently-running architecture and the
+real options actually available for what comes next.
 
 ---
 
 ## Table of Contents
 
-1. [Local Development (Docker Compose)](#local-development-docker-compose)
-2. [Service Dependency Graph](#service-dependency-graph)
-3. [Production Hosting Options](#production-hosting-options)
-4. [Environment Variables](#environment-variables)
-5. [Caddy Configuration](#caddy-configuration)
-6. [Health Checks & Monitoring](#health-checks--monitoring)
+1. [Current State — What's Actually Running Today](#current-state--whats-actually-running-today)
+2. [Scenario 1 — Local Dev / Active WhatsApp Testing (current)](#scenario-1--local-dev--active-whatsapp-testing-current)
+3. [Scenario 2 — VPS Self-Hosted (staged, not yet cut over)](#scenario-2--vps-self-hosted-staged-not-yet-cut-over)
+4. [Scenario 3 — Meta Cloud API / 360dialog Production Channel](#scenario-3--meta-cloud-api--360dialog-production-channel)
+5. [Scenario 4 — Cloud-Hosted Scale-Out](#scenario-4--cloud-hosted-scale-out)
+6. [Environment Variables](#environment-variables)
+7. [Security Checklist Per Scenario](#security-checklist-per-scenario)
+8. [Health Checks & Monitoring](#health-checks--monitoring)
 
 ---
 
-## Local Development (Docker Compose)
-
-The full platform runs locally with a single `docker compose up` command. Six services are defined:
+## Current State — What's Actually Running Today
 
 ```mermaid
 flowchart TB
-    subgraph External ["External (internet required)"]
-        AT["Africa's Talking\nngrok tunnel required for webhooks"]
+    subgraph Laptop ["Dev laptop (munen-Latitude-7420)"]
+        API["ardalink-api\nsystemd: ardalink-api.service\n:3001"]
+        LocalPG["ardalink-local-postgres\n:15432 (local mirror)"]
+        LocalRedis["ardalink-local-redis\n:6379 (provisioned, unused)"]
+        Evo["evolution-api (Docker)\nv2.3.7, Baileys 7.0.0-rc.9\n:8081"]
+        EvoPG["evolution-postgres (Docker)"]
+        Tunnel["ardalink-tunnel.service\nautossh -R 127.0.0.1:9091:127.0.0.1:3001"]
+    end
+
+    subgraph VPS ["baitech VPS (69.164.244.165)"]
+        Nginx1["nginx: ardalink.ementech.co.ke\n-> 127.0.0.1:9091"]
+        Nginx2["nginx: wa.ardalink.ementech.co.ke\n-> 127.0.0.1:8082 (staged, see Scenario 2)"]
+    end
+
+    subgraph Cloud ["Real production data + AI (cloud)"]
+        Supabase["Supabase\n(source of truth: wards, pastoralists,\nground_truth_calls, whatsapp_messages*)"]
+        ZAI["z.ai (glm-4.5-flash)\nprimary LLM"]
+        Minimax["MiniMax\nfallback LLM"]
+        Azure["Azure OpenAI + Speech\nvoice/TTS/STT"]
         GEE["Google Earth Engine"]
-        AzureOAI["Azure OpenAI Realtime"]
-        OpenMeteo["Open-Meteo"]
     end
 
-    subgraph Compose ["Docker Compose — localhost"]
-        Caddy["caddy:2-alpine\n:80, :443\n\nReverse proxy + TLS"]
-        Web["ardalink-web\n:8080\n\nReact 19 + Vite"]
-        API["ardalink-api\n:3000\n\nExpress 5 + Node 22"]
-        Engine["ardalink-engine\n:5001\n\nPython 3.12 + FastAPI"]
-        PG["postgres:16-alpine\n:5432\n\npublic + gis_engine schemas"]
-        Redis["redis:7-alpine\n:6379"]
-    end
-
-    Caddy -->|"proxy :8080"| Web
-    Caddy -->|"proxy :3000"| API
-    Web -->|"REST/WS"| API
-    API -->|"REST"| Engine
-    API -->|"SQL"| PG
-    API -->|"GET/SET"| Redis
-    Engine -->|"SQL"| PG
-    Engine -->|"GEE SDK"| GEE
-    Engine -->|"HTTP"| OpenMeteo
-    API -->|"WebSocket"| AzureOAI
-    AT -->|"Webhooks (via ngrok)"| API
+    WhatsAppUser["Real WhatsApp testers"] -->|messages| Evo
+    Evo -->|webhook| API
+    API <-->|reverse SSH tunnel| Tunnel
+    Tunnel -.->|forwards to| Nginx1
+    Nginx1 -->|public HTTPS, not used for inbound today| API
+    API --> LocalPG
+    API --> Supabase
+    API --> ZAI
+    API --> Minimax
+    API --> Azure
+    API -->|proxied via ardalink-engine| GEE
 ```
 
-### Docker Compose service definitions
+*`whatsapp_messages` exists on the local mirror but not yet on the real
+Supabase project — see `STATUS.md`'s tracked blockers.*
 
-```yaml
-services:
-
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: ardalink
-      POSTGRES_USER: ardalink
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ardalink"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    command: redis-server --save 60 1 --loglevel warning
-
-  engine:
-    build:
-      context: ./ardalink-engine
-      dockerfile: Dockerfile
-    ports:
-      - "5001:5001"
-    environment:
-      DATABASE_URL: ${DATABASE_URL}
-      GEE_SERVICE_ACCOUNT: ${GEE_SERVICE_ACCOUNT}
-      GEE_PROJECT: ${GEE_PROJECT}
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  api:
-    build:
-      context: ./ardalink-api
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    environment:
-      PORT: 3000
-      DATABASE_URL: ${DATABASE_URL}
-      REDIS_URL: ${REDIS_URL}
-      JWT_SECRET: ${JWT_SECRET}
-      SESSION_SECRET: ${SESSION_SECRET}
-      AFRICASTALKING_API_KEY: ${AFRICASTALKING_API_KEY}
-      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT}
-      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY}
-      ENGINE_URL: http://engine:5001
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
-      engine:
-        condition: service_started
-
-  web:
-    build:
-      context: ./ardalink-web
-      dockerfile: Dockerfile
-    ports:
-      - "8080:8080"
-    depends_on:
-      - api
-
-  caddy:
-    image: caddy:2-alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on:
-      - api
-      - web
-
-volumes:
-  pgdata:
-  caddy_data:
-  caddy_config:
-```
+**What this actually means:**
+- `ardalink-api` runs as a systemd service **on this laptop**, not on any
+  server — `ardalink-api.service`, `WorkingDirectory=.../ardalink-api`,
+  auto-restarts on crash, survives laptop reboots (`WantedBy=default.target`).
+- Real WhatsApp testers reach it via a **permanent reverse SSH tunnel**
+  (`ardalink-tunnel.service`, `autossh`) to the baitech VPS — the VPS
+  itself runs no ArdaLink application code, only an nginx reverse proxy
+  (`/media/munen/muneneENT/baitech-infra/nginx/ardalink.ementech.co.ke.conf`)
+  that forwards to whatever the tunnel is pointed at. **If the laptop is
+  off, asleep, or off the network, the whole WhatsApp channel goes down**
+  — this is the central limitation of Scenario 1, and the reason
+  Scenario 2 exists.
+- Evolution (the self-hosted WhatsApp/Baileys bridge) also runs **on this
+  laptop** via Docker, QR-linked to a real WhatsApp number.
+- Supabase is the **real production data store** — not a generic
+  "managed Postgres," a specific already-provisioned Supabase project.
+  The local Postgres (`ardalink-local-postgres`) is a resilient
+  read-fallback mirror, not the source of truth.
+- Redis is running locally but **entirely unused by the application** —
+  see `security.md`'s Rate Limiting correction. It was provisioned for a
+  rate-limiting design that was never implemented.
 
 ---
 
-## Service Dependency Graph
+## Scenario 1 — Local Dev / Active WhatsApp Testing (current)
 
-Services must start in the following order:
+**When to use:** exactly what it's for today — active development and
+real-tester feedback loops where you want to redeploy in seconds (edit,
+rebuild, `systemctl --user restart ardalink-api.service`) without any
+remote deploy step.
 
-```mermaid
-flowchart LR
-    PG["postgres\n(healthcheck)"]
-    Redis["redis"]
-    Engine["engine\n(depends: postgres)"]
-    API["api\n(depends: postgres,\nredis, engine)"]
-    Web["web\n(depends: api)"]
-    Caddy["caddy\n(depends: api, web)"]
+**Setup:** see `ardalink-api/infra/docker/RUNBOOK.md` for bringing up
+Evolution + the core stack locally. The tunnel/systemd layer on top of
+that (not covered in that runbook, since it's laptop-specific, not part
+of the containerized stack) is two systemd user units:
+- `~/.config/systemd/user/ardalink-api.service` — runs `dist/index.mjs`,
+  restarts on crash.
+- `~/.config/systemd/user/ardalink-tunnel.service` — `autossh` reverse
+  tunnel, `-R 127.0.0.1:9091:127.0.0.1:3001`, connecting as the
+  `ardalink-tunnel` VPS user with a dedicated SSH key
+  (`~/.ssh/ardalink_tunnel_key`).
 
-    PG --> Engine
-    PG --> API
-    Redis --> API
-    Engine --> API
-    API --> Web
-    API --> Caddy
-    Web --> Caddy
-```
+**Known limitations (do not treat as production):**
+- Single point of failure is a **personal laptop** — no uptime guarantee.
+- The entire project directory lives on an NTFS drive mounted with
+  `uid=0,gid=0,allow_other` — every file including every secret is
+  effectively world-readable/writable at the OS level (see
+  `security.md`'s Secrets Management section). Acceptable for a
+  single-developer machine; must not be assumed for any scenario below.
+- No rate limiting, open CORS (see `security.md`) — fine when only a
+  small group of known testers has the number, not fine at any real scale.
 
 ---
 
-## Production Hosting Options
+## Scenario 2 — VPS Self-Hosted (staged, not yet cut over)
 
-Four hosting configurations have been evaluated for production deployment:
+**When to use:** the natural next step once local-laptop testing is
+validated and you want the WhatsApp channel to survive laptop reboots,
+sleep, and network changes — i.e. an actual pilot, not just testing.
 
-```mermaid
-flowchart LR
-    subgraph DO ["DigitalOcean ($60–100/mo)"]
-        DODrop["2× Droplets\n(API + Engine)"]
-        DOPG["Managed PostgreSQL\n(DO DBaaS)"]
-        DORedis["Managed Redis\n(DO DBaaS)"]
-    end
+**Current status: partially staged, not live.** The baitech VPS already
+has:
+- `/root`-adjacent `ardalink-evolution/docker-compose.yml` +
+  `.env.example` pre-staged (created 2026-08-02) — an Evolution instance
+  ready to bring up directly on the VPS.
+- nginx already configured for `wa.ardalink.ementech.co.ke` → `127.0.0.1:8082`,
+  with the Evolution manager UI (`/manager`) gated behind a **dedicated**
+  basic-auth file (`.htpasswd_ardalink_evolution` — deliberately separate
+  from any other Evolution instance's manager credentials on the same
+  box).
+- The main domain's nginx config (`ardalink.ementech.co.ke.conf`)
+  explicitly documents, in its own comments, that ardalink-api is *not*
+  hosted on the VPS today — only the reverse-proxy hop to the tunnel is.
 
-    subgraph Hetzner ["Hetzner ($30–50/mo)"]
-        HetzCX["CX31 Dedicated\n(all services)"]
-        HetzPG["Self-hosted PostgreSQL\n+ PostGIS"]
-    end
+**To actually cut over:**
+1. Bring up `ardalink-evolution`'s staged compose stack on the VPS,
+   QR-link a WhatsApp number (or migrate the existing linked session —
+   check Evolution's session-export/import support first, since
+   re-linking means a new number or a brief downtime window).
+2. Deploy `ardalink-api` + `ardalink-engine` on the VPS itself, using
+   `ardalink-api/infra/docker/compose.yml` (the same stack documented in
+   `infra/docker/RUNBOOK.md`) — this replaces the tunnel entirely; the
+   VPS's own nginx proxies directly to the co-located containers instead
+   of forwarding over SSH to a laptop.
+3. Retire `ardalink-tunnel.service` and `ardalink-api.service` on the
+   laptop once the VPS path is confirmed working end-to-end (don't
+   retire before confirming — the laptop path is the fallback during
+   cutover).
+4. Point `wa.ardalink.ementech.co.ke`'s nginx `proxy_pass` at the new
+   Evolution container's actual port if it differs from the staged
+   `8082` default.
 
-    subgraph AWS ["AWS ($100–200/mo)"]
-        AWSEC2["EC2 / ECS\n(Fargate)"]
-        AWSRDS["RDS PostgreSQL\n+ PostGIS"]
-        AWSElastic["ElastiCache\n(Redis)"]
-    end
+**Tradeoffs vs. Scenario 1:** real uptime (systemd + Docker restart
+policies on an always-on box, no laptop dependency), but now the VPS
+itself needs the same secrets-hardening treatment (real Linux filesystem
+— no NTFS-mount permission problem there — so `chmod 600` on env files
+actually means something; do it).
 
-    subgraph Azure ["Azure ($100–200/mo)"]
-        AzureApp["App Service\n(API + Web)"]
-        AzureSQL["Azure Database\nfor PostgreSQL"]
-        AzureCache["Azure Cache\nfor Redis"]
-    end
-```
+---
 
-| Provider | Service | Est. Cost/mo | Region | Notes |
-|----------|---------|-------------|--------|-------|
-| **DigitalOcean** | Managed PostgreSQL + Droplets | $60–100 | AMS (Amsterdam) | Good balance of cost and managed services |
-| **Hetzner** | Dedicated + self-host PG | $30–50 | Germany | Lowest cost; requires more ops expertise |
-| **AWS** | RDS + EC2/ECS | $100–200 | Nairobi / Cape Town | Native Africa region; best latency for Kenya |
-| **Azure** | Cloud SQL + App Service | $100–200 | Kenya / South Africa | Co-located with Azure OpenAI; simplifies networking |
+## Scenario 3 — Meta Cloud API / 360dialog Production Channel
 
-### Recommendation
+**When to use:** once Meta's Business API verification clears (the
+tracked blocker in `STATUS.md`'s D-series and
+`whatsapp-first-architecture.md`) — this is the intended long-term
+production channel, not Evolution/Baileys.
 
-For **lowest latency** to Africa's Talking and pastoralists in Kenya: **AWS (af-south-1, Cape Town)** or **Azure (eastafrica)** are preferred.
+**Why this is a different scenario, not just a config flag:** Evolution
+mode depends on a self-hosted Baileys bridge (reverse-engineered
+WhatsApp Web protocol — works, but not WhatsApp's supported integration
+path, and ties the whole channel to one QR-linked device session). Meta
+Cloud API via 360dialog is WhatsApp's own supported Business API — no
+self-hosted bridge, no device-linking fragility, and it's what
+`whatsapp-first-architecture.md` was designed around from the start.
 
-For **lowest cost** during early deployments: **Hetzner** with a single CX31 instance running Docker Compose is viable and has been validated.
+**Cutover is a config change, not a code change:** the codebase already
+has both `WhatsappProvider` adapters built and converging on the same
+turn handler (`whatsappTurn.ts`). Flip `WA_PROVIDER=360dialog` (see
+`infra/docker/RUNBOOK.md` §4 "Running in Meta mode"), point Meta's
+webhook configuration at whichever public HTTPS endpoint is live
+(Scenario 1's tunnel domain or Scenario 2's VPS domain both work — Meta
+doesn't care which). The Evolution containers can be stopped once this
+is confirmed working, or kept running as a fallback channel.
 
-### Production checklist
+---
 
-- [ ] TLS certificate provisioned via Caddy (auto Let's Encrypt)
-- [ ] `DATABASE_URL` points to managed PostgreSQL, not local
-- [ ] `REDIS_URL` points to managed Redis
-- [ ] `JWT_SECRET` and `SESSION_SECRET` are 32+ character random strings
-- [ ] Africa's Talking webhook URLs updated to production domain
-- [ ] GEE service account JSON stored securely (env var or secrets manager)
-- [ ] Azure OpenAI endpoint allowlisted for production IP
-- [ ] Postgres backups enabled (daily at minimum)
-- [ ] `TENANT_ATTESTATION_SECRET` rotated from default
+## Scenario 4 — Cloud-Hosted Scale-Out
+
+**When to use:** only once a real pilot outgrows what a single VPS can
+handle — not needed for anything described above. This is the
+"eventually, if it works" scenario, kept deliberately brief since
+nothing here has been built or validated yet.
+
+Supabase already **is** the real production database in every scenario
+above — this isn't about migrating off it, it's about scaling the
+compute (`ardalink-api` + `ardalink-engine`) beyond one box once request
+volume warrants it (e.g. Azure Container Apps / App Service, co-located
+with the Azure OpenAI + Speech resources already in use, avoiding
+cross-region latency to those). Evaluate this when there's an actual
+load number motivating it, not before.
 
 ---
 
 ## Environment Variables
 
-### Required (all environments)
+Real variable names, pulled from `ardalink-api/.env.example` and
+`ardalink-api/infra/docker/.env.example` (not the generic placeholders
+this document previously listed):
 
 ```bash
-PORT=3000
-DATABASE_URL=postgresql://ardalink:password@host:5432/ardalink
-REDIS_URL=redis://host:6379
-SESSION_SECRET=<random-32-chars>
-JWT_SECRET=<random-32-chars>
-TENANT_ATTESTATION_SECRET=<random-32-chars>
-```
+# Core
+DATABASE_URL=postgresql://ardalink:password@host:5432/ardalink   # local mirror
+JWT_SECRET=<random, >=32 bytes — validated at boot>
+SESSION_SECRET=<random, >=32 bytes>
+TENANT_ATTESTATION_SECRET=<random — HMAC key for engine<->api tenant attestation>
 
-### Africa's Talking
+# Supabase (real production data store)
+SUPABASE_URL=https://<project>.supabase.co
+SUPABASE_SECRET_KEY=sb_secret_...   # service-role — never exposed to the browser
 
-```bash
-AFRICASTALKING_USERNAME=sandbox          # or your AT username
-AFRICASTALKING_API_KEY=<your-key>
-AFRICASTALKING_CALLER_ID=+254XXXXXXXXX  # your AT virtual number
-```
+# WhatsApp channel
+WA_PROVIDER=evolution   # or 360dialog
+EVOLUTION_API_KEY=...
+EVOLUTION_INSTANCE_NAME=...
+THREESIXTYDIALOG_API_KEY=...          # Meta mode only
+THREESIXTYDIALOG_PHONE_NUMBER_ID=...  # Meta mode only
 
-### Azure OpenAI
+# Africa's Talking (voice/USSD/SMS channels)
+AFRICASTALKING_USERNAME=...
+AFRICASTALKING_API_KEY=...
+AFRICASTALKING_CALLER_ID=+254XXXXXXXXX
 
-```bash
+# LLM registry (see llm/registry.ts — z.ai primary, minimax fallback for text tasks)
+# (provider-specific keys not enumerated here — see registry.ts's routing table)
+
+# Azure OpenAI + Speech
 AZURE_OPENAI_ENDPOINT=https://<resource>.openai.azure.com/
-AZURE_OPENAI_API_KEY=<your-key>
-AZURE_OPENAI_CHAT_DEPLOYMENT=gpt-4o
-AZURE_OPENAI_REALTIME_DEPLOYMENT=gpt-4o-realtime
-```
+AZURE_OPENAI_KEY=<key>
+AZURE_OPENAI_DEPLOYMENT=gpt-4o-realtime-preview
 
-### Google Earth Engine
-
-```bash
-GEE_SERVICE_ACCOUNT=<JSON string of service account key>
-GEE_PROJECT=<your-gcp-project-id>
+# Google Earth Engine
+GOOGLE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}   # full JSON blob, see security.md's systemd caveat
+GEE_PROJECT=<gcp-project-id>
 ```
 
 ### Legacy / Migration
@@ -269,74 +261,47 @@ GEE_PROJECT=<your-gcp-project-id>
 Cosmos DB was retired 2026-07. Historical NDVI/NDRE baselines now live
 in the engine's Postgres (`gis_engine.baseline_aggregate` and
 `gis_engine.baseline_pixel`), populated by
-`ardalink-engine/scripts/populate_baseline.py`. Nothing in the codebase
-reads `COSMOS_DB_ENDPOINT` or `COSMOS_DB_PRIMARY_KEY` any more; drop
-them from any live `.env` files.
+`ardalink-engine/scripts/populate_baseline.py`. Nothing reads
+`COSMOS_DB_ENDPOINT`/`COSMOS_DB_PRIMARY_KEY` any more.
 
 ---
 
-## Caddy Configuration
+## Security Checklist Per Scenario
 
-Caddy handles TLS termination and proxying in both local and production environments.
+Building on `security.md`'s 2026-08-04 findings — what actually needs
+fixing before each scenario is safe to rely on:
 
-```caddyfile
-# Caddyfile
-
-# Production
-your-domain.com {
-    reverse_proxy /api/* api:3000
-    reverse_proxy /* web:8080
-    encode gzip
-    log {
-        output file /var/log/caddy/access.log
-    }
-}
-
-# Local (HTTP only)
-:80 {
-    reverse_proxy /api/* api:3000
-    reverse_proxy /* web:8080
-}
-```
-
-**WebSocket proxying:** Caddy automatically upgrades `/api/voice-stream` and `/api/browser-voice-stream` connections to WebSocket — no additional configuration required.
+| Item | Scenario 1 (current) | Scenario 2 (VPS) | Scenario 3 (Meta) | Scenario 4 (scale-out) |
+|---|---|---|---|---|
+| Open CORS (`app.use(cors())`) | Acceptable — small known tester group | **Fix first** — public-reachable | **Fix first** | **Fix first** |
+| No rate limiting on `/api/auth/login` or webhooks | Acceptable | **Fix first** | **Fix first** | **Fix first** |
+| Env files world-readable (NTFS mount) | Structural, unfixable here | N/A — real filesystem, `chmod 600` for real | N/A | N/A |
+| JWT in `localStorage` | Low risk (no XSS found) | Same — keep checking on every dashboard change | Same | Same |
+| `admin_users.role` not enforced | Low risk — small trusted operator group | Revisit if operator count grows | Revisit | Build real RBAC |
 
 ---
 
 ## Health Checks & Monitoring
 
-### Container health
-
-All containers expose health check endpoints or use Docker healthcheck instructions.
-
 | Service | Health Check | Endpoint |
 |---------|-------------|----------|
 | `ardalink-api` | HTTP GET | `GET /api/healthz` |
-| `ardalink-engine` | HTTP GET | `GET /healthz` |
-| `postgres` | Shell | `pg_isready -U ardalink` |
-| `redis` | Shell | `redis-cli ping` |
+| `ardalink-engine` | HTTP GET | `GET /health` |
+| `evolution-api` | HTTP GET | `GET /` (manager UI reachable) |
+| `ardalink-local-postgres` | Shell | `pg_isready -U ardalink` |
 
-### Recommended monitoring stack (self-hosted)
+### Recommended monitoring stack (self-hosted, not yet set up)
 
 - **Uptime:** [Uptime Kuma](https://github.com/louislam/uptime-kuma) — polls `/api/healthz` every 60s, alerts via Telegram/email
-- **Logs:** Caddy structured JSON logs → Loki → Grafana
-- **Metrics:** Node.js Prometheus client → Grafana dashboard
-
-### Alert thresholds
-
-| Metric | Warning | Critical |
-|--------|---------|----------|
-| API response time | > 2s | > 5s |
-| PostgreSQL connections | > 80% pool | > 95% pool |
-| Redis memory | > 70% | > 90% |
-| Voice call failure rate | > 5% | > 20% |
-| GEE pipeline last run | > 8 days ago | > 15 days ago |
+- **Logs:** currently `journalctl --user -u ardalink-api.service` (Scenario 1) — no centralized log aggregation yet
+- **Alerting on the known-stale satellite data**: `/api/healthz` already reports per-table freshness (`satellite_indices`, `weather_data`, `ground_truth_calls`) via the heartbeat job — worth wiring an actual alert on top rather than only checking manually
 
 ---
 
 ## Cross-References
 
+- **Container stack mechanics (bring-up, mode switching, health checks):** [`ardalink-api/infra/docker/RUNBOOK.md`](../ardalink-api/infra/docker/RUNBOOK.md)
 - **Architecture overview:** [`architecture.md`](./architecture.md)
-- **Security & secrets management:** [`security.md`](./security.md)
-- **Developer local setup:** [`onboarding.md`](./onboarding.md)
-- **Engine satellite processing:** [`satellite.md`](./satellite.md)
+- **Security findings + secrets management:** [`security.md`](./security.md)
+- **WhatsApp channel design + Meta blocker:** [`whatsapp-first-architecture.md`](./whatsapp-first-architecture.md)
+- **Full engineering log:** [`../STATUS.md`](../STATUS.md)
