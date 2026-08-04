@@ -1,0 +1,17 @@
+# Render Blueprint — deploys the marketing site from the prebuilt Docker Hub
+# image (munene1212/ardalink-marketing) rather than building from source.
+# See ardalink-marketing/Dockerfile for how that image is built + pushed.
+#
+# Apply via the Render dashboard: New -> Blueprint -> point at this repo,
+# or `render blueprint launch` with the Render CLI.
+services:
+  - type: web
+    name: ardalink-marketing
+    runtime: image
+    image:
+      url: docker.io/munene1212/ardalink-marketing
+      tag: latest
+    plan: starter
+    region: oregon
+    healthCheckPath: /healthz
+    autoDeploy: false
