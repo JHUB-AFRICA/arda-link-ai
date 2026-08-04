@@ -1,0 +1,9 @@
+poster
+README.md
+.git
+.github
+**/__pycache__
+**/*.pyc
+*.log
+.DS_Store
+site/assets/build_illustrations.py
