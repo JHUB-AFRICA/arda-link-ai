@@ -87,7 +87,7 @@ function whatsappGroundingRules(): string {
 ─── GROUNDING — HARD RULES (do not soften these) ───
 - The ONLY ward you have real satellite/weather data for is the one named above. If the herder names a different place — including one you don't recognize, or a place you know was retired from this system — do NOT invent NDVI, rainfall, forecast, or drought numbers for it. Say plainly you only have verified data for their registered ward, and ask where relative to it they mean.
 - The ONLY water point you have real data for is the one named above (if any). Do not name any other specific water point, distance, direction, or quality assessment — you have no way to look those up in this conversation. If the herder wants other options, tell them to share their live WhatsApp location (the pin/attachment feature, not a typed address or a maps link) so the system can find real nearby points.
-- NEVER state a specific distance (km) between the herder and any water point, even the one named above, and even if asked directly or repeatedly. You cannot calculate distances — only the system can, after the herder shares their live location and picks a species. If asked "how far", say you need their live location (and which animals) to give a real distance; never estimate, guess, or reuse a number from earlier in the conversation.
+- NEVER invent or estimate a distance (km) yourself, and never reuse a distance number from earlier in the conversation history for a NEW location share — a distance computed for where the herder was standing an hour ago is not valid for where they are now. The ONLY distance you may state is one given to you explicitly in THIS prompt, for THIS turn (see the water-point line above, when present — it is refreshed from their most recent shared location every turn, computed by the system, not by you). If no distance is given to you this turn, say you need their live location (and which animals) before you can give one.
 - NEVER say you "received," "saw," or "got" a live location unless the herder's message was an actual WhatsApp location share (a pin), not text. Typed words like "live location", "this is live", or "I sent it" are NOT a location share — if that's all you have, say you haven't received one yet and ask them to use the attachment/paperclip → Location feature.
 - You cannot open links, and you cannot see a map from a description of a place. If the herder pastes a link (Google Maps or otherwise) or describes a location in words, say you can't read that — ask them to share their live location instead.
 - You cannot send a map pin, image, or any attachment from this conversation. Never say "I'm sending you the pin/map now" or similar — that capability does not exist on this path. If a location pin is warranted, direct them to share their own location; do not promise one back.`;
@@ -114,10 +114,23 @@ function whatsappFormattingGuidance(): string {
  * separately passed as prior `messages` to complete(), so the model
  * can see exactly what was said.
  */
+/** A water point computed fresh, synchronously, from the herder's most
+ * recently shared live location (see whatsappTurn.ts's handleFreeText) —
+ * distinct from ctx.nearestWaterPoint*, which is resolved once from the
+ * herder's registered ward and goes stale the moment a new location is
+ * shared. Passing this in is how the LLM gets a real number to cite
+ * without ever needing to calculate or remember one itself. */
+export interface FreshWaterPoint {
+  name: string;
+  distanceKm: number;
+  status: string;
+}
+
 export function buildWhatsappSystemPrompt(
   ctx: HerderContext,
   lang: "sw" | "en",
   hasHistory: boolean,
+  freshWaterPoint?: FreshWaterPoint | null,
 ): string {
   const wardLine = ctx.wardName
     ? `Ward: ${ctx.wardName}${ctx.wardMonth ? ` (${ctx.wardMonth})` : ""}`
@@ -128,9 +141,15 @@ export function buildWhatsappSystemPrompt(
       ? `Drought signal: NDVI ${ctx.wardNdviPct != null ? `${ctx.wardNdviPct.toFixed(0)}% vs normal` : "unknown"}, severity ${ctx.wardDroughtSeverity ?? "unknown"}, VCI ${ctx.wardVci ?? "unknown"}.`
       : "";
 
-  const waterLine = ctx.nearestWaterPointName
-    ? `Nearest known water point: ${ctx.nearestWaterPointName}${ctx.nearestWaterPointDistanceKm != null ? `, ~${ctx.nearestWaterPointDistanceKm.toFixed(1)}km away` : ""}, status ${ctx.nearestWaterPointStatus ?? "unknown"}.`
-    : "";
+  // freshWaterPoint (computed THIS turn from the herder's latest shared
+  // location) always wins over the registered-ward default — it's the
+  // real incident this exists to fix: reusing a distance computed for an
+  // earlier location share as if it still applied to a new one.
+  const waterLine = freshWaterPoint
+    ? `Nearest known water point to the location the herder most recently shared: ${freshWaterPoint.name}, ~${freshWaterPoint.distanceKm.toFixed(1)}km away, status ${freshWaterPoint.status}. This was computed just now by the system — you may state this distance exactly as given.`
+    : ctx.nearestWaterPointName
+      ? `Nearest known water point: ${ctx.nearestWaterPointName}${ctx.nearestWaterPointDistanceKm != null ? `, ~${ctx.nearestWaterPointDistanceKm.toFixed(1)}km away` : ""}, status ${ctx.nearestWaterPointStatus ?? "unknown"}.`
+      : "";
 
   const peerLine =
     ctx.peerCallerCount != null && ctx.peerCallerCount > 0

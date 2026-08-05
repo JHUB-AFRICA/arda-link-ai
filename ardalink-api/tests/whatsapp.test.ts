@@ -203,7 +203,12 @@ vi.mock("../src/lib/whatsappConversation.js", () => ({
     _ctx: unknown,
     _lang: string,
     hasHistory: boolean,
-  ) => `system prompt hasHistory=${hasHistory}`,
+    freshWaterPoint?: { name: string; distanceKm: number; status: string } | null,
+  ) =>
+    `system prompt hasHistory=${hasHistory}` +
+    (freshWaterPoint
+      ? ` freshWaterPoint=${freshWaterPoint.name}@${freshWaterPoint.distanceKm.toFixed(1)}km(${freshWaterPoint.status}) computed just now by the system`
+      : ""),
 }));
 
 let app: Express;
@@ -379,6 +384,27 @@ describe("POST /api/whatsapp-webhook", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(fx.sentButtons).toHaveLength(1);
     expect(fx.sentSessionMessages).toHaveLength(0);
+  });
+
+  it("avails the real nearest water point to the LLM whenever a location is pending, not just for keyword-matched phrasings", async () => {
+    // The general fix behind the two tests above: rather than relying on
+    // catching every possible phrasing with a keyword regex, whenever a
+    // location is pending the real nearest water point (computed
+    // synchronously, no backend wait) is put directly into the system
+    // prompt every turn — so even a message that matches neither the
+    // species nor the distance-question fast path still gets a real,
+    // fresh number available to reference instead of an invented one.
+    fx.pendingLocation = { lat: 0.34, lon: 37.58 };
+    const res = await request(app)
+      .post("/api/whatsapp-webhook")
+      .send(webhookBody({ type: "text", text: { body: "Sawa, asante" } }));
+    expect(res.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 0));
+    const systemMessage = fx.lastCompleteMessages.find((m) => m.role === "system");
+    expect(systemMessage?.content).toContain("Bula Pesa Dam");
+    expect(systemMessage?.content).toContain("2.0km");
+    expect(systemMessage?.content).toContain("computed just now by the system");
+    expect(systemMessage?.content).toContain("(working)");
   });
 
   it("writes a ground_truth_calls row with channel=whatsapp when indicators are collected", async () => {

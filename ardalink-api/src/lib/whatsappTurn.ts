@@ -441,6 +441,23 @@ async function handleFreeText(
   const { complete } = await import("./llm/index.js");
   const { buildWhatsappSystemPrompt } = await import("./whatsappConversation.js");
 
+  // Fell through the fast-paths above (no species/distance keyword
+  // matched) but a location is still pending — availing the real nearest
+  // water point to the LLM's context now, computed synchronously and in
+  // memory (no backend round-trip, nothing for the LLM to wait on), so
+  // whatever the herder actually asked has a real number behind it
+  // instead of the LLM needing to invent or recall one. This is the
+  // general fix behind the narrow keyword intercepts above: don't rely
+  // on catching every phrasing, make the real data available up front.
+  const freshWaterPoint = pendingLocation
+    ? (() => {
+        const [nearest] = nearestWorkingKnownPoints(pendingLocation, 1);
+        return nearest
+          ? { name: nearest.displayName, distanceKm: nearest.distanceKm, status: nearest.status }
+          : null;
+      })()
+    : null;
+
   const history = await recentWhatsappMessages(from, 12);
   // Only plain text in/out turns are real conversational content —
   // status rows, template sends, location pins, and interactive
@@ -452,7 +469,7 @@ async function handleFreeText(
       !!m.body_text,
   );
   const hasHistory = conversational.length > 0;
-  const systemPrompt = buildWhatsappSystemPrompt(ctx, lang, hasHistory);
+  const systemPrompt = buildWhatsappSystemPrompt(ctx, lang, hasHistory, freshWaterPoint);
 
   const historyMessages: LlmMessage[] = conversational.map((m) => ({
     role: m.direction === "in" ? "user" : "assistant",
