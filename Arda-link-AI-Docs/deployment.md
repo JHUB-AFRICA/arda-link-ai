@@ -136,10 +136,17 @@ stack) is two systemd user units:
 **Known limitations (do not treat as production):**
 - Single point of failure is a **personal laptop** — no uptime guarantee.
 - The entire project directory lives on an NTFS drive mounted with
-  `uid=0,gid=0,allow_other` — every file including every secret is
-  effectively world-readable/writable at the OS level (see
-  `security.md`'s Secrets Management section). Acceptable for a
-  single-developer machine; must not be assumed for any scenario below.
+  `uid=0,gid=0,allow_other` — every file there is effectively
+  world-readable/writable at the OS level and `chmod` is a no-op.
+  **Fixed 2026-08-05 for secrets specifically**: real `.env.local`
+  files (and the systemd-generated derived env file) now live under
+  `~/.config/ardalink-{api,engine}/` on the machine's real ext4 root
+  filesystem (`chmod 600`, actually enforced), with symlinks left in
+  the project directory so every existing consumer keeps working
+  unchanged — see `security.md`'s Secrets Management section for the
+  full mechanism. The underlying NTFS-mount issue itself is unchanged
+  (every *other* file on the drive is still unprotected); this only
+  closes the secret-file exposure specifically.
 - No rate limiting, open CORS (see `security.md`) — fine when only a
   small group of known testers has the number, not fine at any real scale.
 
@@ -293,7 +300,7 @@ fixing before each scenario is safe to rely on:
 |---|---|---|---|---|
 | Open CORS (`app.use(cors())`) | Acceptable — small known tester group | **Fix first** — public-reachable | **Fix first** | **Fix first** |
 | No rate limiting on `/api/auth/login` or webhooks | Acceptable | **Fix first** | **Fix first** | **Fix first** |
-| Env files world-readable (NTFS mount) | Structural, unfixable here | N/A — real filesystem, `chmod 600` for real | N/A | N/A |
+| Env files world-readable (NTFS mount) | **Fixed** — secrets symlinked out to `~/.config/` on ext4, `chmod 600` real | N/A — real filesystem, `chmod 600` for real | N/A | N/A |
 | JWT in `localStorage` | Low risk (no XSS found) | Same — keep checking on every dashboard change | Same | Same |
 | `admin_users.role` not enforced | Low risk — small trusted operator group | Revisit if operator count grows | Revisit | Build real RBAC |
 

@@ -316,33 +316,61 @@ Any connection with a missing, empty, or unlisted `Origin` header is rejected wi
 
 ### Local development (current actual practice)
 
-Real secrets live in `ardalink-api/.env.local` and `ardalink-engine/.env.local`
-(gitignored — confirmed via `git log --all` that neither has ever been
-committed, in either repo). Loaded two ways depending on how the process
-starts:
-- **Direct/dev** (`pnpm run dev`, `uv run`): the app's own dotenv-style
-  loader reads `.env.local` directly.
-- **systemd** (the always-on local WhatsApp-tester instance — see
-  [`deployment.md`](./deployment.md)): `EnvironmentFile=` feeds most of
-  `.env.local` into the process environment before Node even starts.
-  **Known caveat, fixed 2026-08-04**: systemd's env-file parser silently
-  corrupts multi-line PEM values with escaped `\n` sequences (it drops
-  the backslash) — `GOOGLE_SERVICE_ACCOUNT_JSON`'s private key was
-  breaking Earth Engine auth this way for an unknown period until
-  root-caused. That one var is now deliberately excluded from
-  `EnvironmentFile=` and loaded via the app's own dotenv fallback
-  instead (which parses it correctly) — see the F3 entry in `STATUS.md`
-  for the full root-cause chain. Any future secret with embedded
-  newlines/special characters should go through the same path, not
-  `EnvironmentFile=` directly.
-- **Structural risk, not fixable by `chmod`**: the entire project
-  currently lives on an NTFS drive mounted via FUSE with
-  `uid=0,gid=0,allow_other` — every file, `.env.local` included, reports
-  as world-readable/writable and `chmod` is a silent no-op (there's no
-  real ACL underneath for it to change). This is acceptable only because
-  it's a single-developer local machine; it must not be replicated on
-  any real deployment target below — those need an actual Linux
-  filesystem where `chmod 600` on env files is real.
+**Fixed 2026-08-05** — real secrets no longer live on the exposed project
+drive at all. Background: the project directory sits on an NTFS drive
+mounted via FUSE with `uid=0,gid=0,allow_other` — every file there
+reports as world-readable/writable and `chmod` is a silent no-op (no
+real ACL underneath for it to change). `/home/munen` is a separate,
+real ext4 filesystem on the machine's internal disk, where `chmod`
+genuinely works (verified directly: `chmod 600` on a test file there
+actually restricts it, unlike on the project drive).
+
+The fix: the real secret files now live at `~/.config/ardalink-api/.env.local`
+and `~/.config/ardalink-engine/.env.local` (ext4, `chmod 600`, owned by
+the single real user on this machine). `ardalink-api/.env.local` and
+`ardalink-engine/.env.local` — the paths every tool, script, and the app
+itself still expects — are now **symlinks** pointing at those real
+files. This works cleanly because a symlink is just a path string; the
+permissions that actually govern the *content* are the target's, and
+the target lives on ext4. Every consumer (the app's own dotenv loader,
+`pnpm run dev`, `uv run`, ad-hoc `psql`/`curl` commands sourcing the
+file) reads through the symlink exactly as before — nothing about how
+secrets are *used* changed, only where the real bytes live.
+
+The one file that still needed a specific fix: systemd's
+`EnvironmentFile=` for `ardalink-api.service` used to write its derived,
+filtered env file (see the `GOOGLE_SERVICE_ACCOUNT_JSON` caveat below)
+back onto the project drive — meaning even after the symlink fix, a
+plaintext copy of every *other* secret (JWT_SECRET, SUPABASE_SECRET_KEY,
+DATABASE_URL, Azure keys) would still land exposed there on every
+restart. That generated file now also lives under
+`~/.config/ardalink-api/` (`chmod 600`, regenerated fresh — see the
+unit file's own comments for exactly how). Verified end-to-end after
+the change: service restarts clean, `DATABASE_URL` still reaches the
+process via `EnvironmentFile=`, `GOOGLE_SERVICE_ACCOUNT_JSON` still
+reaches it via the app's own dotenv fallback, and Earth Engine auth
+still succeeds (`[WaterBodies] Sentinel-2 NDWI scan complete`, no
+`DECODER` errors) — nothing regressed.
+
+**Known caveat carried over, fixed 2026-08-04**: systemd's env-file
+parser silently corrupts multi-line PEM values with escaped `\n`
+sequences (it drops the backslash) — `GOOGLE_SERVICE_ACCOUNT_JSON`'s
+private key was breaking Earth Engine auth this way for an unknown
+period until root-caused. That one var is deliberately excluded from
+`EnvironmentFile=` and loaded via the app's own dotenv fallback instead
+(which parses it correctly) — see the F3 entry in `STATUS.md` for the
+full root-cause chain. Any future secret with embedded newlines/special
+characters should go through the same path, not `EnvironmentFile=`
+directly.
+
+**What this does and doesn't fix**: this closes the actual secret-file
+exposure on this single developer's machine. It does not change
+anything about the reverse-tunnel architecture, and it's still a
+single-developer-machine mitigation — the real fix for the underlying
+NTFS-mount problem (if this machine keeps being used this way long
+term) would be reformatting or remounting that drive with real Unix
+permissions; symlinking secrets out is the pragmatic fix that didn't
+require touching a drive with other live work on it.
 
 ### Production
 

@@ -853,6 +853,57 @@ stopped. `deployment.md` corrected to match. Net effect: Scenario 2 is
 now half-done (the WhatsApp bridge no longer depends on the laptop;
 `ardalink-api`/`ardalink-engine` still do).
 
+**G-series (live hallucination fix + secrets relocation) — 2026-08-05:**
+
+- **G1 `fix(whatsapp)`** — real, live incident: a registered tester
+  shared a location, got the species-selection buttons, then answered
+  by typing "10 cows" instead of tapping one. `handleFreeText`'s LLM
+  path — zero distance-calculation capability — confidently stated
+  "*25.7 km*" when asked "how far am I." Challenged directly ("this
+  isn't true"), it backed off, then when the tester later typed the
+  words "this is live" (not an actual location share), it claimed to
+  have "received your live location" and repeated the same invented
+  number. Prompt rules alone did not stop this — a capable model asked
+  a direct question twice will produce a plausible number regardless of
+  instructions. Fixed at the code level: `handleFreeText` now checks
+  the pending-location store before ever calling the LLM; a species
+  keyword routes straight to the real, computed grazing advisory, a
+  distance question with no species yet re-sends the species buttons.
+  Neither path reaches the LLM, so there's no number left to invent.
+- **G2 `fix(whatsapp)`**, same day — the narrower fix above only covers
+  phrasings the keyword regexes actually match. General fix: whenever a
+  location is pending and neither fast path matched, the real nearest
+  water point is computed synchronously (in-memory, no backend
+  round-trip — genuinely nothing for the LLM to wait on) and put
+  directly into the system prompt every turn, labeled as freshly
+  computed. The model never needs to calculate or recall a distance
+  because a real one is always in its context when a location is
+  pending — the actual principle: make real data available up front
+  rather than trying to predict every way a question might be phrased.
+  Also had to loosen the prior "never state any distance" grounding
+  rule, which would have made the model refuse to state a legitimately
+  real number now that one is actually provided each turn.
+- **Secrets relocation, 2026-08-05**: found and fixed the actual local
+  exposure the earlier sweep flagged as "structural, unfixable" —
+  `/home/munen` turned out to be a separate, real ext4 filesystem on
+  the machine's internal disk (confirmed directly: `chmod 600` there
+  actually restricts a file, unlike on the NTFS-mounted project drive).
+  Moved the real `.env.local` files for both `ardalink-api` and
+  `ardalink-engine` to `~/.config/ardalink-{api,engine}/` (chmod 600,
+  real enforced permissions), replacing them in the project directory
+  with symlinks — every existing consumer (dotenv, `pnpm run dev`,
+  `uv run`, systemd) keeps working unchanged, since reading through a
+  symlink honors the target's real permissions. Also moved the
+  systemd-generated derived env file (see F3's `GOOGLE_SERVICE_ACCOUNT_JSON`
+  caveat) to the same secure directory — it used to write a plaintext
+  copy of every other secret back onto the exposed drive on every
+  restart. Verified end-to-end after the change: service restarts
+  clean, `DATABASE_URL` still reaches the process via
+  `EnvironmentFile=`, `GOOGLE_SERVICE_ACCOUNT_JSON` still reaches it via
+  the app's own dotenv fallback, Earth Engine auth still succeeds. Does
+  not fix the underlying NTFS-mount issue for every other file on that
+  drive — only closes the secret-file exposure specifically.
+
 *Prior cycle (2026-07-07 baseline)*:
 * Satellite API routes + scheduler.
 * Engine ↔ api tenant attestation (HMAC-SHA256 over `TENANT_ATTESTATION_SECRET`).
