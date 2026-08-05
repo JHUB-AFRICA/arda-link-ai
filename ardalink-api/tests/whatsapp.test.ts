@@ -331,6 +331,56 @@ describe("POST /api/whatsapp-webhook", () => {
     expect(fx.sentSessionMessages[0].text).toBe("Asante kwa ujumbe wako.");
   });
 
+  it("answers a species reply typed as free text with the real advisory, never the LLM", async () => {
+    // Regression test for a real incident (2026-08-05): a herder shared a
+    // real location, got the species buttons, then typed "10 cows"
+    // instead of tapping one. handleFreeText's LLM path — with no
+    // distance-calculation capability — went on to invent "*25.7 km*"
+    // when later asked "how far am I". A pending location plus a
+    // detected species keyword must now route to the real, computed
+    // grazing advisory and never reach the LLM at all.
+    fx.pendingLocation = { lat: 0.34, lon: 37.58 };
+    fx.grazingAdvisory = {
+      nearestWaterNode: {
+        name: "Ngare Mara piped water GW2",
+        distanceKm: 4.2,
+        direction: "NE",
+        functionalStatus: "working",
+      },
+      speciesGroup: "cattle",
+      radiusKm: 5,
+      inRing: true,
+      vci: 55,
+      ndviNow: 0.3,
+      dataSources: { water: "wpdx", vegetation: "sentinel-2" },
+    };
+    const res = await request(app)
+      .post("/api/whatsapp-webhook")
+      .send(webhookBody({ type: "text", text: { body: "10 cows" } }));
+    expect(res.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(fx.sentSessionMessages).toHaveLength(1);
+    expect(fx.sentSessionMessages[0].text).toContain("Ngare Mara piped water GW2");
+    expect(fx.sentSessionMessages[0].text).toContain("4.2");
+    // Never the generic LLM stub content — the real advisory answered it.
+    expect(fx.sentSessionMessages[0].text).not.toBe(fx.llmContent);
+  });
+
+  it("re-prompts for species instead of guessing when a distance question follows a pending location", async () => {
+    // Same incident as above, other half: if the herder asks "how far am
+    // I" with a location pending but no species yet, the fix must not
+    // guess a species either — it re-sends the species buttons rather
+    // than letting the LLM invent a number for an unknown herd.
+    fx.pendingLocation = { lat: 0.34, lon: 37.58 };
+    const res = await request(app)
+      .post("/api/whatsapp-webhook")
+      .send(webhookBody({ type: "text", text: { body: "How far am i" } }));
+    expect(res.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(fx.sentButtons).toHaveLength(1);
+    expect(fx.sentSessionMessages).toHaveLength(0);
+  });
+
   it("writes a ground_truth_calls row with channel=whatsapp when indicators are collected", async () => {
     fx.indicators = {
       bcs_score: 2.5,

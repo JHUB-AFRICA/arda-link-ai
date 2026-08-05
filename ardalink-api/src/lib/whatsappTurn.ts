@@ -233,6 +233,34 @@ const GRAZING_SPECIES_BUTTON_IDS: Record<string, "cattle" | "shoat" | "camel"> =
   grazing_species_camel: "camel",
 };
 
+// Swahili/English keywords for each species group — used to catch a
+// herder answering the species prompt by typing instead of tapping a
+// button. Deliberately simple substring matching (not full NLP): a false
+// negative just falls through to handleFreeText's normal LLM path, a
+// false positive would misroute one question, both low-stakes compared
+// to the alternative this exists to prevent (see below).
+const SPECIES_KEYWORDS: Array<[RegExp, "cattle" | "shoat" | "camel"]> = [
+  [/\b(ng'?ombe|cow|cows|cattle)\b/i, "cattle"],
+  [/\b(mbuzi|kondoo|goat|goats|sheep|shoat)\b/i, "shoat"],
+  [/\b(ngamia|camel|camels)\b/i, "camel"],
+];
+
+function detectSpeciesGroup(text: string): "cattle" | "shoat" | "camel" | null {
+  for (const [re, group] of SPECIES_KEYWORDS) {
+    if (re.test(text)) return group;
+  }
+  return null;
+}
+
+// Phrases that mean "how far / where am I relative to water" — if a
+// location is already pending and the herder asks this in free text
+// (rather than tapping a species button), the answer must come from a
+// real distance calculation, never from the LLM. Deliberately narrow;
+// anything not matched here still passes through the grounding rules in
+// whatsappConversation.ts as a second layer of defense.
+const DISTANCE_QUESTION_RE =
+  /\b(how far|umbali|mbali|ni mbali|niko wapi|how far am i|which way|njia gani)\b/i;
+
 /**
  * A herder just shared their GPS location. We don't know their species
  * yet (no such field exists in Supabase's pastoralists table today — see
@@ -371,7 +399,45 @@ async function handleFreeText(
   ctx: HerderContext,
   lang: "sw" | "en",
   rawText: string,
+  tenantId: string,
 ): Promise<void> {
+  // Real, observed incident (2026-08-05): a herder shared a real location,
+  // got the species-selection buttons, then answered by typing "10 cows"
+  // instead of tapping one — and the LLM path below, with no distance-
+  // calculation capability at all, went on to confidently state
+  // "*25.7 km*" to the one water point in its context. Challenged
+  // ("Hii si kweli" — this isn't true), it backed off, then later claimed
+  // to have "received a live location" from a herder who had only typed
+  // the words "Hii live" as plain text, and repeated the same invented
+  // number. Prompt rules alone did not stop this. If a location is
+  // already pending (getPendingLocation, same store handleLocationShare/
+  // handleGrazingSpeciesReply use) and this message looks like a species
+  // answer or a distance question, route to the real, computed advisory
+  // instead of ever asking the LLM — no prompt engineering substitutes
+  // for an actual grounded answer existing.
+  const pendingLocation = await getPendingLocation(from);
+  if (pendingLocation) {
+    const species = detectSpeciesGroup(rawText);
+    if (species) {
+      await handleGrazingSpeciesReply(from, ctx, lang, species, tenantId);
+      return;
+    }
+    if (DISTANCE_QUESTION_RE.test(rawText)) {
+      await sendWhatsappInteractiveButtons(
+        from,
+        lang === "sw" ? "Mifugo yako ni gani?" : "Which animals do you keep?",
+        [
+          { id: "grazing_species_cattle", title: "Ng'ombe" },
+          { id: "grazing_species_shoat", title: "Mbuzi/Kondoo" },
+          { id: "grazing_species_camel", title: "Ngamia" },
+        ],
+      );
+      logOutbound(from, ctx, "interactive_buttons", "grazing_species_prompt");
+      logInteraction(from, ctx, "grazing_location_share", rawText, "grazing_species_prompt");
+      return;
+    }
+  }
+
   const { complete } = await import("./llm/index.js");
   const { buildWhatsappSystemPrompt } = await import("./whatsappConversation.js");
 
@@ -616,7 +682,7 @@ export async function processInboundWhatsappMessage(
       logInteraction(msg.from, ctx, "welcome", msg.text, "welcome_list");
       return;
     }
-    await handleFreeText(msg.from, ctx, lang, msg.text);
+    await handleFreeText(msg.from, ctx, lang, msg.text, tenantId);
     return;
   }
 }
