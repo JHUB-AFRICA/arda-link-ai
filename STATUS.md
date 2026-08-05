@@ -841,6 +841,18 @@ Full audit of Supabase-local write paths found 6 severe drifts, all now closed o
     would become a column-injection vector if that model ever adds an
     `extra="allow"` catch-all.
 
+**Correction, 2026-08-05**: `deployment.md`'s "Current State" section
+(written 2026-08-04, above) said the VPS-hosted Evolution instance was
+"staged, not yet cut over" and that the local Docker `evolution-api`
+container was the real WhatsApp bridge. Verified directly against the
+VPS: `ardalink-evolution-api` has actually been running there for 2
+days already, webhooking real messages back to `ardalink-api` on the
+laptop over the existing tunnel. The local `evolution-api` container
+was an unrelated leftover, not part of the real traffic path at all —
+stopped. `deployment.md` corrected to match. Net effect: Scenario 2 is
+now half-done (the WhatsApp bridge no longer depends on the laptop;
+`ardalink-api`/`ardalink-engine` still do).
+
 *Prior cycle (2026-07-07 baseline)*:
 * Satellite API routes + scheduler.
 * Engine ↔ api tenant attestation (HMAC-SHA256 over `TENANT_ATTESTATION_SECRET`).

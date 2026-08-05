@@ -20,7 +20,7 @@ real options actually available for what comes next.
 
 1. [Current State — What's Actually Running Today](#current-state--whats-actually-running-today)
 2. [Scenario 1 — Local Dev / Active WhatsApp Testing (current)](#scenario-1--local-dev--active-whatsapp-testing-current)
-3. [Scenario 2 — VPS Self-Hosted (staged, not yet cut over)](#scenario-2--vps-self-hosted-staged-not-yet-cut-over)
+3. [Scenario 2 — VPS Self-Hosted (half done — Evolution live, API still on laptop)](#scenario-2--vps-self-hosted-half-done--evolution-live-api-still-on-laptop)
 4. [Scenario 3 — Meta Cloud API / 360dialog Production Channel](#scenario-3--meta-cloud-api--360dialog-production-channel)
 5. [Scenario 4 — Cloud-Hosted Scale-Out](#scenario-4--cloud-hosted-scale-out)
 6. [Environment Variables](#environment-variables)
@@ -31,20 +31,29 @@ real options actually available for what comes next.
 
 ## Current State — What's Actually Running Today
 
+**Corrected 2026-08-05** — the diagram and Scenario 2 below previously
+said the VPS-hosted Evolution instance was "staged, not cut over," with
+a local Docker `evolution-api` container standing in as the real bridge.
+That was wrong (either already stale when written, or overtaken within a
+day): verified directly against the VPS that `ardalink-evolution-api`
+has been running there for 2 days, webhooking real messages back to
+`ardalink-api` on this laptop over the existing tunnel. The local
+`evolution-api` Docker container was a leftover, unrelated to real
+traffic, and has been stopped.
+
 ```mermaid
 flowchart TB
     subgraph Laptop ["Dev laptop (munen-Latitude-7420)"]
         API["ardalink-api\nsystemd: ardalink-api.service\n:3001"]
         LocalPG["ardalink-local-postgres\n:15432 (local mirror)"]
-        LocalRedis["ardalink-local-redis\n:6379 (provisioned, unused)"]
-        Evo["evolution-api (Docker)\nv2.3.7, Baileys 7.0.0-rc.9\n:8081"]
-        EvoPG["evolution-postgres (Docker)"]
         Tunnel["ardalink-tunnel.service\nautossh -R 127.0.0.1:9091:127.0.0.1:3001"]
     end
 
     subgraph VPS ["baitech VPS (69.164.244.165)"]
         Nginx1["nginx: ardalink.ementech.co.ke\n-> 127.0.0.1:9091"]
-        Nginx2["nginx: wa.ardalink.ementech.co.ke\n-> 127.0.0.1:8082 (staged, see Scenario 2)"]
+        Nginx2["nginx: wa.ardalink.ementech.co.ke\n-> 127.0.0.1:8082"]
+        Evo["ardalink-evolution-api (Docker)\nv2.3.7, isolated from Ementech's\nown evolution-api on :8080\n:8082 (127.0.0.1 only)"]
+        EvoPG["ardalink-evolution-postgres (Docker)"]
     end
 
     subgraph Cloud ["Real production data + AI (cloud)"]
@@ -56,10 +65,11 @@ flowchart TB
     end
 
     WhatsAppUser["Real WhatsApp testers"] -->|messages| Evo
-    Evo -->|webhook| API
-    API <-->|reverse SSH tunnel| Tunnel
-    Tunnel -.->|forwards to| Nginx1
-    Nginx1 -->|public HTTPS, not used for inbound today| API
+    Evo --> EvoPG
+    Evo -->|webhook: https://ardalink.ementech.co.ke/api/evolution-whatsapp-webhook| Nginx1
+    Nginx1 -.->|forwards over the tunnel| Tunnel
+    Tunnel <-->|reverse SSH tunnel| API
+    Nginx2 -.->|manager UI, basic-auth gated| Evo
     API --> LocalPG
     API --> Supabase
     API --> ZAI
@@ -72,19 +82,26 @@ flowchart TB
 Supabase project — see `STATUS.md`'s tracked blockers.*
 
 **What this actually means:**
-- `ardalink-api` runs as a systemd service **on this laptop**, not on any
-  server — `ardalink-api.service`, `WorkingDirectory=.../ardalink-api`,
-  auto-restarts on crash, survives laptop reboots (`WantedBy=default.target`).
-- Real WhatsApp testers reach it via a **permanent reverse SSH tunnel**
-  (`ardalink-tunnel.service`, `autossh`) to the baitech VPS — the VPS
-  itself runs no ArdaLink application code, only an nginx reverse proxy
-  (`/media/munen/muneneENT/baitech-infra/nginx/ardalink.ementech.co.ke.conf`)
-  that forwards to whatever the tunnel is pointed at. **If the laptop is
-  off, asleep, or off the network, the whole WhatsApp channel goes down**
-  — this is the central limitation of Scenario 1, and the reason
-  Scenario 2 exists.
-- Evolution (the self-hosted WhatsApp/Baileys bridge) also runs **on this
-  laptop** via Docker, QR-linked to a real WhatsApp number.
+- The WhatsApp bridge (Evolution/Baileys) already runs **on the VPS**,
+  not the laptop — `ardalink-evolution-api`, isolated (own Postgres, own
+  API key, own port `8082`) from a separate, unrelated `evolution-api`
+  instance also on that box (a different company's live customer CRM —
+  same VPS, nothing to do with ArdaLink).
+- `ardalink-api` still runs as a systemd service **on this laptop** —
+  `ardalink-api.service`, auto-restarts on crash, survives laptop
+  reboots — reached via the same permanent reverse SSH tunnel
+  (`ardalink-tunnel.service`, `autossh`) as before. This is genuinely a
+  **hybrid** state: the WhatsApp bridge has already moved to the VPS: half
+  of Scenario 2, not yet all of it (see below).
+- The VPS's `ardalink.ementech.co.ke` nginx vhost only proxies to the
+  tunnel — it runs no ArdaLink application code itself
+  (`/opt/baitech-infra/nginx/ardalink.ementech.co.ke.conf`).
+  **If the laptop is off, asleep, or off the network, Evolution keeps
+  receiving messages but `ardalink-api` can't process or reply to any of
+  them** — the WhatsApp bridge surviving on the VPS no longer means the
+  *channel* survives a laptop outage, only that the bridge/session
+  itself does. Finishing Scenario 2 (moving `ardalink-api` + engine to
+  the VPS too) is what actually removes the laptop dependency.
 - Supabase is the **real production data store** — not a generic
   "managed Postgres," a specific already-provisioned Supabase project.
   The local Postgres (`ardalink-local-postgres`) is a resilient
@@ -102,10 +119,13 @@ real-tester feedback loops where you want to redeploy in seconds (edit,
 rebuild, `systemctl --user restart ardalink-api.service`) without any
 remote deploy step.
 
-**Setup:** see `ardalink-api/infra/docker/RUNBOOK.md` for bringing up
-Evolution + the core stack locally. The tunnel/systemd layer on top of
-that (not covered in that runbook, since it's laptop-specific, not part
-of the containerized stack) is two systemd user units:
+**Setup:** see `ardalink-api/infra/docker/RUNBOOK.md` for the
+containerized core stack (`ardalink-api`/`ardalink-engine`/local
+Postgres) — Evolution itself now runs on the VPS, not locally, so its
+bring-up is `/opt/baitech-infra/ardalink-evolution/` on the VPS side
+(see Scenario 2). The tunnel/systemd layer on the laptop (not covered in
+that runbook, since it's laptop-specific, not part of the containerized
+stack) is two systemd user units:
 - `~/.config/systemd/user/ardalink-api.service` — runs `dist/index.mjs`,
   restarts on crash.
 - `~/.config/systemd/user/ardalink-tunnel.service` — `autossh` reverse
@@ -125,31 +145,29 @@ of the containerized stack) is two systemd user units:
 
 ---
 
-## Scenario 2 — VPS Self-Hosted (staged, not yet cut over)
+## Scenario 2 — VPS Self-Hosted (half done — Evolution live, API still on laptop)
 
 **When to use:** the natural next step once local-laptop testing is
 validated and you want the WhatsApp channel to survive laptop reboots,
 sleep, and network changes — i.e. an actual pilot, not just testing.
 
-**Current status: partially staged, not live.** The baitech VPS already
-has:
-- `/root`-adjacent `ardalink-evolution/docker-compose.yml` +
-  `.env.example` pre-staged (created 2026-08-02) — an Evolution instance
-  ready to bring up directly on the VPS.
-- nginx already configured for `wa.ardalink.ementech.co.ke` → `127.0.0.1:8082`,
-  with the Evolution manager UI (`/manager`) gated behind a **dedicated**
-  basic-auth file (`.htpasswd_ardalink_evolution` — deliberately separate
-  from any other Evolution instance's manager credentials on the same
-  box).
-- The main domain's nginx config (`ardalink.ementech.co.ke.conf`)
-  explicitly documents, in its own comments, that ardalink-api is *not*
-  hosted on the VPS today — only the reverse-proxy hop to the tunnel is.
+**Current status, verified live 2026-08-05:** the Evolution half of this
+is done. On the baitech VPS, `/opt/baitech-infra/ardalink-evolution/`
+runs `ardalink-evolution-api` (port `8082`, 127.0.0.1-only) +
+`ardalink-evolution-postgres`, isolated (own DB, own API key, own port)
+from a separate, unrelated Evolution instance on the same box (a
+different company's live customer CRM). Its webhook posts to
+`https://ardalink.ementech.co.ke/api/evolution-whatsapp-webhook`, which
+still forwards over the reverse SSH tunnel to `ardalink-api` on the
+laptop — so **the bridge no longer depends on the laptop, but the actual
+message-processing/reply logic still does.** `wa.ardalink.ementech.co.ke`
+nginx vhost fronts the manager UI (`/manager`, gated behind a dedicated
+basic-auth file, `.htpasswd_ardalink_evolution` — deliberately separate
+credentials from the other instance's).
 
-**To actually cut over:**
-1. Bring up `ardalink-evolution`'s staged compose stack on the VPS,
-   QR-link a WhatsApp number (or migrate the existing linked session —
-   check Evolution's session-export/import support first, since
-   re-linking means a new number or a brief downtime window).
+**To finish the cutover:**
+1. ~~Bring up `ardalink-evolution`'s compose stack on the VPS, QR-link a
+   WhatsApp number~~ — **done**, live 2 days as of 2026-08-05.
 2. Deploy `ardalink-api` + `ardalink-engine` on the VPS itself, using
    `ardalink-api/infra/docker/compose.yml` (the same stack documented in
    `infra/docker/RUNBOOK.md`) — this replaces the tunnel entirely; the
