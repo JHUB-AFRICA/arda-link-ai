@@ -372,7 +372,48 @@ term) would be reformatting or remounting that drive with real Unix
 permissions; symlinking secrets out is the pragmatic fix that didn't
 require touching a drive with other live work on it.
 
-### Production
+### Evolution (WhatsApp bridge) deployment secrets
+
+**Added 2026-08-05.** The WhatsApp bridge (`ardalink-evolution-api`,
+`docker-compose.yml`) runs on the baitech VPS — see
+[`deployment.md`](./deployment.md)'s Scenario 2 for the architecture.
+Its secrets are a separate set from `ardalink-api`'s, on a separate
+machine, and were checked as part of the same 2026-08-05 secrets sweep:
+
+- **Location**: `/opt/baitech-infra/ardalink-evolution/.env` on the VPS
+  — **already correctly secured**, no fix needed: `chmod 600`, owned by
+  `root`, on the VPS's real `xfs` root filesystem (this box has no
+  NTFS-mount problem — that's specific to the local laptop). Confirmed
+  directly via `ssh baitech-vps`.
+- **What's in it** (values never repeated in docs — see the file
+  itself, or `.env.example` in the same directory for the shape):
+  `ARDALINK_EVOLUTION_POSTGRES_PASSWORD` (dedicated to this instance's
+  own Postgres container — not shared with any other service on the
+  box, by design, per the compose file's own header comment),
+  `AUTHENTICATION_API_KEY` (Evolution's own API auth — deliberately a
+  different value from the *other*, unrelated `evolution-api` instance
+  sharing this VPS, per the same isolation principle), and
+  `WEBHOOK_GLOBAL_URL` (points back through `ardalink.ementech.co.ke` →
+  the reverse tunnel → `ardalink-api` — see `deployment.md`'s
+  architecture diagram).
+- **Isolation, confirmed**: this VPS hosts multiple unrelated
+  deployments (Ementech's own customer-support Evolution instance, a
+  "Muse" project, others) under distinct system accounts. Whether any
+  of those *other* accounts have sudo/root (which would bypass this
+  file's `600` permission regardless of the file itself being correct)
+  was not audited as part of this pass — worth doing before treating
+  this VPS as a long-term multi-tenant host, out of scope for what was
+  asked here.
+- **Not exposed locally**: confirmed the real `.env` was never copied
+  to this repo's local mirror of the VPS config
+  (`baitech-infra/ardalink-evolution/` on the exposed NTFS drive) —
+  only the harmless `.env.example` template lives there. Flagged in
+  passing but **not fixed, out of scope**: two *other*, unrelated
+  projects' real `.env` files (`openclaw/.env`, `upwork-service/.env`)
+  do sit exposed in sibling directories on that same local drive — a
+  problem for those projects, not ArdaLink.
+
+### Production (general guidance)
 
 Recommended secret storage options (in order of preference):
 
@@ -393,6 +434,8 @@ Recommended secret storage options (in order of preference):
 | `GEE_SERVICE_ACCOUNT` | Annual or on staff changes | Medium |
 | `POSTGRES_PASSWORD` | Every 180 days | High |
 | `SUPABASE_SECRET_KEY` | Every 90 days | High — full read/write on the real production data store |
+| `ARDALINK_EVOLUTION_POSTGRES_PASSWORD` (VPS) | Every 180 days | Medium — internal only, no host port exposed |
+| `AUTHENTICATION_API_KEY` (VPS, Evolution) | Every 90 days | High — controls the WhatsApp bridge's own API |
 
 ---
 
