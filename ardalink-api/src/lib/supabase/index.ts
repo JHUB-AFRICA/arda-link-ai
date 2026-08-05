@@ -53,6 +53,7 @@ export {
   callContextByPhone,
   upsertPastoralist,
   markPastoralistOptedOut,
+  listAllPastoralists,
 } from "./pastoralists.js";
 
 export {

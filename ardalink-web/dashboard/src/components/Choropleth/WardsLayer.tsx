@@ -1,7 +1,15 @@
 /**
  * WardsLayer — renders the 10 Isiolo wards as a Leaflet GeoJSON layer,
  * coloured by the active metric. Hover highlights a ward; click selects
- * it (calls `onSelectWard` with the ward's NAME_3).
+ * it (calls `onSelectWard` with the ward's real `ward` property).
+ *
+ * Fixed 2026-08-06: this used to key everything off a "NAME_3" GeoJSON
+ * property that does not exist on the real ward features at all
+ * (verified directly against /api/open-data/geo/isiolo-wards — the real
+ * property is "ward") — every lookup here resolved to the empty string,
+ * meaning the choropleth never coloured a single ward correctly and
+ * ward selection never worked, regardless of what the backend
+ * aggregates endpoint returned.
  *
  * Pure presentational component (plus the click handler).
  */
@@ -18,7 +26,7 @@ type WardsLayerProps = {
   presets:
     | { wards: Array<{ name: string; displayName: string; isDemoHome: boolean }> }
     | null;
-  /** Currently selected ward (NAME_3) — drawn with a thicker outline. */
+  /** Currently selected ward (the real `ward` GeoJSON property) — drawn with a thicker outline. */
   selectedWardId: string | null;
   /** Called when an operator clicks a ward. Called with null on re-click of the selected ward. */
   onSelectWard: (wardId: string | null) => void;
@@ -47,7 +55,7 @@ export function WardsLayer({
       style={(f) =>
         safeStyle(() => {
           const base = styleForWard(f, aggregates, meta);
-          const name = String(f?.properties?.["NAME_3"] ?? "");
+          const name = String(f?.properties?.["ward"] ?? "");
           if (name === selectedWardId) {
             return { ...base, weight: 4, color: "#fbbf24", dashArray: undefined };
           }
@@ -56,7 +64,7 @@ export function WardsLayer({
       }
       onEachFeature={(feature, layer) => {
         try {
-          const name = String(feature.properties["NAME_3"] ?? "");
+          const name = String(feature.properties["ward"] ?? "");
           const preset = presets?.wards.find((w) => w.name === name);
           const value = aggregates?.byWard[name] ?? null;
           const isHome = preset?.isDemoHome ?? false;

@@ -477,7 +477,7 @@ router.get("/open-data/geo/report-pins", async (req, res): Promise<void> => {
   const tenantId = requireTenant(req);
   const slice = parseSlice(String(req.query.slice ?? "30d").toLowerCase());
   try {
-    const { resolvePlaceName, timeSliceStart } = await import("../lib/geoHelpers.js");
+    const { wardCentroidForWardId, timeSliceStart } = await import("../lib/geoHelpers.js");
     const { isSupabaseConfigured, recentGroundTruthCalls } = await import("../lib/supabase/index.js");
     const since = timeSliceStart(slice);
     // Read from Supabase ground_truth_calls. Fields not present on Supabase
@@ -497,9 +497,13 @@ router.get("/open-data/geo/report-pins", async (req, res): Promise<void> => {
       return "none";
     };
     const pins = filteredRows.map((r) => {
-      // reportedLocation is not available on ground_truth_calls; resolve
-      // to unmapped (Isiolo centre).
-      const geo = resolvePlaceName(null);
+      // reportedLocation (free-text) is not available on
+      // ground_truth_calls, but a real ward_id always is — pin at that
+      // ward's approximate centre instead of every report stacking on
+      // the same flat Isiolo-centre point regardless of which of the 5
+      // wards it actually came from (fixed 2026-08-06, see
+      // wardCentroidForWardId's own docstring for the full history).
+      const geo = wardCentroidForWardId(r.ward_id);
       return {
         id: r.call_id,
         lat: geo.lat,
@@ -533,8 +537,8 @@ router.get("/open-data/geo/report-pins", async (req, res): Promise<void> => {
 /**
  * GET /api/open-data/geo/ward-presets
  *
- * Public — returns the 10 Isiolo ward names + which 3 are the demo
- * "home" wards. The dashboard uses this to render the ward picker.
+ * Public — returns the 10 Isiolo ward names + which 5 are the real
+ * active wards. The dashboard uses this to render the ward picker.
  */
 router.get("/open-data/geo/ward-presets", async (_req, res): Promise<void> => {
   const { ISILO_WARDS, TENANT_HOME_WARD } = await import("../lib/geoHelpers.js");

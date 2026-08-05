@@ -16,15 +16,13 @@
  * dashboard can render a "?" marker instead of a real position.
  */
 
-import { withTenantContext } from "./tenancy-context.js";
-import {
-  pastoralistsTable,
-} from "@workspace/db";
 import {
   isSupabaseConfigured,
   recentGroundTruthCalls,
-  type SbGroundTruthCallRead,
+  listAllPastoralists,
+  latestSatelliteFor,
 } from "./supabase/index.js";
+import { knownWardIds, wardIdForTenant } from "./wardMapping.js";
 
 export interface ResolvedLocation {
   lat: number;
@@ -75,6 +73,21 @@ export const TENANT_HOME_WARD: Record<string, string> = {
 };
 
 /**
+ * Real Supabase `ward_id` -> the exact display name this dashboard's
+ * choropleth keys on (matches GeoJSON `properties.ward` from
+ * /api/open-data/geo/isiolo-wards, and PLACE_TABLE's `ward` values
+ * above — all three must use identical spelling or the map silently
+ * shows no data for a ward with real numbers behind it).
+ */
+const WARD_ID_TO_NAME: Record<string, string> = {
+  "241": "Wabera",
+  "242": "Bulla Pesa",
+  "245": "Ngare Mara",
+  "246": "Burat",
+  "247": "Oldonyiro",
+};
+
+/**
  * Resolve a free-text place name to (lat, lon, ward). Returns the
  * Isiolo centre + `mapped: false` when nothing matches.
  */
@@ -105,14 +118,56 @@ export function resolvePlaceName(
 }
 
 /**
+ * Resolve a real `ward_id` (e.g. from ground_truth_calls) to that
+ * ward's approximate centroid, for report pins that have a real ward
+ * but no precise reported location. Real but approximate — distinct
+ * from `mapped: true`, which means an actual named place matched.
+ * Falls back to the flat Isiolo centre only for a truly unknown/unmapped
+ * ward_id, never silently mislabels it as Bulla Pesa the way
+ * `resolvePlaceName(null)` alone does.
+ */
+export function wardCentroidForWardId(
+  wardId: string | null | undefined,
+): ResolvedLocation {
+  const name = wardId ? WARD_ID_TO_NAME[wardId] : null;
+  if (name) {
+    const entry = PLACE_TABLE.find((p) => p.ward === name);
+    if (entry) {
+      return {
+        lat: entry.lat,
+        lon: entry.lon,
+        placeName: `${name} (ward centre — approximate)`,
+        ward: name,
+        mapped: false,
+      };
+    }
+  }
+  return {
+    lat: ISIOLO_CENTRE[0],
+    lon: ISIOLO_CENTRE[1],
+    placeName: "Unmapped — Isiolo centre",
+    ward: "Unknown",
+    mapped: false,
+  };
+}
+
+/**
  * All Isiolo wards we ship in the GeoJSON. The dashboard uses this
  * to build the per-ward legend and to map each report/pastoralist
  * to its ward.
+ *
+ * **Fixed 2026-08-06**: `isDemoHome` only marked 3 of the 5 real active
+ * wards (Bulla Pesa, Burat, Ngare Mara) — Wabera and Oldonyiro were
+ * marked `false`, identical to this list's actually-dormant/retired
+ * wards (Chari, Cherab, Garbatulla, Kinna, Sericho). Same root pattern
+ * as `computeWardAggregates`'s hardcoded 3-tenant admin list above —
+ * this is the second of two places that had it. All 5 real active
+ * wards now marked `true`.
  */
 export const ISILO_WARDS: Array<{
   name: string;
   displayName: string;
-  /** Whether this ward is one of the demo tenants' "home" ward. */
+  /** Whether this ward is one of the 5 real active wards. */
   isDemoHome: boolean;
 }> = [
   { name: "Bulla Pesa", displayName: "Bulla Pesa", isDemoHome: true },
@@ -122,9 +177,9 @@ export const ISILO_WARDS: Array<{
   { name: "Garbatulla", displayName: "Garbatulla", isDemoHome: false },
   { name: "Kinna", displayName: "Kinna", isDemoHome: false },
   { name: "Ngare Mara", displayName: "Ngare Mara", isDemoHome: true },
-  { name: "Oldonyiro", displayName: "Oldonyiro", isDemoHome: false },
+  { name: "Oldonyiro", displayName: "Oldonyiro", isDemoHome: true },
   { name: "Sericho", displayName: "Sericho", isDemoHome: false },
-  { name: "Wabera", displayName: "Wabera", isDemoHome: false },
+  { name: "Wabera", displayName: "Wabera", isDemoHome: true },
 ];
 
 // ── Per-ward aggregates (drives the ward choropleth) ────────────────
@@ -139,12 +194,44 @@ export { timeSliceStart } from "./openData/index.js";
 export type { TimeSlice } from "./openData/index.js";
 
 /**
- * Compute per-ward aggregates for the active metric + time slice.
- * Each pastoralist's `location` and each report's `reportedLocation`
- * is run through resolvePlaceName() to determine the GADM ward.
+ * Compute per-ward aggregates for the active metric + time slice, from
+ * real Supabase data keyed by the real `ward_id` column every relevant
+ * table actually has (`ground_truth_calls`, `pastoralists`,
+ * `api_latest_satellite_indices`) — not by resolving free-text location
+ * strings, which none of these rows carry in practice (see the
+ * `reports`/`bcs`/`ndvi` history below).
  *
- * Wards with no source data are omitted from the result map; the
- * dashboard renders them as a neutral gray.
+ * **Fixed 2026-08-06 — this function was structurally broken for every
+ * metric before this rewrite:**
+ * - The admin view hardcoded 3 tenants (`bula-pesa`, `ngare-mara`,
+ *   `burat`), silently omitting Wabera and Oldonyiro — 2 of the 5 real
+ *   active wards never appeared in any admin aggregate.
+ * - `reports`/`bcs` resolved a `reportedLocation` field that is *always*
+ *   null on the real Supabase row (ground_truth_calls has no such
+ *   column) via `resolvePlaceName(null)`, which always returns the same
+ *   fixed "Isiolo centre" fallback — meaning every real report, from any
+ *   ward, piled into one identical bucket. The real row already has a
+ *   proper `ward_id` column; it was just never read.
+ * - `ndvi` filtered on `ndviVsBaselinePercent`, a field hardcoded to
+ *   `null` for every row for the same reason — this metric was
+ *   *structurally guaranteed* to always return an empty result,
+ *   regardless of the 1,093 real satellite_indices rows sitting in
+ *   Supabase. Now reads real, current VCI per ward from
+ *   `api_latest_satellite_indices` instead.
+ * - `herd` read cattle/goats/camels from the *local Postgres mirror's*
+ *   demo-seeded pastoralists (15 fake rows, gated behind
+ *   `SEED_DEMO_DATA`) rather than the real Supabase `pastoralists` table
+ *   (1 real row today) — showing plausible-looking fake totals instead
+ *   of the real, small, honest number.
+ * - Separately, on the frontend: `WardsLayer.tsx`/`Comparison.tsx`
+ *   keyed this object by `properties.NAME_3`, a GeoJSON property that
+ *   does not exist on the real ward features at all (the real property
+ *   is `properties.ward`) — meaning **none of the above ever rendered
+ *   on the map regardless of what this function returned**. Fixed
+ *   alongside this (see WardsLayer.tsx's own history note).
+ *
+ * Wards with no source data are still omitted from the result map; the
+ * dashboard renders them as a neutral gray — that part was correct.
  */
 export async function computeWardAggregates(
   tenantId: string,
@@ -156,84 +243,43 @@ export async function computeWardAggregates(
   description: string;
 }> {
   const wantsAdmin = tenantId === "admin";
-  const tenantIds = wantsAdmin
-    ? ["bula-pesa", "ngare-mara", "burat"]
-    : [tenantId];
-  // Always load every pastoralist + report once; we resolve the
-  // place name to a ward in JS rather than in SQL (no GIS function
-  // for our hand-curated place-name table).
-  type PastoralistRow = {
-    id: number;
-    location: string;
-    cattle: number;
-    goats: number;
-    camels: number;
-  };
-  type ReportRow = {
-    reportedLocation: null;
-    bcsScore: number | null;
-    mortalityRate: string | null;
-    ndviVsBaselinePercent: null;
-  };
-  const allPastoralists: PastoralistRow[] = [];
-  const allReports: ReportRow[] = [];
-  for (const t of tenantIds) {
-    await withTenantContext(t, async (tx) => {
-      const ps = await tx
-        .select({
-          id: pastoralistsTable.id,
-          location: pastoralistsTable.location,
-          cattle: pastoralistsTable.cattle,
-          goats: pastoralistsTable.goats,
-          camels: pastoralistsTable.camels,
-        })
-        .from(pastoralistsTable);
-      allPastoralists.push(...ps);
-    });
-  }
-  // Read from Supabase ground_truth_calls — no reportedLocation or
-  // ndviVsBaselinePercent available; those fields return null.
-  if (isSupabaseConfigured()) {
-    const sbRows = await recentGroundTruthCalls(500);
-    for (const r of sbRows ?? []) {
-      const mortalityLabel =
-        r.mortality_rate == null
-          ? null
-          : r.mortality_rate >= 0.1
-            ? "4-plus"
-            : r.mortality_rate >= 0.02
-              ? "1-3"
-              : "none";
-      allReports.push({
-        reportedLocation: null,
-        bcsScore: r.bcs_score ?? null,
-        mortalityRate: mortalityLabel,
-        ndviVsBaselinePercent: null,
-      });
-    }
-  }
+  // All 5 real active wards for the admin view — not a hardcoded subset.
+  const wardIds = wantsAdmin ? knownWardIds() : [wardIdForTenant(tenantId)];
+  const wardIdSet = new Set(wardIds);
+  const nameForWard = (wardId: string | null): string | null =>
+    wardId ? (WARD_ID_TO_NAME[wardId] ?? null) : null;
 
   switch (metric) {
     case "reports": {
       const byWard: Record<string, number> = {};
-      for (const r of allReports) {
-        const ward = resolvePlaceName(r.reportedLocation).ward;
-        byWard[ward] = (byWard[ward] ?? 0) + 1;
+      if (isSupabaseConfigured()) {
+        const sbRows = await recentGroundTruthCalls(500);
+        for (const r of sbRows ?? []) {
+          if (!wardIdSet.has(r.ward_id)) continue;
+          const name = nameForWard(r.ward_id);
+          if (!name) continue;
+          byWard[name] = (byWard[name] ?? 0) + 1;
+        }
       }
       return {
         byWard,
         unit: "reports",
-        description: `Ground-truth reports per GADM ward in the ${slice} window.`,
+        description: `Ground-truth reports per ward in the ${slice} window.`,
       };
     }
     case "bcs": {
       const sumByWard: Record<string, number> = {};
       const nByWard: Record<string, number> = {};
-      for (const r of allReports) {
-        if (r.bcsScore == null || r.bcsScore <= 0) continue;
-        const ward = resolvePlaceName(r.reportedLocation).ward;
-        sumByWard[ward] = (sumByWard[ward] ?? 0) + r.bcsScore;
-        nByWard[ward] = (nByWard[ward] ?? 0) + 1;
+      if (isSupabaseConfigured()) {
+        const sbRows = await recentGroundTruthCalls(500);
+        for (const r of sbRows ?? []) {
+          if (r.bcs_score == null || r.bcs_score <= 0) continue;
+          if (!wardIdSet.has(r.ward_id)) continue;
+          const name = nameForWard(r.ward_id);
+          if (!name) continue;
+          sumByWard[name] = (sumByWard[name] ?? 0) + r.bcs_score;
+          nByWard[name] = (nByWard[name] ?? 0) + 1;
+        }
       }
       const byWard: Record<string, number | null> = {};
       for (const w of Object.keys(sumByWard)) {
@@ -246,35 +292,38 @@ export async function computeWardAggregates(
       };
     }
     case "ndvi": {
-      const sumByWard: Record<string, number> = {};
-      const nByWard: Record<string, number> = {};
-      for (const r of allReports) {
-        if (r.ndviVsBaselinePercent == null || r.ndviVsBaselinePercent === 0) continue;
-        const ward = resolvePlaceName(r.reportedLocation).ward;
-        sumByWard[ward] = (sumByWard[ward] ?? 0) + r.ndviVsBaselinePercent;
-        nByWard[ward] = (nByWard[ward] ?? 0) + 1;
-      }
       const byWard: Record<string, number | null> = {};
-      for (const w of Object.keys(sumByWard)) {
-        byWard[w] = parseFloat((sumByWard[w]! / nByWard[w]!).toFixed(1));
-      }
+      await Promise.all(
+        wardIds.map(async (wardId) => {
+          const name = nameForWard(wardId);
+          if (!name) return;
+          const sat = await latestSatelliteFor(wardId);
+          if (sat?.vci_value != null) {
+            byWard[name] = parseFloat(sat.vci_value.toFixed(1));
+          }
+        }),
+      );
       return {
         byWard,
-        unit: "% vs 11-yr baseline",
-        description: `Mean NDVI delta vs 11-year baseline per ward (${slice}).`,
+        unit: "VCI (0-100, lower = more stressed)",
+        description: `Latest Vegetation Condition Index per ward, from real satellite_indices.`,
       };
     }
     case "herd": {
       const byWard: Record<string, number> = {};
-      for (const p of allPastoralists) {
-        const ward = resolvePlaceName(p.location).ward;
-        const total = p.cattle + p.goats + p.camels;
-        byWard[ward] = (byWard[ward] ?? 0) + total;
+      if (isSupabaseConfigured()) {
+        const rows = await listAllPastoralists();
+        for (const p of rows ?? []) {
+          if (!p.ward_id || !wardIdSet.has(p.ward_id)) continue;
+          const name = nameForWard(p.ward_id);
+          if (!name) continue;
+          byWard[name] = (byWard[name] ?? 0) + (p.herd_size ?? 0);
+        }
       }
       return {
         byWard,
         unit: "animals",
-        description: `Total registered animals (cattle + goats + camels) per ward.`,
+        description: `Total registered herd size per ward (real verified pastoralists only).`,
       };
     }
     default:

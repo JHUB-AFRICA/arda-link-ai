@@ -56,6 +56,22 @@ export const pastoralistByPhone = async (
 };
 
 /**
+ * Every verified pastoralist, ward_id + herd_size only — for ward-level
+ * aggregation (the dashboard choropleth's "herd" metric). Real registered
+ * herders only; self-enrolled leads live in a separate table
+ * (pastoralistLeads.ts) and aren't counted here. Batch mode — this feeds
+ * a dashboard aggregate, not a herder-facing reply.
+ */
+export const listAllPastoralists = async (
+  mode: SupabaseMode = "batch",
+): Promise<Array<{ ward_id: string | null; herd_size: number | null }> | null> => {
+  return sbGet<{ ward_id: string | null; herd_size: number | null }>(
+    `pastoralists?select=ward_id,herd_size`,
+    { mode },
+  );
+};
+
+/**
  * The full call-context view — Supabase joins pastoralist + ward +
  * latest satellite + latest weather in a single row for us. Returns
  * `null` if no pastoralist matches the phone.

@@ -196,7 +196,12 @@ export function styleForWard(
     fillOpacity: 0.5,
   };
   if (!feature) return base;
-  const name = String(feature.properties?.["NAME_3"] ?? "");
+  // Fixed 2026-08-06: the real ward GeoJSON has no "NAME_3" property at
+  // all (verified directly against /api/open-data/geo/isiolo-wards) —
+  // the real key is "ward". Every ward tile silently rendered as
+  // no-data gray regardless of what computeWardAggregates returned,
+  // since this always looked up byWard[""].
+  const name = String(feature.properties?.["ward"] ?? "");
   const value = aggregates?.byWard[name] ?? null;
   if (value == null) {
     return {

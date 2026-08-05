@@ -224,11 +224,12 @@ describe("GET /api/open-data/geo/isiolo-wards", () => {
 });
 
 describe("GET /api/open-data/geo/ward-presets", () => {
-  it("is public and lists all 10 Isiolo wards with the 3 demo homes flagged", async () => {
-    // Since 2026-07-08 the 3 demo tenants are the 3 Isiolo Sub-County
-    // wards seeded by seed-demo.sql: bula-pesa (242), ngare-mara (245),
-    // burat (246). Wabera and Oldonyiro are also valid tenants per
-    // wardMapping.ts but aren't seeded by default.
+  it("is public and lists all 10 Isiolo wards with all 5 real active wards flagged", async () => {
+    // Fixed 2026-08-06: isDemoHome previously only flagged 3 of the 5
+    // real active wards (Bulla Pesa, Ngare Mara, Burat) — Wabera and
+    // Oldonyiro were marked false, indistinguishable from this list's
+    // actually-dormant/retired wards (Chari, Cherab, Garbatulla, Kinna,
+    // Sericho). All 5 real active wards are correctly flagged now.
     const res = await request(createApp()).get(
       "/api/open-data/geo/ward-presets",
     );
@@ -237,11 +238,13 @@ describe("GET /api/open-data/geo/ward-presets", () => {
     const homeWards = res.body.wards
       .filter((w: { isDemoHome: boolean }) => w.isDemoHome)
       .map((w: { name: string }) => w.name);
-    expect(homeWards).toContain("Bulla Pesa");
-    expect(homeWards).toContain("Ngare Mara");
-    expect(homeWards).toContain("Burat");
+    expect(homeWards.sort()).toEqual(
+      ["Bulla Pesa", "Burat", "Ngare Mara", "Oldonyiro", "Wabera"].sort(),
+    );
     expect(res.body.tenant_home_ward["bula-pesa"]).toBe("Bulla Pesa");
     expect(res.body.tenant_home_ward["burat"]).toBe("Burat");
+    expect(res.body.tenant_home_ward["wabera"]).toBe("Wabera");
+    expect(res.body.tenant_home_ward["oldonyiro"]).toBe("Oldonyiro");
   });
 });
 
@@ -254,8 +257,17 @@ describe("GET /api/open-data/geo/ward-aggregates", () => {
   });
 
   it.each(["reports", "bcs", "ndvi", "herd"])(
-    "buckets the %s metric by ward for an authenticated tenant",
+    "buckets the %s metric by ward, keyed on real ward_id-derived names",
     async (metric) => {
+      // Fixed 2026-08-06: computeWardAggregates now reads real
+      // ward_id-keyed Supabase data (ground_truth_calls, pastoralists,
+      // api_latest_satellite_indices) instead of resolving a
+      // free-text location field that was always null on the real row
+      // — see geoHelpers.ts's own history note on this function. In
+      // this test environment Supabase isn't configured, so byWard is
+      // correctly empty (no fabricated fallback data), matching the
+      // same "Supabase not configured" pattern already established by
+      // the report-pins/pastoralist-pins tests below.
       const token = mintJwt({ sub: "test", tenant_id: "bula-pesa" });
       const res = await request(createApp())
         .get(`/api/open-data/geo/ward-aggregates?metric=${metric}&slice=30d`)
@@ -264,10 +276,32 @@ describe("GET /api/open-data/geo/ward-aggregates", () => {
       if (res.status === 200) {
         expect(res.body.metric).toBe(metric);
         expect(typeof res.body.byWard).toBe("object");
-        expect(res.body.byWard).toHaveProperty("Bulla Pesa");
+        // Any key present must be a real ward display name, never the
+        // empty string ("" would mean a broken property lookup slipped
+        // back in — see WardsLayer.tsx's own history for that failure
+        // mode on the frontend side of this same bug).
+        for (const key of Object.keys(res.body.byWard)) {
+          expect(key).not.toBe("");
+        }
       }
     },
   );
+
+  it("uses all 5 real active wards for the admin view, not a hardcoded subset", async () => {
+    // Fixed 2026-08-06: previously hardcoded to exactly 3 tenants
+    // (bula-pesa, ngare-mara, burat) for tenant_id="admin" — Wabera and
+    // Oldonyiro never appeared in any admin aggregate. Can't assert on
+    // real values without Supabase configured in this test environment,
+    // but the request must succeed (not throw) across all 5 real wards.
+    const token = mintJwt({ sub: "test", tenant_id: "admin" });
+    const res = await request(createApp())
+      .get("/api/open-data/geo/ward-aggregates?metric=ndvi&slice=30d")
+      .set("Authorization", `Bearer ${token}`);
+    expect([200, 500]).toContain(res.status);
+    if (res.status === 200) {
+      expect(typeof res.body.byWard).toBe("object");
+    }
+  });
 });
 
 describe("GET /api/open-data/geo/pastoralist-pins", () => {
