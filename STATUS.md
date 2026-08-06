@@ -960,9 +960,22 @@ now half-done (the WhatsApp bridge no longer depends on the laptop;
   connection string or management-API token is available in this
   environment, so it must be run by hand via the Supabase SQL editor
   (owner's call, given the choice, over sharing a DB credential).
-  Pending confirmation that it's been applied before H2/H3's
-  `alerts_enabled` and `ground_truth_corrections` fixes can be verified
-  end-to-end.
+  **Applied 2026-08-06, verified end-to-end**: all four PostgREST
+  probes now pass (`pastoralists.wa_id/channel_tier/last_tier_check_at/alerts_enabled`,
+  `ground_truth_calls.channel`, `whatsapp_messages`,
+  `ground_truth_corrections` all present). Functionally re-tested, not
+  just schema-checked: flipped a real pastoralist's `alerts_enabled`
+  via the exact PATCH `markPastoralistOptedOut()` issues, confirmed it
+  persisted, reverted it; submitted a real correction through
+  `POST /api/ops/ground-truth/:callId/correct`, got back a real
+  `ground_truth_corrections` row. One residual gap found during
+  cleanup: the `service_role` key has INSERT/SELECT but not DELETE on
+  `ground_truth_corrections` (`GRANT DELETE ON public.ground_truth_corrections
+  TO service_role` per Supabase's own error hint) — no functional
+  impact, since the app only ever inserts into this table by design
+  (corrections are append-only, never deleted), but it meant the test
+  row from this verification pass had to be cleaned up by hand via the
+  SQL editor rather than through the API.
 - **Secrets sweep, extended to sibling projects** — the two *other*,
   unrelated projects' exposed `.env` files flagged in passing during the
   2026-08-05 Evolution secrets audit (`openclaw/.env`,
