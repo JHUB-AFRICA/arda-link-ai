@@ -1,4 +1,4 @@
-import { TrendingUp, CloudRain } from "lucide-react";
+import { TrendingUp, CloudRain, Droplets, Thermometer, Wind } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import {
   LineChart,
@@ -35,11 +35,22 @@ interface ForecastRow {
   precipitation_probability: number;
   temperature_c_max: number | null;
 }
+interface LatestWeather {
+  ward_id: string;
+  observed_date: string;
+  rainfall_mm_30d: number | null;
+  humidity_pct: number | null;
+  temperature_c: number | null;
+  evapotranspiration_mm: number | null;
+  source: string | null;
+  updated_at: string;
+}
 interface WardTS {
   ward_id: string;
   name: string;
   ndvi: NdviRow[];
   forecast: ForecastRow[];
+  weather: LatestWeather | null;
 }
 interface TSResponse {
   ready: boolean;
@@ -116,6 +127,59 @@ export default function TimeSeriesPanel() {
           ))}
         </div>
       </div>
+
+      {selected.weather ? (
+        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-xl border border-border bg-muted/30 p-3">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Droplets className="h-3.5 w-3.5 text-sky-500" /> Rainfall (30d)
+            </div>
+            <div className="mt-1 text-lg font-semibold">
+              {selected.weather.rainfall_mm_30d != null
+                ? `${selected.weather.rainfall_mm_30d.toFixed(0)} mm`
+                : "—"}
+            </div>
+          </div>
+          <div className="rounded-xl border border-border bg-muted/30 p-3">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Thermometer className="h-3.5 w-3.5 text-orange-500" /> Temperature
+            </div>
+            <div className="mt-1 text-lg font-semibold">
+              {selected.weather.temperature_c != null
+                ? `${selected.weather.temperature_c.toFixed(1)}°C`
+                : "—"}
+            </div>
+          </div>
+          <div className="rounded-xl border border-border bg-muted/30 p-3">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Wind className="h-3.5 w-3.5 text-cyan-500" /> Humidity
+            </div>
+            <div className="mt-1 text-lg font-semibold">
+              {selected.weather.humidity_pct != null
+                ? `${selected.weather.humidity_pct.toFixed(0)}%`
+                : "—"}
+            </div>
+          </div>
+          <div className="rounded-xl border border-border bg-muted/30 p-3">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <CloudRain className="h-3.5 w-3.5 text-indigo-500" /> Evapotranspiration
+            </div>
+            <div className="mt-1 text-lg font-semibold">
+              {selected.weather.evapotranspiration_mm != null
+                ? `${selected.weather.evapotranspiration_mm.toFixed(1)} mm`
+                : "—"}
+            </div>
+          </div>
+          <p className="col-span-2 -mt-1 text-[10px] text-muted-foreground sm:col-span-4">
+            Observed {selected.weather.observed_date} · source:{" "}
+            {selected.weather.source ?? "unknown"} → weather_data
+          </p>
+        </div>
+      ) : (
+        <p className="mb-6 text-xs text-muted-foreground">
+          No weather observation on file for this ward yet.
+        </p>
+      )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div>
