@@ -36,6 +36,7 @@ interface Fx {
   indicators: Record<string, unknown> | null;
   llmContent: string;
   llmProvider: string;
+  llmIsMock: boolean;
   sentSessionMessages: Array<{ phone: string; text: string }>;
   sentButtons: Array<{ phone: string }>;
   sentLocations: Array<{ phone: string; lat: number; lon: number; name: string }>;
@@ -77,6 +78,7 @@ const fx: Fx = {
   indicators: null,
   llmContent: "Asante, nimeelewa.",
   llmProvider: "test-provider",
+  llmIsMock: false,
   sentSessionMessages: [],
   sentButtons: [],
   sentLocations: [],
@@ -185,15 +187,18 @@ vi.mock("../src/lib/llm/index.js", () => ({
     fx.lastCompleteMessages = req.messages;
     return {
       content: fx.llmContent,
-      // Defaults to a non-colliding name — whatsappTurn.ts treats
-      // provider === "mock" as a real MockClient fallback and swaps in
-      // a safe default reply rather than trusting the content (see the
-      // mock-leak fix + the dedicated regression test below).
+      // Real MockClient impersonates the provider it's standing in for
+      // (e.g. `new MockClient('z', 'glm-4.5-flash')`) — `provider` is
+      // NEVER literally "mock" in practice. `isMock` is the only
+      // reliable signal, and this fixture mirrors that shape exactly so
+      // the regression test below actually exercises the real bug (a
+      // guard that checked `provider === "mock"` could never fire).
       provider: fx.llmProvider,
       model: "test-model",
       cached: false,
       usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
       latencyMs: 1,
+      isMock: fx.llmIsMock,
     };
   },
 }));
@@ -224,6 +229,7 @@ beforeEach(async () => {
   fx.hasPrior = true;
   fx.indicators = null;
   fx.llmProvider = "test-provider";
+  fx.llmIsMock = false;
   fx.sentSessionMessages = [];
   fx.sentButtons = [];
   fx.sentLocations = [];
@@ -318,22 +324,32 @@ describe("POST /api/whatsapp-webhook", () => {
   });
 
   it("never sends raw MockClient content to a live conversation", async () => {
-    // Regression test for a real incident: the z.ai->minimax fallback
-    // chain bottomed out to MockClient mid-conversation and its raw
-    // placeholder JSON ("{\"summary\":\"[MOCK ...") went out verbatim
-    // as the WhatsApp reply. provider === "mock" must always be
-    // swapped for the safe default, regardless of what content the
-    // (untrusted) mock response carries.
-    fx.llmProvider = "mock";
-    fx.llmContent = '{"summary":"[MOCK z/glm-4.5-flash] Brief: ..."}';
+    // Regression test for a real, CONFIRMED-LIVE incident (2026-08-06,
+    // not just a hypothetical): the z.ai->minimax fallback chain
+    // bottomed out to MockClient mid-conversation and its raw echo
+    // ("[MOCK z/glm-4.5-flash] niko Ngare Mara") went out VERBATIM to a
+    // real WhatsApp tester. Root cause: MockClient is constructed as
+    // `new MockClient('z', 'glm-4.5-flash')` to impersonate the real
+    // provider it stands in for (see providers/mock.ts) — so `provider`
+    // is NEVER literally "mock", and the guard that used to check
+    // `provider === "mock"` could never fire. This fixture now mirrors
+    // that real shape (realistic provider name + `isMock: true`)
+    // instead of the fictional `provider: "mock"` the old version of
+    // this test used — which is exactly why the old test passed while
+    // the real bug shipped to a live tester undetected.
+    fx.llmProvider = "z";
+    fx.llmIsMock = true;
+    fx.llmContent = "[MOCK z/glm-4.5-flash] niko Ngare Mara";
     const res = await request(app)
       .post("/api/whatsapp-webhook")
-      .send(webhookBody({ type: "text", text: { body: "Ng'ombe wangu ni wagonjwa" } }));
+      .send(webhookBody({ type: "text", text: { body: "niko Ngare Mara" } }));
     expect(res.status).toBe(200);
     await new Promise((r) => setTimeout(r, 0));
     expect(fx.sentSessionMessages).toHaveLength(1);
     expect(fx.sentSessionMessages[0].text).not.toContain("MOCK");
-    expect(fx.sentSessionMessages[0].text).toBe("Asante kwa ujumbe wako.");
+    expect(fx.sentSessionMessages[0].text).toBe(
+      "Samahani, kuna hitilafu ya muda mfupi kwenye mfumo — jaribu tena baada ya dakika chache. 🙏",
+    );
   });
 
   it("answers a species reply typed as free text with the real advisory, never the LLM", async () => {

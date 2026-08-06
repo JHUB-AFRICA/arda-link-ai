@@ -512,24 +512,39 @@ async function handleFreeText(
       : Promise.resolve("WhatsApp Report"),
   ]);
 
+  // Shown both when the LLM registry falls back to mock (no real
+  // secondary provider is configured behind Azure as of 2026-08-06 —
+  // ZAI_API_KEY/MINIMAX_API_KEY are unset, a deliberate owner decision
+  // to accept Azure-only for now) and on a genuine empty completion.
+  // Deliberately says there's a hiccup and to retry, rather than a
+  // generic "thanks" that reads as if the herder's actual question was
+  // ignored.
   const safeDefault =
-    lang === "sw" ? "Asante kwa ujumbe wako." : "Thanks for your message.";
+    lang === "sw"
+      ? "Samahani, kuna hitilafu ya muda mfupi kwenye mfumo — jaribu tena baada ya dakika chache. 🙏"
+      : "Sorry, there's a brief system hiccup — please try again in a few minutes. 🙏";
   // Hard backstop: MockClient (used when no real provider is reachable —
-  // see llm/providers/mock.ts) must never reach a live herder. Observed
-  // once in practice: the real z.ai→minimax fallback chain bottomed out
-  // mid-conversation and the raw mock content nearly went out verbatim.
-  // If this ever fires, fail safe to the same default reply used for an
-  // empty completion rather than surface a degraded/placeholder answer.
-  if (llmResponse.provider === "mock") {
+  // see llm/providers/mock.ts) must never reach a live herder. This
+  // checks `isMock`, NOT `provider` — MockClient is constructed as
+  // `new MockClient('z', 'glm-4.5-flash')` etc. specifically to
+  // impersonate the real provider it's standing in for, so `provider`
+  // is never the literal string "mock" in practice. A prior version of
+  // this guard checked `provider === "mock"` and could therefore never
+  // fire: confirmed live on 2026-08-06 when the z.ai->minimax fallback
+  // chain bottomed out mid-conversation and "[MOCK z/glm-4.5-flash]
+  // niko Ngare Mara" (the raw mock echo) reached a real WhatsApp tester
+  // verbatim. If this ever fires, fail safe to the same default reply
+  // used for an empty completion rather than surface a degraded/
+  // placeholder answer.
+  if (llmResponse.isMock) {
     logger.error(
       { from, provider: llmResponse.provider, model: llmResponse.model },
       "[WhatsApp] Free-text turn: LLM registry fell back to mock — sending safe default instead of mock content",
     );
   }
-  const reply =
-    llmResponse.provider === "mock"
-      ? safeDefault
-      : llmResponse.content || safeDefault;
+  const reply = llmResponse.isMock
+    ? safeDefault
+    : llmResponse.content || safeDefault;
   await sendWhatsappSessionMessage(from, reply);
   logOutbound(from, ctx, "text", reply);
   logInteraction(from, ctx, "free_text", rawText, reply);

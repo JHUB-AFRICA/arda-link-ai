@@ -271,7 +271,21 @@ When the user asks in Swahili, respond in Swahili. When they ask in English, res
       { tenantId: req.tenant?.tenant_id },
     );
 
-    const reply = response.content ?? "";
+    // Hard backstop: MockClient (used when no real provider is reachable)
+    // must never reach a real user — check `isMock`, not `provider`
+    // (MockClient is constructed to impersonate the real provider's name,
+    // e.g. `new MockClient('z', 'glm-4.5-flash')`, so `provider` is never
+    // literally "mock"). See whatsappTurn.ts's identical guard for the
+    // live incident (2026-08-06) that this same gap caused there.
+    if (response.isMock) {
+      req.log.error(
+        { provider: response.provider, model: response.model },
+        "[Chat] LLM registry fell back to mock — sending safe default instead of mock content",
+      );
+    }
+    const reply = response.isMock
+      ? "Sorry, I'm having trouble generating a response right now — please try again in a moment."
+      : response.content ?? "";
 
     req.log.info(
       {
@@ -393,7 +407,16 @@ router.post("/talk-chat", async (req, res): Promise<void> => {
       { tenantId: undefined },
     );
 
-    const reply = response.content ?? "";
+    // Same hard backstop as /chat above — see that call site's comment.
+    if (response.isMock) {
+      req.log.error(
+        { provider: response.provider, model: response.model },
+        "[TalkChat] LLM registry fell back to mock — sending safe default instead of mock content",
+      );
+    }
+    const reply = response.isMock
+      ? "Sorry, I'm having trouble generating a response right now — please try again in a moment."
+      : response.content ?? "";
 
     req.log.info(
       {

@@ -52,10 +52,25 @@ export interface LlmUsage {
 export interface LlmResponse {
   content: string;
   usage: LlmUsage;
-  provider: string;           // 'z' | 'minimax' | 'mock'
-  model: string;              // e.g. 'z/glm-4.5-flash', 'minimax/MiniMax-M3'
+  // The REAL provider being impersonated, even when the underlying
+  // client is MockClient — e.g. zai.ts's fallback constructs
+  // `new MockClient('z', 'glm-4.5-flash')` so the dashboard renders a
+  // realistic-looking provider/model. This means `provider` is NEVER
+  // the literal string 'mock' in practice — use `isMock` below to
+  // detect a mock response, not this field. (A prior version of this
+  // comment claimed 'mock' as a real value here, which led directly to
+  // a live incident: a whatsappTurn.ts guard checked
+  // `provider === "mock"`, which can never be true, and raw
+  // "[MOCK z/glm-4.5-flash] ..." content reached a real WhatsApp
+  // tester verbatim.)
+  provider: string;           // 'z' | 'minimax' | 'azure' | ...
+  model: string;              // e.g. 'glm-4.5-flash', 'MiniMax-M3'
   latencyMs: number;
   cached: boolean;
+  /** True only for MockClient responses (see providers/mock.ts) — the
+   * one reliable signal that no real LLM was actually reached. Always
+   * check this, never `provider`, to detect a mock fallback. */
+  isMock?: boolean;
 }
 
 /**

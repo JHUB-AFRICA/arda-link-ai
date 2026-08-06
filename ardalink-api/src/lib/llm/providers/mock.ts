@@ -73,6 +73,7 @@ export class MockClient implements LlmClient {
       model: this.model,
       latencyMs: Date.now() - start + 1, // +1 so the dashboard can show it took some time
       cached: false,
+      isMock: true,
     };
   }
 
