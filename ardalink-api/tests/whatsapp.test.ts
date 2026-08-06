@@ -55,6 +55,9 @@ interface Fx {
   pendingLocation: { lat: number; lon: number } | null;
   grazingAdvisory: Record<string, unknown> | null;
   centroidForTenantCalls: string[];
+  registrationState: Record<string, unknown> | null;
+  upsertedLeads: Array<Record<string, unknown>>;
+  setCurrentLocationCalls: Array<Record<string, unknown>>;
 }
 
 const fx: Fx = {
@@ -93,6 +96,9 @@ const fx: Fx = {
   pendingLocation: null,
   grazingAdvisory: null,
   centroidForTenantCalls: [],
+  registrationState: null,
+  upsertedLeads: [],
+  setCurrentLocationCalls: [],
 };
 
 vi.mock("../src/lib/herderContext/index.js", () => ({
@@ -162,6 +168,13 @@ vi.mock("../src/lib/supabase/index.js", () => ({
     fx.optedOutPhones.push(phone);
     return true;
   },
+  upsertPastoralistLead: async (row: Record<string, unknown>) => {
+    fx.upsertedLeads.push(row);
+    return { lead_id: "lead-test-1", ...row };
+  },
+  setCurrentLocation: async (input: Record<string, unknown>) => {
+    fx.setCurrentLocationCalls.push(input);
+  },
 }));
 
 vi.mock("../src/lib/openai/index.js", () => ({
@@ -173,6 +186,22 @@ vi.mock("../src/lib/grazingRingPending.js", () => ({
   upsertPendingLocation: async () => {},
   getPendingLocation: async () => fx.pendingLocation,
   clearPendingLocation: async () => {},
+}));
+
+vi.mock("../src/lib/whatsappRegistrationPending.js", () => ({
+  startRegistration: async () => {
+    fx.registrationState = { step: "ask_name" };
+  },
+  getRegistrationState: async () => fx.registrationState,
+  advanceRegistrationState: async (
+    _phone: string,
+    patch: Record<string, unknown>,
+  ) => {
+    fx.registrationState = { ...(fx.registrationState ?? {}), ...patch };
+  },
+  clearRegistrationState: async () => {
+    fx.registrationState = null;
+  },
 }));
 
 vi.mock("../src/lib/engine.js", () => ({
@@ -258,6 +287,9 @@ beforeEach(async () => {
   fx.pendingLocation = null;
   fx.grazingAdvisory = null;
   fx.centroidForTenantCalls = [];
+  fx.registrationState = null;
+  fx.upsertedLeads = [];
+  fx.setCurrentLocationCalls = [];
 
   const { default: whatsappRouter } = await import("../src/routes/whatsapp.js");
   app = express();
@@ -613,6 +645,91 @@ describe("POST /api/whatsapp-webhook", () => {
     expect(fx.lastCompleteMessages[0]).toEqual({
       role: "system",
       content: "system prompt hasHistory=false",
+    });
+  });
+
+  describe("WhatsApp self-registration (Phase 2)", () => {
+    it("starts registration on the JISAJILI keyword and asks for a name", async () => {
+      const res = await request(app)
+        .post("/api/whatsapp-webhook")
+        .send(webhookBody({ type: "text", text: { body: "JISAJILI" } }));
+      expect(res.status).toBe(200);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(fx.sentSessionMessages).toHaveLength(1);
+      expect(fx.sentSessionMessages[0].text).toMatch(/jina lako/i);
+      expect(fx.registrationState).toMatchObject({ step: "ask_name" });
+    });
+
+    it("walks name -> ward -> language -> save across separate turns, never touching the LLM", async () => {
+      fx.registrationState = { step: "ask_name" };
+      let res = await request(app)
+        .post("/api/whatsapp-webhook")
+        .send(webhookBody({ type: "text", text: { body: "Amina Wanjiku" } }));
+      expect(res.status).toBe(200);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(fx.registrationState).toMatchObject({
+        step: "ask_ward",
+        draftFullName: "Amina Wanjiku",
+      });
+      expect(fx.sentSessionMessages.at(-1)?.text).toContain("Ngare Mara");
+
+      res = await request(app)
+        .post("/api/whatsapp-webhook")
+        .send(webhookBody({ type: "text", text: { body: "3" } })); // 3 = Ngare Mara
+      expect(res.status).toBe(200);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(fx.registrationState).toMatchObject({
+        step: "ask_language",
+        draftWardId: "245",
+      });
+
+      res = await request(app)
+        .post("/api/whatsapp-webhook")
+        .send(webhookBody({ type: "text", text: { body: "1" } })); // 1 = Kiswahili
+      expect(res.status).toBe(200);
+      await new Promise((r) => setTimeout(r, 0));
+
+      expect(fx.upsertedLeads).toHaveLength(1);
+      expect(fx.upsertedLeads[0]).toMatchObject({
+        full_name: "Amina Wanjiku",
+        ward_id: "245",
+        preferred_language: "sw",
+        enrollment_source: "whatsapp_self",
+      });
+      expect(fx.setCurrentLocationCalls).toHaveLength(1);
+      expect(fx.setCurrentLocationCalls[0]).toMatchObject({
+        wardId: "245",
+        source: "whatsapp_registration",
+        confidence: "low",
+      });
+      expect(fx.registrationState).toBeNull();
+      expect(fx.lastCompleteMessages).toHaveLength(0);
+    });
+
+    it("re-prompts instead of crashing on an invalid ward digit", async () => {
+      fx.registrationState = { step: "ask_ward", draftFullName: "Test" };
+      const res = await request(app)
+        .post("/api/whatsapp-webhook")
+        .send(webhookBody({ type: "text", text: { body: "9" } }));
+      expect(res.status).toBe(200);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(fx.registrationState).toMatchObject({ step: "ask_ward" });
+      expect(fx.upsertedLeads).toHaveLength(0);
+    });
+
+    it("still escapes to the plain menu on MSAADA mid-registration", async () => {
+      fx.registrationState = { step: "ask_ward", draftFullName: "Test" };
+      const res = await request(app)
+        .post("/api/whatsapp-webhook")
+        .send(webhookBody({ type: "text", text: { body: "MSAADA" } }));
+      expect(res.status).toBe(200);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(fx.sentButtons).toHaveLength(1);
+      // The registration mock never clears state on its own for this
+      // path (MENU_KEYWORDS returns before handleRegistrationTurn is
+      // ever reached) — state is left as-is, exactly as a real herder
+      // resuming registration afterward would expect.
+      expect(fx.registrationState).toMatchObject({ step: "ask_ward" });
     });
   });
 });

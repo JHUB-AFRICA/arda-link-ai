@@ -12,19 +12,13 @@ import {
   logLeadInteraction,
   setCurrentLocation,
 } from "../lib/supabase/index.js";
-import { tenantForWardId } from "../lib/wardMapping.js";
+import { tenantForWardId, WARD_PICKER_LIST } from "../lib/wardMapping.js";
 import { sendSmsViaAt, initiateOutboundCall } from "../lib/africastalking.js";
 
-// The 5 active Isiolo Sub-County wards, ordered so digit ↔ ward is
-// stable across the Jisajili subscribe flow. Add / retire wards here
-// only — the flow reads this list directly.
-const WARDS_FOR_SUBSCRIBE: ReadonlyArray<{ code: string; name: string }> = [
-  { code: "242", name: "Bulla Pesa" },
-  { code: "241", name: "Wabera" },
-  { code: "245", name: "Ngare Mara" },
-  { code: "246", name: "Burat" },
-  { code: "247", name: "Oldonyiro" },
-];
+// The 5-ward picker list — hoisted into wardMapping.ts's WARD_PICKER_LIST
+// (2026-08-06) so WhatsApp's own registration flow reads the exact same
+// digit-to-ward ordering instead of maintaining a second copy.
+const WARDS_FOR_SUBSCRIBE = WARD_PICKER_LIST;
 
 const DEFAULT_TENANT_ID =
   process.env.DETERMINISTIC_TENANT_ID ?? "bula-pesa";

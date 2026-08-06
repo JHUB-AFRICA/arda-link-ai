@@ -39,6 +39,20 @@ const WARD_ID_TO_TENANT: Record<string, string> = {
   "247": "oldonyiro",
 };
 
+/**
+ * The 5-ward picker list shown during self-registration — digit ↔ ward
+ * must stay stable across every channel that offers this picker (USSD's
+ * Jisajili flow, WhatsApp's mirror of it), so this is the single copy
+ * both read from rather than each maintaining their own.
+ */
+export const WARD_PICKER_LIST: ReadonlyArray<{ code: string; name: string }> = [
+  { code: "242", name: "Bulla Pesa" },
+  { code: "241", name: "Wabera" },
+  { code: "245", name: "Ngare Mara" },
+  { code: "246", name: "Burat" },
+  { code: "247", name: "Oldonyiro" },
+];
+
 export const DEFAULT_WARD_ID = "242";
 
 export function wardIdForTenant(tenantSlug: string): string {

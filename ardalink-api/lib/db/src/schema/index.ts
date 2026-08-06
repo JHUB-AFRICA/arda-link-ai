@@ -11,3 +11,4 @@ export * from "./grazingRingPending";
 export * from "./adminAuditLog";
 export * from "./groundTruthCorrections";
 export * from "./pastoralistLocationHistory";
+export * from "./whatsappRegistrationPending";

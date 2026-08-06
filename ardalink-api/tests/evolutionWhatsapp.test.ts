@@ -215,6 +215,8 @@ vi.mock("../src/lib/supabase/index.js", () => ({
   logLeadInteraction: async () => undefined,
   setLeadStatus: async () => true,
   markPastoralistOptedOut: async () => true,
+  upsertPastoralistLead: async () => ({ lead_id: "lead-test-1" }),
+  setCurrentLocation: async () => {},
 }));
 vi.mock("../src/lib/openai/index.js", () => ({
   extractIndicators: async () => null,
@@ -232,6 +234,12 @@ vi.mock("../src/lib/grazingRingPending.js", () => ({
   upsertPendingLocation: async () => {},
   getPendingLocation: async () => null,
   clearPendingLocation: async () => {},
+}));
+vi.mock("../src/lib/whatsappRegistrationPending.js", () => ({
+  startRegistration: async () => {},
+  getRegistrationState: async () => null,
+  advanceRegistrationState: async () => {},
+  clearRegistrationState: async () => {},
 }));
 vi.mock("../src/lib/engine.js", () => ({
   fetchGrazingAdvisory: async () => null,

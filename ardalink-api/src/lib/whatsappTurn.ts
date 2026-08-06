@@ -20,7 +20,13 @@ import {
   type HerderContext,
 } from "./herderContext/index.js";
 import { centroidForTenant, nearestWorkingKnownPoints } from "./wpdx.js";
-import { tenantForWardId } from "./wardMapping.js";
+import { tenantForWardId, WARD_PICKER_LIST } from "./wardMapping.js";
+import {
+  startRegistration,
+  getRegistrationState,
+  advanceRegistrationState,
+  clearRegistrationState,
+} from "./whatsappRegistrationPending.js";
 import { languageForCaller } from "./voiceCopy.js";
 import {
   sendWhatsappSessionMessage,
@@ -38,6 +44,8 @@ import {
   isSupabaseConfigured,
   setLeadStatus,
   markPastoralistOptedOut,
+  upsertPastoralistLead,
+  setCurrentLocation,
   type SbWhatsappMessageInsert,
 } from "./supabase/index.js";
 import { extractIndicators, generateActionTag } from "./openai/index.js";
@@ -49,6 +57,12 @@ import type { LlmMessage } from "./llm/types.js";
 
 const MENU_KEYWORDS = new Set(["MSAADA", "HELP", "MENU", "START"]);
 const OPT_OUT_KEYWORDS = new Set(["STOP", "SITAKI"]);
+// Phase 2 of the location/registration/landmark plan (2026-08-06):
+// keyword-triggered self-registration, the safer of the two entry-point
+// options considered (vs. auto-starting for every brand-new number,
+// which would change the already-live, tested first-touch welcome flow —
+// left for a later decision once this proves out).
+const REGISTRATION_KEYWORDS = new Set(["JISAJILI", "SAJILI", "REGISTER", "ANDIKISHA"]);
 
 const DEFAULT_TENANT_ID = process.env.DETERMINISTIC_TENANT_ID ?? "bula-pesa";
 
@@ -223,6 +237,123 @@ async function handleMalisho(
     "malisho",
     points.map((p) => p.displayName).join(", "),
   );
+}
+
+/**
+ * WhatsApp self-registration — mirrors USSD's Jisajili flow (name ->
+ * ward -> language -> save) across separate stateless webhook turns,
+ * using whatsapp_registration_pending to hold the draft between them
+ * (USSD gets this for free from AT's accumulated `text` payload; WhatsApp
+ * has no equivalent, so it's persisted here — see migration 0014).
+ *
+ * Triggered by a REGISTRATION_KEYWORDS keyword (JISAJILI/SAJILI/REGISTER/
+ * ANDIKISHA) — not auto-started on first contact, a deliberately safer
+ * choice than changing the already-live welcome-menu flow; MENU_KEYWORDS/
+ * OPT_OUT_KEYWORDS are still checked before this in
+ * processInboundWhatsappMessage, so MSAADA/STOP always escape mid-flow.
+ */
+async function handleRegistrationTurn(
+  from: string,
+  ctx: HerderContext,
+  lang: "sw" | "en",
+  rawText: string,
+  tenantId: string,
+): Promise<void> {
+  const pending = await getRegistrationState(from);
+
+  if (!pending) {
+    await startRegistration(from);
+    const text =
+      lang === "sw"
+        ? "Karibu kujisajili na ArdaLink. Andika jina lako kamili:"
+        : "Welcome to ArdaLink registration. Please type your full name:";
+    await sendWhatsappSessionMessage(from, text);
+    logOutbound(from, ctx, "text", text);
+    logInteraction(from, ctx, "registration_start", rawText, text);
+    return;
+  }
+
+  if (pending.step === "ask_name") {
+    const name = rawText.trim().slice(0, 60);
+    await advanceRegistrationState(from, { step: "ask_ward", draftFullName: name || null });
+    const wardLines = WARD_PICKER_LIST.map((w, i) => `${i + 1}. ${w.name}`).join("\n");
+    const text =
+      lang === "sw"
+        ? `Asante ${name}. Uko ward gani?\n${wardLines}`
+        : `Thanks ${name}. Which ward are you in?\n${wardLines}`;
+    await sendWhatsappSessionMessage(from, text);
+    logOutbound(from, ctx, "text", text);
+    logInteraction(from, ctx, "registration_name", rawText, text);
+    return;
+  }
+
+  if (pending.step === "ask_ward") {
+    const idx = Number(rawText.trim()) - 1;
+    const ward = WARD_PICKER_LIST[idx];
+    if (!ward) {
+      const text =
+        lang === "sw"
+          ? `Chagua namba 1 hadi ${WARD_PICKER_LIST.length}.`
+          : `Please choose a number from 1 to ${WARD_PICKER_LIST.length}.`;
+      await sendWhatsappSessionMessage(from, text);
+      logOutbound(from, ctx, "text", text);
+      logInteraction(from, ctx, "registration_ward_invalid", rawText, text);
+      return;
+    }
+    await advanceRegistrationState(from, { step: "ask_language", draftWardId: ward.code });
+    const text = "Chagua lugha / language:\n1. Kiswahili\n2. English";
+    await sendWhatsappSessionMessage(from, text);
+    logOutbound(from, ctx, "text", text);
+    logInteraction(from, ctx, "registration_ward", rawText, text);
+    return;
+  }
+
+  // pending.step === "ask_language"
+  const langDigit = rawText.trim();
+  if (langDigit !== "1" && langDigit !== "2") {
+    const text = "Chagua 1 (Kiswahili) au 2 (English).";
+    await sendWhatsappSessionMessage(from, text);
+    logOutbound(from, ctx, "text", text);
+    logInteraction(from, ctx, "registration_language_invalid", rawText, text);
+    return;
+  }
+  const finalLang: "sw" | "en" = langDigit === "2" ? "en" : "sw";
+  const ward = WARD_PICKER_LIST.find((w) => w.code === pending.draftWardId) ?? null;
+
+  await upsertPastoralistLead({
+    phone_number: from,
+    full_name: pending.draftFullName,
+    preferred_language: finalLang,
+    ward_id: pending.draftWardId,
+    location_text: ward?.name ?? pending.draftWardId,
+    enrollment_source: "whatsapp_self",
+    status: "lead",
+    alerts_enabled: true,
+  });
+
+  if (pending.draftWardId) {
+    const centroid = centroidForTenant(tenantForWardId(pending.draftWardId));
+    void setCurrentLocation({
+      phoneNumber: from,
+      wardId: pending.draftWardId,
+      locationText: ward?.name ?? pending.draftWardId,
+      lat: centroid?.lat ?? null,
+      lon: centroid?.lon ?? null,
+      source: "whatsapp_registration",
+      confidence: "low",
+    });
+  }
+
+  await clearRegistrationState(from);
+
+  const confirmText =
+    finalLang === "sw"
+      ? `Umesajiliwa, ${pending.draftFullName ?? "rafiki"}! Andika MSAADA wakati wowote kuona huduma zetu.`
+      : `You're registered, ${pending.draftFullName ?? "friend"}! Text MSAADA anytime to see our services.`;
+  await sendWhatsappSessionMessage(from, confirmText);
+  logOutbound(from, ctx, "text", confirmText);
+  logInteraction(from, ctx, "registration_complete", rawText, confirmText);
+  void touchPastoralistLastContact(from);
 }
 
 async function handleOngeaAck(
@@ -732,6 +863,18 @@ export async function processInboundWhatsappMessage(
       logOutbound(msg.from, ctx, "text", confirmText);
       logInteraction(msg.from, ctx, "opt_out", msg.text, confirmText);
       logger.info({ from: msg.from, leadOk, pastOk }, "[WhatsApp] Opt-out applied");
+      return;
+    }
+
+    // Self-registration (Phase 2 of the location/registration/landmark
+    // plan, 2026-08-06) — either a fresh trigger keyword, or continuing
+    // a flow already in progress (whatsapp_registration_pending). Checked
+    // AFTER menu/opt-out so MSAADA/STOP always escape mid-flow, but
+    // BEFORE the first-contact welcome check below so a mid-flow answer
+    // is never mistaken for a brand-new conversation.
+    const pendingRegistration = await getRegistrationState(msg.from);
+    if (pendingRegistration || REGISTRATION_KEYWORDS.has(normalized)) {
+      await handleRegistrationTurn(msg.from, ctx, lang, msg.text, tenantId);
       return;
     }
 
