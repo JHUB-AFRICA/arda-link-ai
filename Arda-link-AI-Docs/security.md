@@ -398,20 +398,40 @@ machine, and were checked as part of the same 2026-08-05 secrets sweep:
   architecture diagram).
 - **Isolation, confirmed**: this VPS hosts multiple unrelated
   deployments (Ementech's own customer-support Evolution instance, a
-  "Muse" project, others) under distinct system accounts. Whether any
-  of those *other* accounts have sudo/root (which would bypass this
-  file's `600` permission regardless of the file itself being correct)
-  was not audited as part of this pass — worth doing before treating
-  this VPS as a long-term multi-tenant host, out of scope for what was
-  asked here.
+  "Muse" project, others) under distinct system accounts. **Sudo/root
+  audit completed 2026-08-06**: `sshd -T` (the actual resolved config,
+  not the on-disk files — see below) confirms `PasswordAuthentication
+  no`, and only 3 SSH keys are authorized for `root`
+  (`personal-2026-07-19`, plus two GitHub Actions deploy keys
+  `gha-ementech`/`gha-smartbiz`). No other account — including the
+  three (`kvm`, `node-user`, `tomtin`) that sit in the `sudo` group —
+  has an `authorized_keys` file at all, so none of them can log in by
+  any path today. Evolution's `600` permission is not currently
+  bypassable by anyone else on the box.
+  - **Dormant, not active, risk (left as-is per owner decision
+    2026-08-06)**: those 3 sudo-group accounts have zero login path
+    today but would have unrestricted root the moment any of them
+    gained an `authorized_keys` entry — legacy cruft from the VPS's
+    original provisioning, not cleaned up.
+  - **Stale, contradicting config, also left as-is**:
+    `/etc/ssh/sshd_config.d/50-cloud-init.conf` (dated 2024-04-25)
+    still says `PasswordAuthentication yes`, overridden today by
+    `01-hardening.conf`'s `no` — confirmed inert since `cloud-init
+    status` is `disabled` (won't regenerate this file), but it's
+    confusing leftover clutter if anyone reads the on-disk files
+    instead of `sshd -T`'s resolved output.
 - **Not exposed locally**: confirmed the real `.env` was never copied
   to this repo's local mirror of the VPS config
   (`baitech-infra/ardalink-evolution/` on the exposed NTFS drive) —
-  only the harmless `.env.example` template lives there. Flagged in
-  passing but **not fixed, out of scope**: two *other*, unrelated
-  projects' real `.env` files (`openclaw/.env`, `upwork-service/.env`)
-  do sit exposed in sibling directories on that same local drive — a
-  problem for those projects, not ArdaLink.
+  only the harmless `.env.example` template lives there. Two *other*,
+  unrelated projects' real `.env` files (`openclaw/.env`,
+  `upwork-service/.env`) did sit exposed in sibling directories on that
+  same local drive — **fixed 2026-08-06** with the same symlink
+  relocation used for `ardalink-api`/`ardalink-engine`: real files moved
+  to `~/.config/openclaw/` and `~/.config/upwork-service/` (chmod 600),
+  originals replaced with symlinks. Both projects' `docker-compose.yml`
+  files read `.env`/`.env.local` as plain file reads, so the symlinks
+  resolve transparently — no compose config changes needed.
 
 ### Production (general guidance)
 

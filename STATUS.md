@@ -738,6 +738,8 @@ Full audit of Supabase-local write paths found 6 severe drifts, all now closed o
   string or management token is available to automate this). Blocks Phase
   3 of the console (ground-truth correction) only — water sources, species
   radii, and pastoralist editing are unaffected and fully live.
+  **Superseded 2026-08-06 — see H1: the real scope was larger than this
+  one table.**
 
 **F-series (Evolution conversation audit + infra fixes + live location) — 2026-08-03/04:**
 
@@ -903,6 +905,85 @@ now half-done (the WhatsApp bridge no longer depends on the laptop;
   the app's own dotenv fallback, Earth Engine auth still succeeds. Does
   not fix the underlying NTFS-mount issue for every other file on that
   drive — only closes the secret-file exposure specifically.
+
+**H-series (dashboard/Supabase data-integrity audit + follow-up fixes) — 2026-08-05/06:**
+
+- **H1 `fix(dashboard)`**, 2026-08-05 — full Supabase data-integrity audit
+  found the ward choropleth had never rendered real data, for five
+  separate, compounding reasons: the GeoJSON's real property is
+  `properties.ward` (e.g. "Bulla Pesa"), not `properties.NAME_3` (which
+  doesn't exist at all — checked both `WardsLayer.tsx` and `utils.ts`);
+  `computeWardAggregates()` used a broken free-text `resolvePlaceName()`
+  fallback chain instead of real `ward_id`-keyed Supabase data; the
+  `ndvi` and `herd` metrics were never implemented server-side at all;
+  `report-pins` piled every pin onto the same fallback centroid for the
+  same reason; and `ISILO_WARDS`' `isDemoHome` flags marked only 3 of
+  the 5 real active wards. All five fixed together and verified live
+  across all 5 wards.
+- **H2 `fix(dashboard)`**, 2026-08-06 — same audit's next-highest-severity
+  finding: the Pastoralists tab read/wrote the local demo-seeded
+  Postgres mirror end to end, completely disconnected from the real
+  Supabase `pastoralists` table every herder-facing channel actually
+  reads from — a verified lead never appeared here, and any edit here
+  had zero real-world effect. Rewrote the backend routes and every
+  frontend consumer (`PastoralistsTab`/`PastoralistForm`/
+  `PastoralistEditDialog`/`dashboard.tsx`) to use the real Supabase
+  shape (`herdSize` single total, `ward_id`, UUID `pastoralist_id` — no
+  `cattle`/`goats`/`camels` split, no `waterSource`/`alertsEnabled`
+  columns, since neither exists on the real table). Added `PATCH`
+  (edit) support where only create/delete existed before. Verified live
+  against the real Supabase-backed endpoint post-deploy.
+- **H3 — Supabase-vs-repo migration drift audit**, 2026-08-06 — following
+  up on H series' own "flagged, not fixed" items plus a live 404 seen
+  in production logs (`ground_truth_corrections` schema-cache miss on
+  every `/api/ops/ground-truth/recent` poll), audited every migration
+  whose own header claims "must also be applied to live Supabase by
+  hand" against the real project via direct PostgREST probes. Found the
+  gap was wider than previously documented: migration 0005
+  (`add_whatsapp_support`) was **also** never applied — Supabase's real
+  `pastoralists` table has no `wa_id`/`channel_tier`/
+  `last_tier_check_at`, `ground_truth_calls` has no `channel` column,
+  and `whatsapp_messages` doesn't exist at all, meaning
+  `logWhatsappMessage()` has been failing to write to Supabase on every
+  single WhatsApp turn since the channel went live (silent, warn-logged
+  only — reads already fall back to the local mirror gracefully, so no
+  live conversation was ever broken by this, but Supabase itself has
+  had zero WhatsApp history the whole time). Also found a genuinely new
+  gap, not covered by any prior migration's note: Supabase's
+  `pastoralists` has no `alerts_enabled` column at all, so
+  `markPastoralistOptedOut()` — called on every WhatsApp "STOP" and SMS
+  opt-out — has been silently no-oping for every verified pastoralist.
+  Wrote one consolidated, idempotent catch-up migration
+  (`docs/local-dev/migrations/0010_supabase_catchup.supabase-only.sql`)
+  covering all four gaps; same operational constraint as every other
+  Supabase DDL change in this repo's history — no direct Postgres
+  connection string or management-API token is available in this
+  environment, so it must be run by hand via the Supabase SQL editor
+  (owner's call, given the choice, over sharing a DB credential).
+  Pending confirmation that it's been applied before H2/H3's
+  `alerts_enabled` and `ground_truth_corrections` fixes can be verified
+  end-to-end.
+- **Secrets sweep, extended to sibling projects** — the two *other*,
+  unrelated projects' exposed `.env` files flagged in passing during the
+  2026-08-05 Evolution secrets audit (`openclaw/.env`,
+  `upwork-service/.env`, same exposed NTFS drive) were fixed with the
+  identical symlink-relocation pattern: real files moved to
+  `~/.config/{openclaw,upwork-service}/` (chmod 600), originals replaced
+  with symlinks. Both projects' `docker-compose.yml`s read `.env` as a
+  plain file, so this needed no compose changes.
+- **VPS shared-account sudo audit, completed** — the other flagged item
+  (whether other accounts on the shared baitech VPS have sudo/root,
+  which would bypass Evolution's correctly-set `600` permission
+  regardless) was audited directly: `sshd -T`'s resolved config shows
+  `PasswordAuthentication no`, and only 3 keys are authorized for root
+  (owner's personal key + 2 GitHub Actions deploy keys) — no other
+  account, including the 3 sitting in the `sudo` group (`kvm`,
+  `node-user`, `tomtin`), has any `authorized_keys` file, so none of
+  them can log in by any path today. A stale, contradicting
+  `50-cloud-init.conf` (`PasswordAuthentication yes`, overridden by the
+  real hardening config) and the 3 dormant sudo-group memberships are
+  both legacy cruft with no active exploit path — owner's call was to
+  leave both as documented findings rather than clean them up now.
 
 *Prior cycle (2026-07-07 baseline)*:
 * Satellite API routes + scheduler.
