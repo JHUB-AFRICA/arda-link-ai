@@ -26,6 +26,8 @@ import {
   recentLeads,
   setLeadStatus,
   upsertPastoralist,
+  setCurrentLocation,
+  listLocationHistory,
   type SbPastoralistLead,
 } from "../../lib/supabase/index.js";
 import { recordAudit } from "../../lib/adminAudit.js";
@@ -51,6 +53,32 @@ router.get("/ops/leads", async (req, res): Promise<void> => {
     leads: rows ?? [],
   });
 });
+
+/**
+ * GET /api/ops/pastoralists/:phone/location-history
+ *
+ * Read-only view over the permanent pastoralist_location_history log
+ * (see migration 0011) — a history nobody can see has no observable
+ * value, so this exists alongside the write path from day one rather
+ * than as an afterthought.
+ */
+router.get(
+  "/ops/pastoralists/:phone/location-history",
+  async (req, res): Promise<void> => {
+    if (!isSupabaseConfigured()) {
+      res.json({ ready: false, reason: "supabase_not_configured", history: [] });
+      return;
+    }
+    const phone = decodeURIComponent(req.params.phone);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+    const rows = await listLocationHistory(phone, { limit });
+    res.json({
+      ready: true,
+      count: rows?.length ?? 0,
+      history: rows ?? [],
+    });
+  },
+);
 
 interface VerifyBody {
   verifiedBy?: string;
@@ -107,6 +135,25 @@ router.post(
     if (!promoted) {
       res.status(500).json({ error: "promote_failed" });
       return;
+    }
+
+    // Carry the lead's location forward into the permanent history log
+    // (Phase 1 of the location/registration/landmark plan, 2026-08-06).
+    // High confidence: verifying is an ops action on a real, reviewed
+    // record, not a passing mention. If the lead never had coordinates
+    // (USSD-only leads before this feature shipped), lat/lon stay null —
+    // still records the ward/location_text change with an accurate source.
+    if (lead.ward_id) {
+      void setCurrentLocation({
+        phoneNumber: lead.phone_number,
+        wardId: lead.ward_id,
+        locationText: lead.location_text ?? lead.ward_id,
+        lat: lead.lat ?? null,
+        lon: lead.lon ?? null,
+        source: "ops_verification",
+        confidence: "high",
+        changedBy: opsUser,
+      });
     }
 
     // Update the lead row — mark verified + link back to the promoted

@@ -10,7 +10,9 @@ import {
   upsertPastoralistLead,
   identityForPhone,
   logLeadInteraction,
+  setCurrentLocation,
 } from "../lib/supabase/index.js";
+import { tenantForWardId } from "../lib/wardMapping.js";
 import { sendSmsViaAt, initiateOutboundCall } from "../lib/africastalking.js";
 
 // The 5 active Isiolo Sub-County wards, ordered so digit ↔ ward is
@@ -216,6 +218,24 @@ async function ussdSubscribeFinalize(
   } catch (err) {
     logger.warn({ err, phone }, "[USSD] Jisajili upsert failed");
   }
+
+  // Permanent location record — Phase 1 of the location/registration/
+  // landmark plan (2026-08-06). USSD never captures live GPS, so the
+  // ward's centroid stands in as a low-confidence coordinate; still far
+  // better than nothing for later distance/direction features, and this
+  // is the herder's own explicit statement of where they are (picking a
+  // ward from the menu), exactly the kind of change that should be
+  // permanently recorded per the owner's requirement.
+  const centroid = centroidForTenant(tenantForWardId(ward.code));
+  void setCurrentLocation({
+    phoneNumber: phone,
+    wardId: ward.code,
+    locationText: ward.name,
+    lat: centroid?.lat ?? null,
+    lon: centroid?.lon ?? null,
+    source: "ussd_registration",
+    confidence: "low",
+  });
 
   // Fire-and-forget welcome SMS. The USSD reply below acknowledges
   // the subscription immediately; the SMS is the closing loop.

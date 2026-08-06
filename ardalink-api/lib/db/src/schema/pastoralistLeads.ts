@@ -17,6 +17,7 @@ import {
   boolean,
   timestamp,
   index,
+  doublePrecision,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
@@ -35,7 +36,15 @@ export const pastoralistLeadsTable = pgTable(
     preferredLanguage: text("preferred_language"),
     wardId: text("ward_id"),
     // JSON GeoPoint at runtime; callers narrow to GeoJsonPoint themselves.
+    // Unused for writes (see migration 0012's header) — lat/lon below are
+    // the actual current-location pointer this codebase writes to,
+    // following the same plain-columns precedent as
+    // ground_truth_calls.reported_lat/reported_lon (migration 0007).
     location: jsonb("location"),
+    lat: doublePrecision("lat"),
+    lon: doublePrecision("lon"),
+    locationSource: text("location_source"),
+    locationUpdatedAt: timestamp("location_updated_at", { withTimezone: true }),
     herdSize: integer("herd_size"),
     enrollmentSource: text("enrollment_source"),
     status: text("status").notNull().default("lead"),

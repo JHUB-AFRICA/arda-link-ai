@@ -10,3 +10,4 @@ export * from "./whatsappMessages";
 export * from "./grazingRingPending";
 export * from "./adminAuditLog";
 export * from "./groundTruthCorrections";
+export * from "./pastoralistLocationHistory";

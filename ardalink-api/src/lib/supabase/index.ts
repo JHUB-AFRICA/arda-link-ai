@@ -113,6 +113,16 @@ export {
 } from "./whatsapp.js";
 
 export {
+  type LocationSource,
+  type SbLocationHistoryRow,
+  type RecordLocationChangeInput,
+  type SetCurrentLocationInput,
+  recordLocationChange,
+  listLocationHistory,
+  setCurrentLocation,
+} from "./locationHistory.js";
+
+export {
   type UpsertSatelliteIndicesArgs,
   type UpsertSatelliteCellIndicesArgs,
   type UpsertWeatherDataArgs,

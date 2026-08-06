@@ -22,12 +22,28 @@ export interface SbPastoralistLead {
   preferred_language: "sw" | "en" | null;
   ward_id: string | null;
   location_text: string | null;
+  /** Current-location pointer — see migration 0012's header for why
+   * these are plain columns rather than the (unused) `location`
+   * PostGIS column, and pastoralist_location_history for the full,
+   * permanent change log these are only a snapshot of. */
+  lat: number | null;
+  lon: number | null;
+  location_source:
+    | "ussd_registration"
+    | "whatsapp_registration"
+    | "sms_self"
+    | "whatsapp_explicit_statement"
+    | "ops_verification"
+    | "ops_manual_edit"
+    | null;
+  location_updated_at: string | null;
   herd_size: number | null;
   enrollment_source:
     | "ussd_self"
     | "sms_self"
     | "inbound_call"
-    | "field_agent";
+    | "field_agent"
+    | "whatsapp_self";
   status:
     | "lead"
     | "contacted"
@@ -103,6 +119,12 @@ export const upsertPastoralistLead = async (
     payload.preferred_language = row.preferred_language;
   if (row.ward_id != null) payload.ward_id = row.ward_id;
   if (row.location_text != null) payload.location_text = row.location_text;
+  if (row.lat != null) payload.lat = row.lat;
+  if (row.lon != null) payload.lon = row.lon;
+  if (row.location_source != null)
+    payload.location_source = row.location_source;
+  if (row.location_updated_at != null)
+    payload.location_updated_at = row.location_updated_at;
   if (row.herd_size != null) payload.herd_size = row.herd_size;
   if (row.enrollment_source != null)
     payload.enrollment_source = row.enrollment_source;
@@ -139,6 +161,10 @@ export const upsertPastoralistLead = async (
       fullName: row.full_name ?? undefined,
       preferredLanguage: row.preferred_language ?? undefined,
       wardId: row.ward_id ?? undefined,
+      lat: row.lat ?? undefined,
+      lon: row.lon ?? undefined,
+      locationSource: row.location_source ?? undefined,
+      locationUpdatedAt: row.location_updated_at ? new Date(row.location_updated_at) : undefined,
       herdSize: row.herd_size ?? undefined,
       enrollmentSource: row.enrollment_source ?? undefined,
       status: row.status ?? undefined,
@@ -154,6 +180,10 @@ export const upsertPastoralistLead = async (
       fullName: row.full_name ?? undefined,
       preferredLanguage: row.preferred_language ?? undefined,
       wardId: row.ward_id ?? undefined,
+      lat: row.lat ?? undefined,
+      lon: row.lon ?? undefined,
+      locationSource: row.location_source ?? undefined,
+      locationUpdatedAt: row.location_updated_at ? new Date(row.location_updated_at) : undefined,
       herdSize: row.herd_size ?? undefined,
       enrollmentSource: row.enrollment_source ?? undefined,
       status: row.status ?? undefined,

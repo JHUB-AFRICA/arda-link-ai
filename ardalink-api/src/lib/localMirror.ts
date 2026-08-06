@@ -24,11 +24,13 @@ import {
   weatherDataTable,
   weatherForecastTable,
   whatsappMessagesTable,
+  pastoralistLocationHistoryTable,
   type InsertPastoralistLead,
   type InsertLeadInteraction,
   type InsertWeatherData,
   type InsertWeatherForecast,
   type InsertWhatsappMessage,
+  type InsertPastoralistLocationHistory,
 } from "@workspace/db";
 import { logger } from "./logger.js";
 
@@ -63,6 +65,12 @@ export async function mirrorPastoralistLead(
         patch.preferredLanguage = row.preferredLanguage;
       if (row.wardId !== undefined) patch.wardId = row.wardId;
       if (row.location !== undefined) patch.location = row.location;
+      if (row.lat !== undefined) patch.lat = row.lat;
+      if (row.lon !== undefined) patch.lon = row.lon;
+      if (row.locationSource !== undefined)
+        patch.locationSource = row.locationSource;
+      if (row.locationUpdatedAt !== undefined)
+        patch.locationUpdatedAt = row.locationUpdatedAt;
       if (row.herdSize !== undefined) patch.herdSize = row.herdSize;
       if (row.enrollmentSource !== undefined)
         patch.enrollmentSource = row.enrollmentSource;
@@ -82,6 +90,10 @@ export async function mirrorPastoralistLead(
         preferredLanguage: row.preferredLanguage ?? null,
         wardId: row.wardId ?? null,
         location: row.location ?? null,
+        lat: row.lat ?? null,
+        lon: row.lon ?? null,
+        locationSource: row.locationSource ?? null,
+        locationUpdatedAt: row.locationUpdatedAt ?? null,
         herdSize: row.herdSize ?? null,
         enrollmentSource: row.enrollmentSource ?? null,
         status: row.status ?? "lead",
@@ -95,6 +107,26 @@ export async function mirrorPastoralistLead(
     logger.warn(
       { err: String(err), phone: row.phoneNumber },
       "[LocalMirror] pastoralist_leads upsert failed",
+    );
+  }
+}
+
+// ── pastoralist_location_history ────────────────────────────────────────
+
+/**
+ * Mirror a location-history row into local Postgres. Plain INSERT —
+ * append-only, same as lead_interactions/whatsapp_messages; never
+ * updated or deleted.
+ */
+export async function mirrorPastoralistLocationHistory(
+  row: InsertPastoralistLocationHistory,
+): Promise<void> {
+  try {
+    await db.insert(pastoralistLocationHistoryTable).values(row);
+  } catch (err) {
+    logger.warn(
+      { err: String(err), phone: row.phoneNumber },
+      "[LocalMirror] pastoralist_location_history insert failed",
     );
   }
 }

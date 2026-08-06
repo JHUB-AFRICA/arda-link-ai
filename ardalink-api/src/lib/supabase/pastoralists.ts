@@ -17,6 +17,21 @@ export interface SbPastoralist {
   herd_size: number | null;
   ward_id: string | null;
   location_text: string | null;
+  /** Current-location pointer — see migration 0012's header for why
+   * these are plain columns rather than the (unused) `location`
+   * PostGIS column, and pastoralist_location_history for the full,
+   * permanent change log these are only a snapshot of. */
+  lat: number | null;
+  lon: number | null;
+  location_source:
+    | "ussd_registration"
+    | "whatsapp_registration"
+    | "sms_self"
+    | "whatsapp_explicit_statement"
+    | "ops_verification"
+    | "ops_manual_edit"
+    | null;
+  location_updated_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -103,7 +118,19 @@ export const listPastoralistsFull = async (
 export const updatePastoralistById = async (
   pastoralistId: string,
   fields: Partial<
-    Pick<SbPastoralist, "full_name" | "phone_number" | "preferred_language" | "herd_size" | "ward_id" | "location_text">
+    Pick<
+      SbPastoralist,
+      | "full_name"
+      | "phone_number"
+      | "preferred_language"
+      | "herd_size"
+      | "ward_id"
+      | "location_text"
+      | "lat"
+      | "lon"
+      | "location_source"
+      | "location_updated_at"
+    >
   >,
   mode: SupabaseMode = "batch",
 ): Promise<SbPastoralist | null> => {
