@@ -1203,6 +1203,42 @@ before any code was written.
   ward, real centroid coordinates, correct `enrollment_source`, matching
   history row.
 
+- **I3 `fix(location)`** — real, live incident caught via a pasted
+  transcript, right after I2 shipped: a herder registered via WhatsApp
+  (Oldonyiro), mentioned a nearby landmark ("police post"), and the
+  bot fell back to a ~192km ward-wide water-point estimate instead of
+  considering anything specific to that herder — because I1's
+  permanently-stored location was write-only. Nothing in the
+  advisory-generation path (`overlayNearestWaterPoint`,
+  `handleMalisho`) ever read it back; both only ever knew the generic
+  ward centroid, exactly as before I1 existed. Added
+  `overlayStoredLocation()` to the `herderContext` overlay chain — a
+  direct table read (`pastoralistByPhone`/new `leadByPhone`),
+  deliberately not via the `api_call_context`/`api_phone_identity`
+  Supabase views, since both predate the `lat`/`lon` columns and (a
+  pattern hit more than once this session) a view defined before a
+  column existed doesn't necessarily expose it. Updated the prompt's
+  `waterLine` to a third, honest tier distinct from both the
+  live-share case and the ward-wide case: a registered location is
+  personal to that herder but explicitly NOT live/real-time. Live
+  end-to-end with the exact herder from the incident: the bot now
+  cites a real Oldonyiro water point (~16.6km, correctly attributed to
+  "your registered address") instead of the ~192km ward-wide fallback.
+  Full suite green: 423 tests (up from 422).
+
+  **Known, minor imprecision found but not fixed**: the same herder's
+  `pastoralist_location_history` row for this WhatsApp re-registration
+  shows `previous_ward_id`/`previous_location_text` matching the NEW
+  ward rather than the true prior one (245 Ngare Mara, from an older
+  USSD registration) — `setCurrentLocation`'s "before" snapshot is
+  read after `handleRegistrationTurn`'s own `upsertPastoralistLead`
+  call has already written the new ward, so the "previous" fields
+  reflect state from moments earlier in the same turn, not genuinely
+  older state. The *current* pointer is always correct; only the
+  historical diff on a re-registration's very first history row is
+  imprecise. Left as-is given the effort to fix (reordering which
+  write captures the snapshot first) versus the low real-world impact.
+
 *Next*: Phase 3 (intelligent ward + landmark resolution) — not started.
 
 *Prior cycle (2026-07-07 baseline)*:
