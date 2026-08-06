@@ -52,9 +52,9 @@
 
 DO $$
 DECLARE
-  con RECORD;
+  rec RECORD;
 BEGIN
-  FOR con IN
+  FOR rec IN
     SELECT DISTINCT con.conname
     FROM pg_constraint con
     JOIN pg_class rel ON rel.oid = con.conrelid
@@ -63,7 +63,7 @@ BEGIN
       AND con.contype = 'c'
       AND att.attname = 'enrollment_source'
   LOOP
-    EXECUTE format('ALTER TABLE public.pastoralist_leads DROP CONSTRAINT %I', con.conname);
+    EXECUTE format('ALTER TABLE public.pastoralist_leads DROP CONSTRAINT %I', rec.conname);
   END LOOP;
 END $$;
 
@@ -78,9 +78,9 @@ ALTER TABLE public.pastoralist_leads
 
 DO $$
 DECLARE
-  con RECORD;
+  rec RECORD;
 BEGIN
-  FOR con IN
+  FOR rec IN
     SELECT DISTINCT con.conname
     FROM pg_constraint con
     JOIN pg_class rel ON rel.oid = con.conrelid
@@ -89,6 +89,6 @@ BEGIN
       AND con.contype = 'c'
       AND att.attname = 'keyword'
   LOOP
-    EXECUTE format('ALTER TABLE public.lead_interactions DROP CONSTRAINT %I', con.conname);
+    EXECUTE format('ALTER TABLE public.lead_interactions DROP CONSTRAINT %I', rec.conname);
   END LOOP;
 END $$;
