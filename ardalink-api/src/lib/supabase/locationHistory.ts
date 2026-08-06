@@ -19,7 +19,10 @@ import { mirrorPastoralistLocationHistory } from "../localMirror.js";
 import { sbInsert, sbGet, type SupabaseMode } from "./client.js";
 import { identityForPhone } from "./pastoralistLeads.js";
 import { upsertPastoralistLead } from "./pastoralistLeads.js";
-import { upsertPastoralist, pastoralistByPhone } from "./pastoralists.js";
+import {
+  updatePastoralistById,
+  pastoralistByPhone,
+} from "./pastoralists.js";
 
 export type LocationSource =
   | "ussd_registration"
@@ -165,8 +168,17 @@ export async function setCurrentLocation(
 
     if (identity?.tier === "verified") {
       const before = await pastoralistByPhone(input.phoneNumber);
-      await upsertPastoralist({
-        phone_number: input.phoneNumber,
+      // updatePastoralistById, NOT upsertPastoralist: the latter POSTs
+      // with Prefer: resolution=merge-duplicates but no on_conflict
+      // param, so PostgREST's default conflict target is the primary
+      // key (pastoralist_id) — a partial payload without one (and
+      // without full_name, which is NOT NULL) tries a fresh INSERT and
+      // fails with a 23502 not-null violation. Confirmed live
+      // (2026-08-06): this exact failure on a real ops-verify test.
+      // updatePastoralistById does a real PATCH against the exact row
+      // we already have identity.identity_id for — the correct
+      // semantics for "update just these columns on this one row".
+      await updatePastoralistById(identity.identity_id, {
         ward_id: input.wardId,
         location_text: input.locationText,
         lat: input.lat ?? null,
