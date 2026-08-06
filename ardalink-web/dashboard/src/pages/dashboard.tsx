@@ -2,13 +2,11 @@ import { useState } from "react";
 import {
   useGetStatus,
   useGetForecast,
-  useListPastoralists,
-  useDeletePastoralist,
   getGetStatusQueryKey,
-  getListPastoralistsQueryKey,
   getGetForecastQueryKey,
+  readToken,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { useCallToken } from "@/hooks/useCallToken";
 import { useSatelliteCheck } from "@/hooks/useSatelliteCheck";
@@ -20,7 +18,7 @@ import LeadsSection from "@/components/dashboard/LeadsSection";
 import CallbackLog from "@/components/dashboard/CallbackLog";
 import TimeSeriesPanel from "@/components/dashboard/TimeSeriesPanel";
 import { MapTab } from "@/components/dashboard/MapTab";
-import { PastoralistsTab } from "@/components/dashboard/PastoralistsTab";
+import { PastoralistsTab, type Pastoralist } from "@/components/dashboard/PastoralistsTab";
 import { AdminConsoleTab } from "@/components/dashboard/AdminConsoleTab";
 import { DemosTab } from "@/components/dashboard/DemosTab";
 import { SidebarLayout } from "@/components/dashboard/SidebarLayout";
@@ -57,31 +55,42 @@ export default function Dashboard({ session }: { session?: import("@/components/
     query: { retry: false, queryKey: getGetForecastQueryKey() },
   });
 
-  const { data: pastoralistsData, isLoading: loadingPastoralists } =
-    useListPastoralists({
-      query: { queryKey: getListPastoralistsQueryKey() },
-    });
+  const { data: pastoralistsData, isLoading: loadingPastoralists } = useQuery({
+    queryKey: ["pastoralists"],
+    queryFn: async () => {
+      const tok = readToken();
+      const r = await fetch("/api/pastoralists", {
+        headers: tok ? { Authorization: `Bearer ${tok}` } : undefined,
+      });
+      if (!r.ok) throw new Error(`list pastoralists failed: ${r.status}`);
+      return r.json() as Promise<Pastoralist[]>;
+    },
+  });
 
-  const deletePastoralist = useDeletePastoralist();
+  const deletePastoralist = useMutation({
+    mutationFn: async (id: string) => {
+      const tok = readToken();
+      const r = await fetch(`/api/pastoralists/${id}`, {
+        method: "DELETE",
+        headers: tok ? { Authorization: `Bearer ${tok}` } : undefined,
+      });
+      if (!r.ok) throw new Error(`delete pastoralist failed: ${r.status}`);
+      return r.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Pastoralist removed" });
+      queryClient.invalidateQueries({ queryKey: ["pastoralists"] });
+    },
+    onError: () => {
+      toast({
+        title: "Failed to remove pastoralist",
+        variant: "destructive",
+      });
+    },
+  });
 
-  const handleDeletePastoralist = (id: number) => {
-    deletePastoralist.mutate(
-      { id },
-      {
-        onSuccess: () => {
-          toast({ title: "Pastoralist removed" });
-          queryClient.invalidateQueries({
-            queryKey: getListPastoralistsQueryKey(),
-          });
-        },
-        onError: () => {
-          toast({
-            title: "Failed to remove pastoralist",
-            variant: "destructive",
-          });
-        },
-      },
-    );
+  const handleDeletePastoralist = (id: string) => {
+    deletePastoralist.mutate(id);
   };
 
   const d = statusData?.last_run as any;

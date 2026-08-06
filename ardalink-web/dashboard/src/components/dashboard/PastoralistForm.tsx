@@ -2,11 +2,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Plus, Loader2 } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
-import {
-  useCreatePastoralist,
-  getListPastoralistsQueryKey,
-} from "@workspace/api-client-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { readToken } from "@workspace/api-client-react";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,29 +15,28 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 
 const pastoralistSchema = z.object({
   name: z.string().min(1, "Required"),
   phone: z.string().min(1, "Required"),
   location: z.string().optional(),
-  cattle: z.coerce.number().optional(),
-  goats: z.coerce.number().optional(),
-  camels: z.coerce.number().optional(),
-  waterSource: z.string().optional(),
-  alertsEnabled: z.boolean().default(true),
+  herdSize: z.coerce.number().min(0).optional(),
 });
 
 type PastoralistFormData = z.infer<typeof pastoralistSchema>;
 
-/** Pastoralist registration form with validation and CRUD operations */
+/**
+ * Pastoralist registration form.
+ *
+ * **Rewritten 2026-08-06**: this used to submit `cattle`/`goats`/`camels`/
+ * `waterSource`/`alertsEnabled` — the local mirror's shape. The real
+ * Supabase `pastoralists` table has one `herd_size` total and no
+ * `waterSource`/`alertsEnabled` columns at all, so those fields were
+ * silently discarded server-side even before this fix (the POST route
+ * only ever wrote what the real table supports). Now a plain fetch POST,
+ * matching the pattern already used by LeadsSection.tsx and the other
+ * ops-panel action endpoints.
+ */
 export function PastoralistForm() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -51,42 +47,44 @@ export function PastoralistForm() {
       name: "",
       phone: "",
       location: "",
-      cattle: 0,
-      goats: 0,
-      camels: 0,
-      waterSource: "Borehole",
-      alertsEnabled: true,
+      herdSize: 0,
     },
   });
 
-  const createPastoralist = useCreatePastoralist();
+  const createPastoralist = useMutation({
+    mutationFn: async (data: PastoralistFormData) => {
+      const tok = readToken();
+      const r = await fetch("/api/pastoralists", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(tok ? { Authorization: `Bearer ${tok}` } : {}),
+        },
+        body: JSON.stringify({
+          name: data.name,
+          phone: data.phone,
+          location: data.location,
+          herdSize: data.herdSize,
+        }),
+      });
+      if (!r.ok) throw new Error(`create pastoralist failed: ${r.status}`);
+      return r.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Pastoralist registered successfully" });
+      form.reset();
+      queryClient.invalidateQueries({ queryKey: ["pastoralists"] });
+    },
+    onError: () => {
+      toast({
+        title: "Failed to register pastoralist",
+        variant: "destructive",
+      });
+    },
+  });
 
   const onSubmit = (data: PastoralistFormData) => {
-    createPastoralist.mutate(
-      {
-        name: data.name,
-        phone: data.phone,
-        location: data.location,
-        cattle: data.cattle ?? 0,
-        goats: data.goats ?? 0,
-        camels: data.camels ?? 0,
-      },
-      {
-        onSuccess: () => {
-          toast({ title: "Pastoralist registered successfully" });
-          form.reset();
-          queryClient.invalidateQueries({
-            queryKey: getListPastoralistsQueryKey(),
-          });
-        },
-        onError: () => {
-          toast({
-            title: "Failed to register pastoralist",
-            variant: "destructive",
-          });
-        },
-      },
-    );
+    createPastoralist.mutate(data);
   };
 
   return (
@@ -147,101 +145,19 @@ export function PastoralistForm() {
               </FormItem>
             )}
           />
-          <div className="grid grid-cols-3 gap-2">
-            <FormField
-              control={form.control}
-              name="cattle"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-xs text-gray-400">Cattle</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      {...field}
-                      className="bg-gray-950 border-gray-700 text-white h-8"
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="goats"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-xs text-gray-400">
-                    Goats/Sheep
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      {...field}
-                      className="bg-gray-950 border-gray-700 text-white h-8"
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="camels"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-xs text-gray-400">Camels</FormLabel>
-                  <FormControl>
-                    <Input
-                      type="number"
-                      {...field}
-                      className="bg-gray-950 border-gray-700 text-white h-8"
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-          </div>
           <FormField
             control={form.control}
-            name="waterSource"
+            name="herdSize"
             render={({ field }) => (
               <FormItem>
-                <FormLabel className="text-gray-300">
-                  Primary Water Source
-                </FormLabel>
-                <Select
-                  onValueChange={field.onChange}
-                  defaultValue={field.value}
-                >
-                  <FormControl>
-                    <SelectTrigger className="bg-gray-950 border-gray-700 text-white">
-                      <SelectValue placeholder="Select source" />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent className="bg-gray-900 border-gray-700 text-white">
-                    <SelectItem value="Borehole">Borehole</SelectItem>
-                    <SelectItem value="River">River</SelectItem>
-                    <SelectItem value="Dam">Dam / Pan</SelectItem>
-                    <SelectItem value="Berkad">Berkad</SelectItem>
-                    <SelectItem value="Other">Other</SelectItem>
-                  </SelectContent>
-                </Select>
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
-            name="alertsEnabled"
-            render={({ field }) => (
-              <FormItem className="flex items-center justify-between rounded-lg border border-gray-800 p-3 bg-gray-950/50">
-                <div className="space-y-0.5">
-                  <FormLabel className="text-gray-300 text-sm">
-                    SMS Alerts
-                  </FormLabel>
-                </div>
+                <FormLabel className="text-gray-300">Herd Size</FormLabel>
                 <FormControl>
-                  <Switch
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                    data-testid="switch-alerts"
+                  <Input
+                    type="number"
+                    min="0"
+                    {...field}
+                    className="bg-gray-950 border-gray-700 text-white"
+                    data-testid="input-herd-size"
                   />
                 </FormControl>
               </FormItem>

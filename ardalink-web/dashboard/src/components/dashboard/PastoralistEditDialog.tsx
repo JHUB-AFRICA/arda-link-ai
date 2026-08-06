@@ -1,14 +1,9 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  readToken,
-  getListPastoralistsQueryKey,
-  type Pastoralist,
-} from "@workspace/api-client-react";
+import { readToken } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -17,14 +12,21 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import type { Pastoralist } from "./PastoralistsTab";
 
 /**
  * Pastoralist edit — completes the create/delete-only surface that
  * existed before the operator data-management console. Uses a plain
- * fetch PATCH (not @workspace/api-client-react's generated hooks, which
- * only cover GET/POST/DELETE for this resource) — matches the pattern
- * already established for other ops-panel action endpoints
- * (LeadsSection.tsx's verify/decline).
+ * fetch PATCH, matching the pattern already established for other
+ * ops-panel action endpoints (LeadsSection.tsx's verify/decline).
+ *
+ * **Rewritten 2026-08-06** alongside the rest of the Pastoralists tab:
+ * the real Supabase `pastoralists` table has one `herd_size` total, no
+ * per-species breakdown, no `waterSource`, and no `alertsEnabled`
+ * column at all (that field only exists on the separate
+ * `pastoralist_leads` table) — the fields this dialog edited before
+ * were the *local mirror's* shape, not the real one, and editing them
+ * here had zero effect on what a herder actually experiences.
  */
 export function PastoralistEditDialog({
   pastoralist,
@@ -38,16 +40,14 @@ export function PastoralistEditDialog({
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [location, setLocation] = useState("");
-  const [waterSource, setWaterSource] = useState("");
-  const [alertsEnabled, setAlertsEnabled] = useState(true);
+  const [herdSize, setHerdSize] = useState("");
 
   useEffect(() => {
     if (pastoralist) {
       setName(pastoralist.name);
       setPhone(pastoralist.phone);
       setLocation(pastoralist.location ?? "");
-      setWaterSource(pastoralist.waterSource ?? "");
-      setAlertsEnabled(pastoralist.alertsEnabled);
+      setHerdSize(pastoralist.herdSize != null ? String(pastoralist.herdSize) : "");
     }
   }, [pastoralist]);
 
@@ -61,14 +61,19 @@ export function PastoralistEditDialog({
           "Content-Type": "application/json",
           ...(tok ? { Authorization: `Bearer ${tok}` } : {}),
         },
-        body: JSON.stringify({ name, phone, location, waterSource, alertsEnabled }),
+        body: JSON.stringify({
+          name,
+          phone,
+          location,
+          herdSize: herdSize === "" ? undefined : Number(herdSize),
+        }),
       });
       if (!r.ok) throw new Error(`update failed: ${r.status}`);
       return r.json();
     },
     onSuccess: () => {
       toast({ title: "Pastoralist updated" });
-      qc.invalidateQueries({ queryKey: getListPastoralistsQueryKey() });
+      qc.invalidateQueries({ queryKey: ["pastoralists"] });
       onClose();
     },
     onError: () => toast({ title: "Failed to update pastoralist", variant: "destructive" }),
@@ -89,14 +94,12 @@ export function PastoralistEditDialog({
             placeholder="Location"
           />
           <Input
-            value={waterSource}
-            onChange={(e) => setWaterSource(e.target.value)}
-            placeholder="Water source"
+            type="number"
+            min="0"
+            value={herdSize}
+            onChange={(e) => setHerdSize(e.target.value)}
+            placeholder="Herd size"
           />
-          <div className="flex items-center justify-between rounded-lg border border-border p-3">
-            <span className="text-sm">SMS alerts</span>
-            <Switch checked={alertsEnabled} onCheckedChange={setAlertsEnabled} />
-          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>

@@ -72,6 +72,85 @@ export const listAllPastoralists = async (
 };
 
 /**
+ * Every verified pastoralist, full row — for the operator console's
+ * Pastoralists tab. **Added 2026-08-06**: that tab previously read/wrote
+ * the local Postgres mirror's demo-seeded pastoralists table entirely —
+ * disconnected from this, the real one every herder-facing channel
+ * (voice/USSD/WhatsApp) actually reads. An operator verifying a lead
+ * wrote a real row here that then never appeared in that tab at all.
+ * Optionally scoped to one ward_id (non-admin operators see only their
+ * own tenant's herders).
+ */
+export const listPastoralistsFull = async (
+  wardId?: string,
+  mode: SupabaseMode = "batch",
+): Promise<SbPastoralist[] | null> => {
+  const filter = wardId ? `&ward_id=eq.${encodeURIComponent(wardId)}` : "";
+  return sbGet<SbPastoralist>(
+    `pastoralists?select=*&order=created_at.desc${filter}`,
+    { mode },
+  );
+};
+
+/**
+ * Partial update by pastoralist_id (the real UUID primary key — distinct
+ * from the local mirror's integer `id`, which is why the operator
+ * console's route layer now deals exclusively in this UUID for
+ * pastoralists, matching how every other Supabase-backed entity in the
+ * console already works). Returns the updated row, or null on failure /
+ * not-found.
+ */
+export const updatePastoralistById = async (
+  pastoralistId: string,
+  fields: Partial<
+    Pick<SbPastoralist, "full_name" | "phone_number" | "preferred_language" | "herd_size" | "ward_id" | "location_text">
+  >,
+  mode: SupabaseMode = "batch",
+): Promise<SbPastoralist | null> => {
+  try {
+    const res = await sbFetch(
+      `pastoralists?pastoralist_id=eq.${encodeURIComponent(pastoralistId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ ...fields, updated_at: new Date().toISOString() }),
+        headers: { Prefer: "return=representation" },
+        sbMode: mode,
+      },
+    );
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      logger.warn(
+        { status: res.status, body: body.slice(0, 300), pastoralistId },
+        "[Supabase] pastoralist update non-2xx",
+      );
+      return null;
+    }
+    const rows = (await res.json()) as SbPastoralist[];
+    return rows[0] ?? null;
+  } catch (err) {
+    logger.warn({ err, pastoralistId }, "[Supabase] pastoralist update crashed");
+    return null;
+  }
+};
+
+/** Delete by pastoralist_id. Returns the deleted row's id on success, null otherwise. */
+export const deletePastoralistById = async (
+  pastoralistId: string,
+  mode: SupabaseMode = "batch",
+): Promise<boolean> => {
+  try {
+    const res = await sbFetch(
+      `pastoralists?pastoralist_id=eq.${encodeURIComponent(pastoralistId)}`,
+      { method: "DELETE", headers: { Prefer: "return=minimal" }, sbMode: mode },
+    );
+    return res.ok;
+  } catch (err) {
+    logger.warn({ err, pastoralistId }, "[Supabase] pastoralist delete crashed");
+    return false;
+  }
+};
+
+/**
  * The full call-context view — Supabase joins pastoralist + ward +
  * latest satellite + latest weather in a single row for us. Returns
  * `null` if no pastoralist matches the phone.

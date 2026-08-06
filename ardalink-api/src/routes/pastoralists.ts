@@ -1,28 +1,41 @@
 import { Router, type IRouter, type Request } from "express";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
-import { db, pastoralistsTable } from "@workspace/db";
 import {
-  CreatePastoralistBody,
-  DeletePastoralistParams,
-} from "@workspace/api-zod";
-import { withTenantContext } from "../lib/tenancy-context.js";
+  isSupabaseConfigured,
+  listPastoralistsFull,
+  upsertPastoralist,
+  updatePastoralistById,
+  deletePastoralistById,
+  type SbPastoralist,
+} from "../lib/supabase/index.js";
+import { wardIdForTenant } from "../lib/wardMapping.js";
 import { recordAudit } from "../lib/adminAudit.js";
 
-// Not part of the generated @workspace/api-zod package (that's codegen'd
-// from an OpenAPI spec elsewhere) — a plain inline schema for this one
-// new endpoint is simpler than regenerating the whole package for it.
-// Every field optional (partial update), same value shapes as
-// CreatePastoralistBody.
+/**
+ * Real Supabase `pastoralists` schemas — hand-rolled, not part of the
+ * generated @workspace/api-zod package. That package's CreatePastoralistBody/
+ * DeletePastoralistParams model the *local Postgres mirror's* shape
+ * (integer `id`, separate cattle/goats/camels fields) — a different
+ * shape from the real Supabase table (UUID `pastoralist_id`, one
+ * `herd_size` total). Regenerating the whole codegen'd package for this
+ * one route wasn't worth it; a plain inline schema matching reality is
+ * simpler, matching the precedent already set by this file's own
+ * UpdatePastoralistBody before this rewrite.
+ */
+const CreatePastoralistBody = z.object({
+  name: z.string().min(1),
+  phone: z.string().min(1),
+  location: z.string().optional(),
+  herdSize: z.number().min(0).optional(),
+  preferredLanguage: z.string().optional(),
+});
+
 const UpdatePastoralistBody = z.object({
   name: z.string().min(1).optional(),
   phone: z.string().min(1).optional(),
   location: z.string().optional(),
-  cattle: z.number().optional(),
-  goats: z.number().optional(),
-  camels: z.number().optional(),
-  waterSource: z.string().optional(),
-  alertsEnabled: z.boolean().optional(),
+  herdSize: z.number().min(0).optional(),
+  preferredLanguage: z.string().optional(),
 });
 
 function requireTenant(req: Request): string {
@@ -33,23 +46,45 @@ function requireTenant(req: Request): string {
   return tenantId;
 }
 
+/** API response shape — camelCase, stable regardless of the Supabase
+ * column names underneath, so the frontend isn't coupled to snake_case. */
+function toApiShape(row: SbPastoralist) {
+  return {
+    id: row.pastoralist_id,
+    name: row.full_name,
+    phone: row.phone_number,
+    location: row.location_text,
+    herdSize: row.herd_size,
+    wardId: row.ward_id,
+    preferredLanguage: row.preferred_language,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 const router: IRouter = Router();
 
 /**
  * GET /api/pastoralists
- * List all registered pastoralists in the caller's tenant.
- * RLS is enforced via withTenantContext so only the caller's rows are visible.
+ *
+ * **Rewritten 2026-08-06**: this used to list the local Postgres
+ * mirror's demo-seeded pastoralists (up to 15 fake rows) — completely
+ * disconnected from the real Supabase `pastoralists` table every
+ * herder-facing channel (voice/USSD/WhatsApp) actually reads from. An
+ * operator verifying a lead via the Leads tab wrote a real row here
+ * that then never appeared in this list at all. Now reads real data,
+ * scoped to the caller's own ward unless they're the admin tenant.
  */
 router.get("/pastoralists", async (req, res): Promise<void> => {
   try {
     const tenantId = requireTenant(req);
-    const rows = await withTenantContext(tenantId, (tx) =>
-      tx
-        .select()
-        .from(pastoralistsTable)
-        .orderBy(pastoralistsTable.createdAt),
-    );
-    res.json(rows);
+    if (!isSupabaseConfigured()) {
+      res.json([]);
+      return;
+    }
+    const wardId = tenantId === "admin" ? undefined : wardIdForTenant(tenantId);
+    const rows = await listPastoralistsFull(wardId);
+    res.json((rows ?? []).map(toApiShape));
   } catch (err: unknown) {
     req.log.error({ err }, "Failed to list pastoralists");
     res.status(500).json({ error: "Failed to list pastoralists" });
@@ -58,9 +93,8 @@ router.get("/pastoralists", async (req, res): Promise<void> => {
 
 /**
  * POST /api/pastoralists
- * Register a new pastoralist herder. tenant_id is bound from the JWT
- * claim, never the request body, so a caller can never insert into a
- * different tenant's data.
+ * Register a new pastoralist herder directly into real Supabase.
+ * ward_id is bound from the JWT's tenant claim, never the request body.
  */
 router.post("/pastoralists", async (req, res): Promise<void> => {
   const parsed = CreatePastoralistBody.safeParse(req.body);
@@ -78,40 +112,42 @@ router.post("/pastoralists", async (req, res): Promise<void> => {
     return;
   }
 
-  const {
-    name,
-    phone,
-    location = "",
-    cattle = 0,
-    goats = 0,
-    camels = 0,
-    waterSource = "Unknown",
-    alertsEnabled = true,
-  } = parsed.data;
+  if (!isSupabaseConfigured()) {
+    res.status(503).json({ error: "supabase_not_configured" });
+    return;
+  }
+
+  const { name, phone, location, herdSize, preferredLanguage } = parsed.data;
+  const wardId = tenantId === "admin" ? undefined : wardIdForTenant(tenantId);
 
   try {
-    const [row] = await withTenantContext(tenantId, (tx) =>
-      tx
-        .insert(pastoralistsTable)
-        .values({
-          tenantId,
-          name,
-          phone,
-          location,
-          cattle,
-          goats,
-          camels,
-          waterSource,
-          alertsEnabled,
-        })
-        .returning(),
-    );
+    const row = await upsertPastoralist({
+      phone_number: phone,
+      full_name: name,
+      location_text: location,
+      herd_size: herdSize,
+      preferred_language: preferredLanguage,
+      ward_id: wardId,
+    });
+    if (!row) {
+      res.status(500).json({ error: "Failed to register pastoralist" });
+      return;
+    }
+
+    void recordAudit({
+      actorSub: req.tenant?.sub ?? "unknown",
+      tenantId,
+      resource: "pastoralist",
+      resourceId: row.pastoralist_id,
+      action: "create",
+      after: row,
+    });
 
     req.log.info(
-      { id: row!.id, name: row!.name, phone: row!.phone, tenantId },
+      { id: row.pastoralist_id, name: row.full_name, phone: row.phone_number, tenantId },
       "Pastoralist registered",
     );
-    res.status(201).json(row);
+    res.status(201).json(toApiShape(row));
   } catch (err: unknown) {
     req.log.error({ err }, "Failed to register pastoralist");
     res.status(500).json({ error: "Failed to register pastoralist" });
@@ -120,14 +156,12 @@ router.post("/pastoralists", async (req, res): Promise<void> => {
 
 /**
  * PATCH /api/pastoralists/:id
- * Partial update — part of the operator data-management console (the
- * pastoralist tab previously only had create+delete). Every field
- * optional; only provided fields are touched. Audited via recordAudit()
- * per migration 0008's header — every console edit anywhere must be.
+ * `:id` is the real Supabase pastoralist_id (UUID) — not the local
+ * mirror's integer id, which no longer applies to this route at all.
  */
 router.patch("/pastoralists/:id", async (req, res): Promise<void> => {
-  const id = Number(req.params.id);
-  if (!Number.isInteger(id) || id <= 0) {
+  const id = req.params.id;
+  if (!id) {
     res.status(400).json({ error: "Invalid id" });
     return;
   }
@@ -150,35 +184,36 @@ router.patch("/pastoralists/:id", async (req, res): Promise<void> => {
     return;
   }
 
+  if (!isSupabaseConfigured()) {
+    res.status(503).json({ error: "supabase_not_configured" });
+    return;
+  }
+
   try {
-    const [before] = await withTenantContext(tenantId, (tx) =>
-      tx.select().from(pastoralistsTable).where(eq(pastoralistsTable.id, id)),
-    );
-    if (!before) {
+    const { name, phone, location, herdSize, preferredLanguage } = parsed.data;
+    const after = await updatePastoralistById(id, {
+      full_name: name,
+      phone_number: phone,
+      location_text: location,
+      herd_size: herdSize,
+      preferred_language: preferredLanguage,
+    });
+    if (!after) {
       res.status(404).json({ error: "Pastoralist not found" });
       return;
     }
-
-    const [after] = await withTenantContext(tenantId, (tx) =>
-      tx
-        .update(pastoralistsTable)
-        .set(parsed.data)
-        .where(eq(pastoralistsTable.id, id))
-        .returning(),
-    );
 
     void recordAudit({
       actorSub: req.tenant?.sub ?? "unknown",
       tenantId,
       resource: "pastoralist",
-      resourceId: String(id),
+      resourceId: id,
       action: "update",
-      before,
       after,
     });
 
     req.log.info({ id, tenantId, fields: Object.keys(parsed.data) }, "Pastoralist updated");
-    res.json(after);
+    res.json(toApiShape(after));
   } catch (err: unknown) {
     req.log.error({ err }, "Failed to update pastoralist");
     res.status(500).json({ error: "Failed to update pastoralist" });
@@ -187,14 +222,11 @@ router.patch("/pastoralists/:id", async (req, res): Promise<void> => {
 
 /**
  * DELETE /api/pastoralists/:id
- * Remove a pastoralist from the registry. Scoped to the caller's tenant
- * via RLS — a caller cannot delete rows belonging to other tenants.
+ * `:id` is the real Supabase pastoralist_id (UUID).
  */
 router.delete("/pastoralists/:id", async (req, res): Promise<void> => {
-  const parsed = DeletePastoralistParams.safeParse({
-    id: Number(req.params.id),
-  });
-  if (!parsed.success) {
+  const id = req.params.id;
+  if (!id) {
     res.status(400).json({ error: "Invalid id" });
     return;
   }
@@ -208,23 +240,27 @@ router.delete("/pastoralists/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  try {
-    const deleted = await withTenantContext(tenantId, (tx) =>
-      tx
-        .delete(pastoralistsTable)
-        .where(eq(pastoralistsTable.id, parsed.data.id))
-        .returning(),
-    );
+  if (!isSupabaseConfigured()) {
+    res.status(503).json({ error: "supabase_not_configured" });
+    return;
+  }
 
-    if (deleted.length === 0) {
+  try {
+    const ok = await deletePastoralistById(id);
+    if (!ok) {
       res.status(404).json({ error: "Pastoralist not found" });
       return;
     }
 
-    req.log.info(
-      { id: parsed.data.id, tenantId },
-      "Pastoralist removed",
-    );
+    void recordAudit({
+      actorSub: req.tenant?.sub ?? "unknown",
+      tenantId,
+      resource: "pastoralist",
+      resourceId: id,
+      action: "delete",
+    });
+
+    req.log.info({ id, tenantId }, "Pastoralist removed");
     res.json({ status: "deleted" });
   } catch (err: unknown) {
     req.log.error({ err }, "Failed to delete pastoralist");

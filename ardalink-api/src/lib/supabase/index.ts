@@ -54,6 +54,9 @@ export {
   upsertPastoralist,
   markPastoralistOptedOut,
   listAllPastoralists,
+  listPastoralistsFull,
+  updatePastoralistById,
+  deletePastoralistById,
 } from "./pastoralists.js";
 
 export {
