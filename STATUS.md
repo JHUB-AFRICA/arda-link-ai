@@ -1109,6 +1109,102 @@ now half-done (the WhatsApp bridge no longer depends on the laptop;
   the exact incident. Full suite green: 417 tests (up from 413),
   rebuilt, redeployed.
 
+**I-series (permanent location, self-registration, landmark plan) — 2026-08-06:**
+
+User's explicit direction after H8: a herder's location must be
+**permanently stored**, changed only on an explicit new statement of
+where they are, with **full history kept, never deleted**; pastoralists
+should be able to **self-register over WhatsApp**, not just USSD; and
+the bot should be **intelligent about resolving any place a herder asks
+about** (ward or landmark), not just their permanent home ward. Full
+plan at `~/.claude/plans/precious-riding-umbrella.md` — investigated via
+3 parallel Explore agents (self-registration/lead lifecycle, append-only
+table conventions, landmark/ward-centroid coverage) + a Plan agent,
+before any code was written.
+
+- **I0 `fix(whatsapp)`** — confirmed live bug found during Phase 3
+  investigation: `handleMalisho()` always resolved
+  `centroidForTenant(DEFAULT_TENANT_ID)` — a fixed env var
+  (`"bula-pesa"`) — regardless of `ctx.wardId`, so every herder outside
+  Bula Pesa who tapped "Malisho" got Bula Pesa's water points as real
+  location pins. Fixed to resolve the herder's own ward first,
+  matching `overlayNearestWaterPoint`'s already-correct pattern.
+  Regression test proven genuine (fails against the reverted code,
+  passes against the fix).
+- **I1 `feat(location)`** — new `pastoralist_location_history` table
+  (append-only, one row per location CHANGE, phone-keyed so history
+  reads as one timeline across a lead's promotion to verified
+  pastoralist) plus `lat`/`lon`/`location_source`/`location_updated_at`
+  as the "current" pointer on `pastoralists`/`pastoralist_leads` —
+  deliberately plain columns, not the existing-but-unused `location`
+  PostGIS column, following the same precedent this repo already used
+  for `ground_truth_calls.reported_lat/reported_lon`. New
+  `src/lib/supabase/locationHistory.ts`: `recordLocationChange()`,
+  `listLocationHistory()`, `setCurrentLocation()` (the single entry
+  point for changing a herder's location). Wired into USSD's Jisajili
+  finalize and ops lead-verify. New ops read endpoint
+  (`GET /api/ops/pastoralists/:phone/location-history`).
+
+  Found and fixed two real bugs during live verification: (1)
+  `setCurrentLocation`'s verified-pastoralist branch used
+  `upsertPastoralist()`, which POSTs with `resolution=merge-duplicates`
+  but no `on_conflict` param — PostgREST's default conflict target is
+  the primary key, so a partial location-only payload (no
+  `pastoralist_id`, no `full_name`) tried a fresh INSERT and failed
+  `23502` (not-null violation), silently. Fixed by using
+  `updatePastoralistById()` instead — a real PATCH against the exact
+  row. (2) The Supabase catch-up script (`0013`) itself needed
+  applying before any of this worked live — confirmed via direct
+  probe, folded in alongside a separately-discovered gap:
+  `ground_truth_calls.reported_lat/reported_lon` (migration 0007, from
+  the F-series) was *also* never actually applied to Supabase despite
+  shipping weeks earlier.
+- **I2 `feat(whatsapp)`** — WhatsApp self-registration, mirroring
+  USSD's "Jisajili" (name → ward → language → save) across separate
+  stateless webhook turns via a new `whatsapp_registration_pending`
+  table (local-mirror only, same posture as `grazing_ring_pending`).
+  Triggered by a keyword (`JISAJILI`/`SAJILI`/`REGISTER`/`ANDIKISHA`)
+  rather than auto-starting on first contact — the safer of two entry
+  points considered, since auto-start would change the already-live
+  welcome-menu flow. `MENU_KEYWORDS`/`OPT_OUT_KEYWORDS` checked first,
+  so MSAADA/STOP always escape mid-registration. Hoisted the 5-ward
+  picker list out of `ussd.ts` into `wardMapping.ts`'s new
+  `WARD_PICKER_LIST` so both channels read the same digit↔ward
+  ordering.
+
+  Live end-to-end testing (via the real Evolution webhook) surfaced
+  two more Supabase-native CHECK constraints predating WhatsApp
+  entirely: `pastoralist_leads.enrollment_source` didn't allow
+  `'whatsapp_self'` (silently dropped the herder's name/language — a
+  second `upsertPastoralistLead` call from `setCurrentLocation` then
+  created the row fresh with defaults instead), and
+  `lead_interactions.keyword` didn't allow the new `registration_*`
+  audit tags (dropped that constraint outright — it's evidently a
+  free-form tag in practice, not a real enum, given how many values
+  are already in live use across every channel). Fixed via migration
+  `0015`, using a `DO` block to find and drop whatever each constraint
+  is actually named rather than guessing. First version of that script
+  had its own bug — the loop variable was named the same as the query's
+  table alias (`con`), a PL/pgSQL collision that failed with "record
+  con is not assigned yet" — renamed to `rec`, verified by running the
+  corrected file locally twice before asking for it live.
+
+  **Known limitation, not fixed**: rapid-fire messages within roughly a
+  second of each other can race across separate webhook turns (no
+  per-phone serialization on the read-modify-write registration state) —
+  confirmed as a pure test-timing artifact (curl calls fired faster
+  than a human types), not reproducible with realistic multi-second
+  gaps between turns. Left as a known edge case rather than adding
+  per-phone locking, since real herders type at human speed.
+
+  Full suite green: 422 tests (up from 418), including new regression
+  tests for the complete registration flow and the "MSAADA still
+  escapes mid-flow" requirement. All live-verified end to end: real
+  ward, real centroid coordinates, correct `enrollment_source`, matching
+  history row.
+
+*Next*: Phase 3 (intelligent ward + landmark resolution) — not started.
+
 *Prior cycle (2026-07-07 baseline)*:
 * Satellite API routes + scheduler.
 * Engine ↔ api tenant attestation (HMAC-SHA256 over `TENANT_ATTESTATION_SECRET`).
