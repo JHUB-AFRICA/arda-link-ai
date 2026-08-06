@@ -1088,6 +1088,26 @@ now half-done (the WhatsApp bridge no longer depends on the laptop;
   Azure, it should read as an honest status, not imply the herder's
   question was ignored. Full suite green (413 tests), rebuilt,
   redeployed.
+- **H8 `fix(whatsapp)`**, 2026-08-06 — user flagged the same transcript
+  again with a new message appended: a tester sent only "Uko on?" (are
+  you there?) 4.5 hours after a water-point discussion, and got the
+  exact same water-point fact block re-dumped verbatim — confirming
+  H6's own labeling fix worked (it correctly said "ward-centre
+  estimate" now, not the location-share lie) but exposing a distinct
+  bug: `recentWhatsappMessages` has no time cutoff by design, but the
+  prompt's `historyLine` told the model to "pick up naturally from
+  where the thread left off" regardless of how much real time had
+  passed — a model told that, given history dominated by one topic,
+  does exactly what it did here. Fixed by computing the gap since the
+  last message in `whatsappTurn.ts` and passing it into
+  `buildWhatsappSystemPrompt`: under 30 minutes, behavior is unchanged;
+  above it, the prompt now explicitly says this is the same thread
+  after a real gap, not to assume the old topic is still wanted, and to
+  respond to the new message on its own terms. New unit test
+  (`whatsappConversation.test.ts`) for the wording branch and an
+  integration-level regression test (`whatsapp.test.ts`) reproducing
+  the exact incident. Full suite green: 417 tests (up from 413),
+  rebuilt, redeployed.
 
 *Prior cycle (2026-07-07 baseline)*:
 * Satellite API routes + scheduler.
