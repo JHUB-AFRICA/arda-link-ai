@@ -48,3 +48,31 @@ describe("buildWhatsappSystemPrompt — water-point attribution", () => {
     expect(prompt).not.toContain("Nearest known water point");
   });
 });
+
+describe("buildWhatsappSystemPrompt — stale-thread time awareness", () => {
+  const ctx = baseContext("+254799954672", "bula-pesa");
+
+  it("treats a quick back-and-forth as a continuing conversation", () => {
+    const prompt = buildWhatsappSystemPrompt(ctx, "sw", true, null, 3);
+    expect(prompt).toContain("This is a CONTINUING conversation");
+  });
+
+  it(
+    "warns the model not to reflexively continue a stale topic after a real gap " +
+      "(regression: 2026-08-06 real incident — a tester sent only 'Uko on?' 4.5 hours " +
+      "after a water-point discussion and got the exact same fact re-dumped verbatim)",
+    () => {
+      const prompt = buildWhatsappSystemPrompt(ctx, "sw", true, null, 270); // 4.5 hours
+      expect(prompt).toContain("SAME herder and thread");
+      expect(prompt).toContain("4.5 hours");
+      expect(prompt).toContain("Do NOT assume they want to continue the earlier topic");
+      expect(prompt).not.toContain("This is a CONTINUING conversation");
+    },
+  );
+
+  it("falls back to the first-message greeting when there's no history at all, regardless of gapMinutes", () => {
+    const prompt = buildWhatsappSystemPrompt(ctx, "sw", false, null, 500);
+    expect(prompt).toContain("greet them warmly");
+    expect(prompt).not.toContain("SAME herder and thread");
+  });
+});

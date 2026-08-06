@@ -469,7 +469,23 @@ async function handleFreeText(
       !!m.body_text,
   );
   const hasHistory = conversational.length > 0;
-  const systemPrompt = buildWhatsappSystemPrompt(ctx, lang, hasHistory, freshWaterPoint);
+  // How long since the herder's (or the bot's) last message in this
+  // thread — see buildWhatsappSystemPrompt's historyLine for why this
+  // matters: without it, a conversation that went cold for hours reads
+  // to the LLM exactly like one still mid-exchange, and it reflexively
+  // continues the old topic instead of responding to what's actually
+  // being asked now.
+  const lastMessageAt = conversational.at(-1)?.occurred_at;
+  const gapMinutes = lastMessageAt
+    ? (Date.now() - new Date(lastMessageAt).getTime()) / 60_000
+    : null;
+  const systemPrompt = buildWhatsappSystemPrompt(
+    ctx,
+    lang,
+    hasHistory,
+    freshWaterPoint,
+    gapMinutes,
+  );
 
   const historyMessages: LlmMessage[] = conversational.map((m) => ({
     role: m.direction === "in" ? "user" : "assistant",

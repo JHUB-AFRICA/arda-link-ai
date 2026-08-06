@@ -209,11 +209,13 @@ vi.mock("../src/lib/whatsappConversation.js", () => ({
     _lang: string,
     hasHistory: boolean,
     freshWaterPoint?: { name: string; distanceKm: number; status: string } | null,
+    gapMinutes?: number | null,
   ) =>
     `system prompt hasHistory=${hasHistory}` +
     (freshWaterPoint
       ? ` freshWaterPoint=${freshWaterPoint.name}@${freshWaterPoint.distanceKm.toFixed(1)}km(${freshWaterPoint.status}) computed just now by the system`
-      : ""),
+      : "") +
+    (gapMinutes != null ? ` gapMinutes=${gapMinutes.toFixed(1)}` : ""),
 }));
 
 let app: Express;
@@ -528,12 +530,44 @@ describe("POST /api/whatsapp-webhook", () => {
       .send(webhookBody({ type: "text", text: { body: "Ng'ombe" } }));
     expect(res.status).toBe(200);
     await new Promise((r) => setTimeout(r, 0));
-    expect(fx.lastCompleteMessages).toEqual([
-      { role: "system", content: "system prompt hasHistory=true" },
+    // The system message's exact content isn't asserted here beyond the
+    // "hasHistory=true" prefix — the fixture's history is dated
+    // 2026-07-27, so gapMinutes (computed from the real clock at test
+    // time) is large and non-deterministic across when this suite runs.
+    // That's exercised precisely by the dedicated "stale thread" test
+    // below instead.
+    expect(fx.lastCompleteMessages[0]?.role).toBe("system");
+    expect(fx.lastCompleteMessages[0]?.content).toMatch(/^system prompt hasHistory=true/);
+    expect(fx.lastCompleteMessages.slice(1)).toEqual([
       { role: "user", content: "Isiolo" },
       { role: "assistant", content: "Sawa, una mifugo gani?" },
       { role: "user", content: "Ng'ombe" },
     ]);
+  });
+
+  it("tells the prompt builder how long it's been since the herder's last message, not just that history exists", async () => {
+    // Regression test for a real incident (2026-08-06): a tester sent
+    // only "Uko on?" (are you there?) 4.5 hours after a conversation
+    // about a water point, and got the exact same water-point fact
+    // re-dumped verbatim — the LLM had no signal that real time had
+    // passed, so it "picked up naturally" from stale history exactly as
+    // instructed. gapMinutes must be computed and passed through so the
+    // prompt builder can tell the model to respond fresh instead.
+    const fourAndHalfHoursAgo = new Date(Date.now() - 4.5 * 60 * 60 * 1000).toISOString();
+    fx.history = [
+      { direction: "in", message_type: "text", body_text: "na zingine uko nazo ni gani", occurred_at: fourAndHalfHoursAgo },
+      { direction: "out", message_type: "text", body_text: "Nilikagua data yako...", occurred_at: fourAndHalfHoursAgo },
+    ];
+    const res = await request(app)
+      .post("/api/whatsapp-webhook")
+      .send(webhookBody({ type: "text", text: { body: "Uko on?" } }));
+    expect(res.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 0));
+    const systemMessage = fx.lastCompleteMessages.find((m) => m.role === "system");
+    const match = systemMessage?.content.match(/gapMinutes=([\d.]+)/);
+    expect(match).not.toBeNull();
+    const gapMinutes = Number(match?.[1]);
+    expect(gapMinutes).toBeGreaterThan(29); // past the 30-minute "stale thread" threshold
   });
 
   it("tells the prompt builder there is no history on a genuinely first free-text turn", async () => {

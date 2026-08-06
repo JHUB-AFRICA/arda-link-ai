@@ -131,6 +131,7 @@ export function buildWhatsappSystemPrompt(
   lang: "sw" | "en",
   hasHistory: boolean,
   freshWaterPoint?: FreshWaterPoint | null,
+  gapMinutes?: number | null,
 ): string {
   const wardLine = ctx.wardName
     ? `Ward: ${ctx.wardName}${ctx.wardMonth ? ` (${ctx.wardMonth})` : ""}`
@@ -161,9 +162,23 @@ export function buildWhatsappSystemPrompt(
       ? "Reply in Swahili, mixing in English words the way Isiolo herders naturally do. If the herder switches to English, follow them."
       : "Reply in English, mixing in Swahili words the way Isiolo herders naturally do. If the herder switches to Swahili, follow them.";
 
-  const historyLine = hasHistory
-    ? "This is a CONTINUING conversation — the actual message history is provided above as prior turns. Do not re-introduce yourself or re-greet; pick up naturally from where the thread left off, and never ask something already answered in that history."
-    : "This is the herder's first message in this thread — greet them warmly and briefly as ArdaLink before responding to what they said.";
+  // A herder returning after hours of silence is NOT the same situation
+  // as one replying within a minute or two — real incident (2026-08-06):
+  // a tester sent only "Uko on?" (are you there?) 4.5 hours after a
+  // conversation about a water point, and got the exact same water-point
+  // fact block re-dumped verbatim, because "pick up naturally from where
+  // the thread left off" (below) is exactly what a model does when the
+  // recent history it's given is dominated by one topic — it has no
+  // sense that hours, not seconds, passed. `recentWhatsappMessages`
+  // itself has no time cutoff (by design — it's used for real
+  // continuity), so the time-awareness has to live here in the prompt.
+  const STALE_THREAD_MINUTES = 30;
+  const historyLine =
+    !hasHistory
+      ? "This is the herder's first message in this thread — greet them warmly and briefly as ArdaLink before responding to what they said."
+      : gapMinutes != null && gapMinutes > STALE_THREAD_MINUTES
+        ? `This is the SAME herder and thread, but their last message was about ${gapMinutes >= 120 ? `${(gapMinutes / 60).toFixed(1)} hours` : `${Math.round(gapMinutes)} minutes`} ago — a real gap, not a quick back-and-forth. Do NOT assume they want to continue the earlier topic or re-state facts from it unprompted; respond to what THIS new message actually says. A short, warm re-acknowledgement is fine (e.g. confirming you're there), but only bring back earlier facts (like a water point) if their new message is actually asking about that again.`
+        : "This is a CONTINUING conversation — the actual message history is provided above as prior turns. Do not re-introduce yourself or re-greet; pick up naturally from where the thread left off, and never ask something already answered in that history.";
 
   return `You are ArdaLink, a respected veteran range management expert helping a pastoralist in Isiolo, Kenya over WhatsApp text chat.
 
