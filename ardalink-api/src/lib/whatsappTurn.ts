@@ -20,6 +20,7 @@ import {
   type HerderContext,
 } from "./herderContext/index.js";
 import { centroidForTenant, nearestWorkingKnownPoints } from "./wpdx.js";
+import { tenantForWardId } from "./wardMapping.js";
 import { languageForCaller } from "./voiceCopy.js";
 import {
   sendWhatsappSessionMessage,
@@ -184,8 +185,19 @@ async function handleMalisho(
   // Bypass herderContext's overlayNearestWaterPoint (which drops
   // lat/lon) — call wpdx.ts directly so we can send real map pins
   // instead of USSD-style text lines.
+  //
+  // Real, confirmed-live bug (2026-08-06): this used to always resolve
+  // `centroidForTenant(DEFAULT_TENANT_ID)` — DEFAULT_TENANT_ID is a
+  // fixed env var ("bula-pesa") — so every herder in Wabera, Ngare
+  // Mara, Burat, or Oldonyiro who tapped "Malisho" got BULA PESA's
+  // water points sent as real location pins, regardless of their own
+  // registered ward. Fixed to use the herder's own ward first, same
+  // pattern overlayNearestWaterPoint (herderContext/overlays/waterPoint.ts)
+  // already used correctly two files away.
   const origin =
-    centroidForTenant(DEFAULT_TENANT_ID) ?? { lat: 0.3453, lon: 37.581 };
+    centroidForTenant(tenantForWardId(ctx.wardId)) ??
+    centroidForTenant(DEFAULT_TENANT_ID) ??
+    { lat: 0.3453, lon: 37.581 };
   const points = nearestWorkingKnownPoints(origin, 3);
   if (points.length === 0) {
     const text =

@@ -54,6 +54,7 @@ interface Fx {
   lastCompleteMessages: Array<{ role: string; content: string }>;
   pendingLocation: { lat: number; lon: number } | null;
   grazingAdvisory: Record<string, unknown> | null;
+  centroidForTenantCalls: string[];
 }
 
 const fx: Fx = {
@@ -91,6 +92,7 @@ const fx: Fx = {
   lastCompleteMessages: [],
   pendingLocation: null,
   grazingAdvisory: null,
+  centroidForTenantCalls: [],
 };
 
 vi.mock("../src/lib/herderContext/index.js", () => ({
@@ -102,8 +104,19 @@ vi.mock("../src/lib/voiceCopy.js", () => ({
   languageForCaller: () => fx.lang,
 }));
 
+// Tenant-aware (not a fixed single return) so tests can prove the caller
+// resolved the HERDER'S OWN ward, not a hardcoded default — see the
+// handleMalisho regression test below for exactly the incident this
+// distinction matters for.
+const TEST_CENTROIDS: Record<string, { lat: number; lon: number }> = {
+  "bula-pesa": { lat: 0.3453, lon: 37.581 },
+  "ngare-mara": { lat: 0.6614, lon: 37.904 },
+};
 vi.mock("../src/lib/wpdx.js", () => ({
-  centroidForTenant: () => ({ lat: 0.3453, lon: 37.581 }),
+  centroidForTenant: (tenantSlug: string) => {
+    fx.centroidForTenantCalls.push(tenantSlug);
+    return TEST_CENTROIDS[tenantSlug] ?? null;
+  },
   nearestWorkingKnownPoints: () => fx.waterPoints,
 }));
 
@@ -244,6 +257,7 @@ beforeEach(async () => {
   fx.lastCompleteMessages = [];
   fx.pendingLocation = null;
   fx.grazingAdvisory = null;
+  fx.centroidForTenantCalls = [];
 
   const { default: whatsappRouter } = await import("../src/routes/whatsapp.js");
   app = express();
@@ -313,6 +327,25 @@ describe("POST /api/whatsapp-webhook", () => {
       lon: 37.58,
       name: "Bula Pesa Dam",
     });
+  });
+
+  it("resolves Malisho's water points from the HERDER'S OWN ward, not a hardcoded default", async () => {
+    // Regression test for a real, confirmed-live bug (2026-08-06):
+    // handleMalisho always resolved centroidForTenant(DEFAULT_TENANT_ID)
+    // ("bula-pesa", a fixed env var) regardless of ctx.wardId — every
+    // herder in Wabera, Ngare Mara, Burat, or Oldonyiro who tapped
+    // "Malisho" got Bula Pesa's water points sent as real location pins.
+    fx.ctx.wardId = "245"; // Ngare Mara
+    const res = await request(app).post("/api/whatsapp-webhook").send(
+      webhookBody({
+        type: "interactive",
+        interactive: { list_reply: { id: "malisho", title: "Malisho" } },
+      }),
+    );
+    expect(res.status).toBe(200);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(fx.centroidForTenantCalls).toContain("ngare-mara");
+    expect(fx.centroidForTenantCalls).not.toContain("bula-pesa");
   });
 
   it("processes a free-text turn through the LLM and extractor", async () => {
