@@ -1022,6 +1022,31 @@ now half-done (the WhatsApp bridge no longer depends on the laptop;
   Added a "current conditions" strip above the existing NDVI/forecast
   charts. Verified live: all 5 wards return distinct, same-day
   (2026-08-06) observations from `open-meteo`.
+- **H6 `fix(whatsapp)`**, 2026-08-06 — real, live incident caught via a
+  pasted transcript: a tester asked "how many water sources are in my
+  area", then "na zingine uko nazo ni gani" (what others do you have).
+  The bot answered with a real name/distance/status (`Ngare Mara piped
+  water GW2`, `~25.7km`, `broken`) — not invented — but framed it as
+  `"kutoka pale ulipokuwa ume-share hapo awali"` ("from where you
+  shared earlier"), which was false: traced the tester's phone through
+  `whatsapp_messages` and `grazing_ring_pending` directly and confirmed
+  their last location share was 16+ hours old, far past
+  `handleFreeText`'s 15-minute freshness window — so `freshWaterPoint`
+  was `null` and the number actually came from
+  `ctx.nearestWaterPointName`, the **ward-centroid-based fallback**,
+  completely untied to any location share. Root cause: the fallback's
+  prompt line never stated its own origin, and the grounding rule
+  governing it ("refreshed from their most recent shared location
+  every turn") only described the fresh-location case — priming the
+  model to misapply that description to the fallback too. Fixed by
+  making both prompt branches self-describing (the fresh path states
+  it's from a live share; the fallback explicitly states it's a fixed
+  ward-level estimate and forbids attributing it to anything shared)
+  and rewriting the grounding rule to require reading the water-point
+  line's own wording each turn rather than assuming from an earlier
+  turn. New unit test (`tests/whatsappConversation.test.ts`) reproduces
+  the exact incident. Full suite re-verified: 413 tests green (up from
+  410), rebuilt, redeployed.
 
 *Prior cycle (2026-07-07 baseline)*:
 * Satellite API routes + scheduler.
