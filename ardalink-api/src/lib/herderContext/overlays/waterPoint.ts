@@ -19,9 +19,18 @@ import type { HerderContext } from "../types.js";
 export async function overlayNearestWaterPoint(
   ctx: HerderContext,
 ): Promise<HerderContext> {
+  // Prefer the herder's own permanently-stored location (registration or
+  // an explicit relocation — see overlayStoredLocation) over the generic
+  // ward centroid: real incident (2026-08-06) — a registered herder
+  // mentioned a landmark near them and the bot fell back to a ward-wide
+  // estimate ~192km away instead of considering anything specific to
+  // that herder, because nothing here ever consulted their own stored
+  // coordinates at all.
   const origin =
-    centroidForTenant(tenantForWardId(ctx.wardId)) ??
-    centroidForTenant("bula-pesa");
+    ctx.lastKnownLat != null && ctx.lastKnownLon != null
+      ? { lat: ctx.lastKnownLat, lon: ctx.lastKnownLon }
+      : (centroidForTenant(tenantForWardId(ctx.wardId)) ??
+        centroidForTenant("bula-pesa"));
   if (!origin) return ctx;
   const rawOverrides = (await recentWaterPointGroundTruth(90)) ?? [];
   // Operator-review layer (migration 0009): if an operator has corrected

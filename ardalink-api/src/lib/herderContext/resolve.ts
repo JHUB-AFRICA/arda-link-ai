@@ -30,6 +30,7 @@ import {
   mergeSupabasePastoralist,
   mergeLeadIdentity,
   overlayWardReference,
+  overlayStoredLocation,
 } from "./overlays/supabasePrimary.js";
 import {
   overlayHistoricalAnomaly,
@@ -79,6 +80,7 @@ export async function resolveHerderContext(
       ctx = await overlayWardReference(ctx);
       ctx = await overlayHistoricalAnomaly(ctx);
       ctx = await overlayNeighborAdvice(ctx);
+      ctx = await overlayStoredLocation(ctx);
       ctx = await overlayNearestWaterPoint(ctx);
       ctx = await overlayPeerSignal(ctx);
       ctx = await overlayCellStress(ctx);

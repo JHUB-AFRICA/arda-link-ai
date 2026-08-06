@@ -9,6 +9,8 @@ import {
   isSupabaseConfigured,
   latestSatelliteFor,
   latestWeatherFor,
+  pastoralistByPhone,
+  leadByPhone,
   type SbCallContext,
   type SbPastoralist,
   type SbPhoneIdentity,
@@ -93,6 +95,45 @@ export function mergeLeadIdentity(
     wardName: id.location_text ?? base.wardName,
     location: id.location_text ?? base.location,
   };
+}
+
+/**
+ * Overlay the herder's own permanently-stored location (migration
+ * 0011/0012, 2026-08-06) onto ctx. A direct table read, deliberately NOT
+ * via api_call_context or api_phone_identity — both are Supabase-side
+ * views that predate the lat/lon columns and may not expose them at all
+ * (confirmed elsewhere this session: views/constraints defined before a
+ * column existed routinely don't pick it up without being redefined,
+ * which nothing in this repo's migration history can do for a
+ * Supabase-native view). One extra round-trip, matching every other
+ * overlay in this chain.
+ */
+export async function overlayStoredLocation(
+  ctx: HerderContext,
+): Promise<HerderContext> {
+  if (!isSupabaseConfigured() || !ctx.canonicalPhone) return ctx;
+  if (ctx.tier === "verified") {
+    const p = await pastoralistByPhone(ctx.canonicalPhone);
+    if (p?.lat != null && p?.lon != null) {
+      return {
+        ...ctx,
+        lastKnownLat: p.lat,
+        lastKnownLon: p.lon,
+        lastKnownLocationSource: p.location_source,
+      };
+    }
+  } else if (ctx.tier === "lead") {
+    const lead = await leadByPhone(ctx.canonicalPhone);
+    if (lead?.lat != null && lead?.lon != null) {
+      return {
+        ...ctx,
+        lastKnownLat: lead.lat,
+        lastKnownLon: lead.lon,
+        lastKnownLocationSource: lead.location_source,
+      };
+    }
+  }
+  return ctx;
 }
 
 export async function overlayWardReference(

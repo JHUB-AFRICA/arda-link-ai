@@ -70,6 +70,18 @@ export interface HerderContext {
   nearestWaterPointDistanceKm: number | null;
   nearestWaterPointStatus: WpdxStatus | null;
 
+  // The herder's own permanently-stored location (migration 0011/0012,
+  // 2026-08-06) — set at registration (ward centroid, low confidence) or
+  // an explicit relocation, never a live GPS share. Distinct from
+  // nearestWaterPoint* above (computed FROM this) and from
+  // whatsappTurn.ts's freshWaterPoint (computed from an actual live
+  // share this turn) — overlayNearestWaterPoint prefers this over the
+  // generic ward centroid when set, since it's the herder's own
+  // location, not just "somewhere in their ward".
+  lastKnownLat: number | null;
+  lastKnownLon: number | null;
+  lastKnownLocationSource: string | null;
+
   // Peer signal — what other herders in this ward have reported in
   // the last 7 days. Populated by overlayPeerSignal below when the
   // ward has any activity. Powers the "N wachungaji karibu nawe

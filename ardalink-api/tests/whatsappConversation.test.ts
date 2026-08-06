@@ -42,6 +42,38 @@ describe("buildWhatsappSystemPrompt — water-point attribution", () => {
     },
   );
 
+  it(
+    "attributes a water point to the herder's own registered location " +
+      "(distinct from a ward-wide estimate, but honestly not a live position) " +
+      "when overlayStoredLocation found stored coordinates " +
+      "(regression: 2026-08-06 real incident — a herder mentioned a nearby landmark " +
+      "and the bot fell back to a ~192km ward-wide estimate instead of considering " +
+      "anything specific to that herder, because their own registered location was " +
+      "never consulted at all)",
+    () => {
+      const ctx: ReturnType<typeof baseContext> = {
+        ...baseContext("+254799954672", "bula-pesa"),
+        nearestWaterPointName: "Oldonyiro borehole 4",
+        nearestWaterPointDistanceKm: 3.2,
+        nearestWaterPointStatus: "working",
+        lastKnownLat: 0.6392,
+        lastKnownLon: 37.1345,
+        lastKnownLocationSource: "whatsapp_registration",
+      };
+      const prompt = buildWhatsappSystemPrompt(ctx, "sw", true, null);
+
+      expect(prompt).toContain("Oldonyiro borehole 4");
+      expect(prompt).toContain("3.2km");
+      expect(prompt).toContain("own REGISTERED location");
+      expect(prompt).toContain("whatsapp_registration");
+      expect(prompt).toContain("NOT a live/real-time position");
+      // Must not be confused with either the live-share wording or the
+      // "same for anyone in this ward" wording — it's personal, but not live.
+      expect(prompt).not.toContain("the location the herder most recently shared");
+      expect(prompt).not.toContain("the same fixed estimate for anyone in this ward");
+    },
+  );
+
   it("omits the water-point line entirely when nothing is known", () => {
     const ctx = baseContext("+254799954672", "bula-pesa");
     const prompt = buildWhatsappSystemPrompt(ctx, "en", false, null);

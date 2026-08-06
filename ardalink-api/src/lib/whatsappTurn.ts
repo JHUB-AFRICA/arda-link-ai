@@ -208,10 +208,15 @@ async function handleMalisho(
   // registered ward. Fixed to use the herder's own ward first, same
   // pattern overlayNearestWaterPoint (herderContext/overlays/waterPoint.ts)
   // already used correctly two files away.
+  // Prefer the herder's own permanently-stored location (registration or
+  // an explicit relocation) over the ward centroid — same reasoning as
+  // overlayNearestWaterPoint's identical preference.
   const origin =
-    centroidForTenant(tenantForWardId(ctx.wardId)) ??
-    centroidForTenant(DEFAULT_TENANT_ID) ??
-    { lat: 0.3453, lon: 37.581 };
+    ctx.lastKnownLat != null && ctx.lastKnownLon != null
+      ? { lat: ctx.lastKnownLat, lon: ctx.lastKnownLon }
+      : (centroidForTenant(tenantForWardId(ctx.wardId)) ??
+        centroidForTenant(DEFAULT_TENANT_ID) ??
+        { lat: 0.3453, lon: 37.581 });
   const points = nearestWorkingKnownPoints(origin, 3);
   if (points.length === 0) {
     const text =

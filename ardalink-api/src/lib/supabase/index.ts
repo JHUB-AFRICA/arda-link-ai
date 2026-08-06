@@ -77,6 +77,7 @@ export {
   type SbPastoralistLead,
   type SbPhoneIdentity,
   identityForPhone,
+  leadByPhone,
   upsertPastoralistLead,
   setLeadStatus,
   recentLeads,

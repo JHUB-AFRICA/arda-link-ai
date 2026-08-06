@@ -79,6 +79,26 @@ export interface SbPhoneIdentity {
 }
 
 /**
+ * Direct read of a lead's full row by phone — unlike identityForPhone
+ * (which goes through the api_phone_identity VIEW), this hits
+ * pastoralist_leads directly, so it always reflects whatever columns
+ * actually exist on the real table (e.g. lat/lon/location_source, added
+ * 2026-08-06 — a Supabase-side view predating those columns may not
+ * expose them at all, a real risk this repo has hit more than once this
+ * session for other views/constraints).
+ */
+export const leadByPhone = async (
+  phone: string,
+  mode: SupabaseMode = "interactive",
+): Promise<SbPastoralistLead | null> => {
+  const rows = await sbGet<SbPastoralistLead>(
+    `pastoralist_leads?phone_number=eq.${encodeURIComponent(phone)}&select=*&limit=1`,
+    { mode },
+  );
+  return rows?.[0] ?? null;
+};
+
+/**
  * Lookup any phone in the identity view. Interactive mode (2.5 s
  * timeout) so USSD/voice paths stay inside the AT budget. Returns
  * null for an unknown phone.

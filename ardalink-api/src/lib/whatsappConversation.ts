@@ -142,14 +142,24 @@ export function buildWhatsappSystemPrompt(
       ? `Drought signal: NDVI ${ctx.wardNdviPct != null ? `${ctx.wardNdviPct.toFixed(0)}% vs normal` : "unknown"}, severity ${ctx.wardDroughtSeverity ?? "unknown"}, VCI ${ctx.wardVci ?? "unknown"}.`
       : "";
 
-  // freshWaterPoint (computed THIS turn from the herder's latest shared
-  // location) always wins over the registered-ward default — it's the
-  // real incident this exists to fix: reusing a distance computed for an
-  // earlier location share as if it still applied to a new one.
+  // Three distinct tiers, most-precise first, each with its own honest
+  // label — never let the model conflate them (real incident,
+  // 2026-08-06, is exactly this: a ward-wide estimate got described as
+  // if it came from a location share):
+  //   1. freshWaterPoint — computed THIS turn from a live GPS share.
+  //   2. ctx.lastKnownLat/Lon set — the herder's own permanently-stored
+  //      location (registration or an explicit relocation), personal to
+  //      them but NOT live/real-time.
+  //   3. Plain ward centroid — the same fixed estimate for anyone in
+  //      that ward, personal to no one.
+  const usedStoredLocation =
+    !freshWaterPoint && ctx.lastKnownLat != null && ctx.lastKnownLon != null;
   const waterLine = freshWaterPoint
     ? `Nearest known water point to the location the herder most recently shared: ${freshWaterPoint.name}, ~${freshWaterPoint.distanceKm.toFixed(1)}km away, status ${freshWaterPoint.status}. This was computed just now by the system from their live location share — you may state this distance exactly as given, and you may say it reflects the location they shared.`
     : ctx.nearestWaterPointName
-      ? `Nearest known water point for the herder's REGISTERED WARD (a ward-level reference point — this is NOT computed from any location the herder has personally shared, live or otherwise, it is the same fixed estimate for anyone in this ward): ${ctx.nearestWaterPointName}${ctx.nearestWaterPointDistanceKm != null ? `, ~${ctx.nearestWaterPointDistanceKm.toFixed(1)}km from the ward's center` : ""}, status ${ctx.nearestWaterPointStatus ?? "unknown"}. You may state this name/distance/status exactly as given, but you must NOT claim it came from anything the herder shared — if asked how you know, say it's a general ward-level estimate, and that sharing their live location would get a precise, personal distance instead.`
+      ? usedStoredLocation
+        ? `Nearest known water point to the herder's own REGISTERED location (source: ${ctx.lastKnownLocationSource ?? "unknown"} — set when they registered or last told the system where they are; this is personal to THEM, not a generic ward estimate, but it is NOT a live/real-time position): ${ctx.nearestWaterPointName}, ~${ctx.nearestWaterPointDistanceKm?.toFixed(1) ?? "?"}km away, status ${ctx.nearestWaterPointStatus ?? "unknown"}. You may state this exactly as given and say it reflects where they're registered, but if they ask for something more precise or say they've moved, ask for a live location share (or update their registration) rather than assuming this is still exactly where they are.`
+        : `Nearest known water point for the herder's REGISTERED WARD (a ward-level reference point — this is NOT computed from any location the herder has personally shared, live or otherwise, it is the same fixed estimate for anyone in this ward): ${ctx.nearestWaterPointName}${ctx.nearestWaterPointDistanceKm != null ? `, ~${ctx.nearestWaterPointDistanceKm.toFixed(1)}km from the ward's center` : ""}, status ${ctx.nearestWaterPointStatus ?? "unknown"}. You may state this name/distance/status exactly as given, but you must NOT claim it came from anything the herder shared — if asked how you know, say it's a general ward-level estimate, and that sharing their live location would get a precise, personal distance instead.`
       : "";
 
   const peerLine =
