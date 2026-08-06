@@ -984,6 +984,31 @@ now half-done (the WhatsApp bridge no longer depends on the laptop;
   real hardening config) and the 3 dormant sudo-group memberships are
   both legacy cruft with no active exploit path — owner's call was to
   leave both as documented findings rather than clean them up now.
+- **H4 — `ardalink-engine` was silently down**, 2026-08-06 — checking
+  the operator console's already-built Water Sources tab (from E2/E3,
+  see above) end to end, `/api/ops/water-nodes` returned
+  `{"error":"engine_unreachable"}`. Root cause: `ardalink-engine`
+  (FastAPI/GEE, port 5001) had no systemd unit at all — it only ever
+  ran as a manually-launched `uv run uvicorn` process per the README,
+  and was simply not running (no way to tell for how long). Started it
+  and, matching `ardalink-api.service`'s existing precedent, gave it a
+  real `ardalink-engine.service` unit (`~/.config/systemd/user/`,
+  `Restart=always`) so it survives logout/reboot the same way. No
+  `EnvironmentFile=` needed — `main.py` already loads `.env.local`
+  itself via `python-dotenv` (through the same `~/.config/ardalink-engine/`
+  symlink from the 2026-08-05 secrets relocation), and python-dotenv
+  doesn't have the escaped-`\n` mangling bug that forced
+  `ardalink-api.service`'s `GOOGLE_SERVICE_ACCOUNT_JSON` workaround.
+  Verified live: Water Sources (205 nodes), Species Radii (15 rows),
+  and Ground Truth Audit all now return real data end-to-end.
+- **H5 `fix(dashboard)`**, 2026-08-06 — `/api/wards/timeseries` has
+  attached a per-ward latest `weather_data` observation
+  (rainfall/humidity/temperature/evapotranspiration) to every response
+  all along, but `TimeSeriesPanel`'s `WardTS` type never declared the
+  field and no UI rendered it — silently dropped on every request.
+  Added a "current conditions" strip above the existing NDVI/forecast
+  charts. Verified live: all 5 wards return distinct, same-day
+  (2026-08-06) observations from `open-meteo`.
 
 *Prior cycle (2026-07-07 baseline)*:
 * Satellite API routes + scheduler.
