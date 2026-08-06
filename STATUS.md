@@ -1047,6 +1047,47 @@ now half-done (the WhatsApp bridge no longer depends on the laptop;
   turn. New unit test (`tests/whatsappConversation.test.ts`) reproduces
   the exact incident. Full suite re-verified: 413 tests green (up from
   410), rebuilt, redeployed.
+- **H7 `fix(llm)`**, 2026-08-06 — user reported the pattern of claimed
+  fixes not actually holding; traced every real tester conversation
+  since H6's deploy and found a second, more serious instance of raw
+  mock content reaching a live tester (`[MOCK z/glm-4.5-flash] niko
+  Ngare Mara`, 07:10:28). Root cause: `MockClient` is constructed as
+  `new MockClient('z', 'glm-4.5-flash')` etc. specifically to
+  impersonate the real provider it's standing in for (see
+  `providers/mock.ts`) — so its response's `provider` field is NEVER
+  literally `"mock"`. `whatsappTurn.ts`'s guard checked
+  `provider === "mock"`, a condition that could never be true — the
+  "fix" from the F-series never actually worked, and its own
+  regression test passed only because the fixture asserted
+  `provider: "mock"` as a literal value that no real code path
+  produces. Fixed by adding a real `isMock` boolean to `LlmResponse`,
+  set only by `MockClient`, and switching the guard (plus the identical
+  unguarded gap in `/chat` and `/talk-chat`, `routes/chat.ts`) to check
+  that instead. Verified the new regression test is real, not a
+  tautology: confirmed it fails against the reverted old guard logic
+  and passes against the fix. Other `complete()` call sites (voice
+  script generation, intelligence brief) are incidentally safe — they
+  prompt for JSON as plain text without passing `jsonSchema`, so
+  MockClient's plain-text echo fails their JSON parse and falls through
+  to an existing template/fallback path.
+
+  **Deeper finding while investigating this**: the live config has
+  `LLM_PRIMARY_PROVIDER=azure` (overriding the code's per-task default
+  table, which wants z.ai primary) and neither `ZAI_API_KEY` nor
+  `MINIMAX_API_KEY` is set anywhere — so there is no real second LLM
+  behind Azure at all today. Confirmed via journal: 69 real Azure
+  calls vs. 3 silent mock fallbacks today (~4%), traced to a real
+  `TypeError: fetch failed` burst from Azure at 10:10:07. That 4% is
+  exactly what a tester experiences as "confused/misleading" — Azure
+  blips, and (until this fix) raw mock text filled the gap. Presented
+  this to the owner directly: **decision was to accept Azure-only for
+  now** rather than provision a `ZAI_API_KEY`/`MINIMAX_API_KEY`.
+  Improved the safe-default reply (both here and in `chat.ts`) from a
+  generic "thanks for your message" to an honest "brief system hiccup,
+  try again" — since this text is now the *only* thing standing behind
+  Azure, it should read as an honest status, not imply the herder's
+  question was ignored. Full suite green (413 tests), rebuilt,
+  redeployed.
 
 *Prior cycle (2026-07-07 baseline)*:
 * Satellite API routes + scheduler.
