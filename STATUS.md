@@ -1258,7 +1258,27 @@ before any code was written.
   Oldonyiro-area water points from "Malisho" (WhatsApp), not Bula
   Pesa's.
 
-*Next*: Phase 3 (intelligent ward + landmark resolution) — not started.
+- **I5 `feat(whatsapp)`** — Phase 3, the final phase: intelligent ward +
+  landmark resolution. New `src/lib/data/landmarks/index.ts` (a
+  per-ward registry over the existing curated Bula Pesa landmark data,
+  `bulaPesaLandmarks.ts` — confirmed no live Supabase equivalent
+  exists) and `resolveQueryWard()` in `whatsappTurn.ts`, reusing the
+  existing `wardIdFromLocationText()` alias-matcher to detect when a
+  herder asks about a ward other than their own, fetching that ward's
+  real NDVI/VCI/water-point/landmarks fresh and passing it into the
+  prompt as a clearly-labeled, never-conflated block. Full suite
+  green: 429 tests (up from 423). Live-verified with the exact herder
+  from the incident transcripts: asking about a different, named ward
+  now returns real fresh data for it, including real landmark names
+  from the Bula Pesa catalogue, correctly distinguished from the
+  herder's own ward throughout.
+
+  **This completes all phases of the location/registration/landmark
+  plan** (Phase 0-3, plus the I3/I4 follow-on fixes caught via live
+  testing along the way).
+
+*Next*: nothing queued — the location/registration/landmark plan is
+complete end to end.
 
 *Prior cycle (2026-07-07 baseline)*:
 * Satellite API routes + scheduler.
