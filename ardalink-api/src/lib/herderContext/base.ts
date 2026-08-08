@@ -61,6 +61,8 @@ export function baseContext(rawPhone: string, tenantId: string): HerderContext {
     nearestWaterPointName: null,
     nearestWaterPointDistanceKm: null,
     nearestWaterPointStatus: null,
+    nearestWorkingWaterPointName: null,
+    nearestWorkingWaterPointDistanceKm: null,
     lastKnownLat: null,
     lastKnownLon: null,
     lastKnownLocationSource: null,

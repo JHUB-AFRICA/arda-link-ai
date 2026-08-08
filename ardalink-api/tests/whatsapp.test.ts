@@ -286,6 +286,19 @@ beforeEach(async () => {
   fx.indicators = null;
   fx.llmProvider = "test-provider";
   fx.llmIsMock = false;
+  // Reset language + water-point fixtures too — a test that overrides
+  // either would otherwise leak into every test after it (this bit us
+  // for real when a broken-water-point test flipped later tests into
+  // English and inherited its single broken point).
+  fx.lang = "sw";
+  fx.waterPoints = [
+    {
+      point: { lat: 0.34, lon: 37.58 },
+      displayName: "Bula Pesa Dam",
+      status: "working",
+      distanceKm: 2,
+    },
+  ];
   fx.sentSessionMessages = [];
   fx.sentButtons = [];
   fx.sentLocations = [];
@@ -369,9 +382,49 @@ describe("POST /api/whatsapp-webhook", () => {
     expect(fx.sentLocations[0]).toMatchObject({
       lat: 0.34,
       lon: 37.58,
-      name: "Bula Pesa Dam",
     });
+    // Every pin carries its own status label — a pin is a strong "go
+    // here" signal and can be forwarded/re-read detached from any
+    // surrounding text, so the status must ride on the pin itself
+    // (2026-08-09 incident: three unlabelled pins to dead boreholes).
+    // Fixture language is Swahili by default.
+    expect(fx.sentLocations[0].name).toBe("Bula Pesa Dam — INAFANYA KAZI");
+    // An honest header always precedes the pins.
+    expect(fx.sentSessionMessages).toHaveLength(1);
+    expect(fx.sentSessionMessages[0].text).toContain(
+      "Maji yaliyothibitishwa kufanya kazi (1)",
+    );
   });
+
+  it(
+    "warns instead of routing when NO pin is confirmed working " +
+      "(regression: 2026-08-09 — all 10 WPDx rows are Non-Functional, so this is the " +
+      "normal case; unlabelled pins read as three places worth walking to)",
+    async () => {
+      fx.lang = "en";
+      fx.waterPoints = [
+        {
+          point: { lat: 0.34, lon: 37.58 },
+          displayName: "Burat borehole/tubewell 3W5",
+          status: "broken",
+          distanceKm: 15.9,
+        },
+      ];
+      const res = await request(app).post("/api/whatsapp-webhook").send(
+        webhookBody({
+          type: "interactive",
+          interactive: { list_reply: { id: "malisho", title: "Malisho" } },
+        }),
+      );
+      expect(res.status).toBe(200);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(fx.sentSessionMessages[0].text).toContain(
+        "NO confirmed-working water point near you",
+      );
+      expect(fx.sentSessionMessages[0].text).toContain("RECORDED BROKEN");
+      expect(fx.sentLocations[0].name).toBe("Burat borehole/tubewell 3W5 — BROKEN");
+    },
+  );
 
   it("resolves Malisho's water points from the HERDER'S OWN ward, not a hardcoded default", async () => {
     // Regression test for a real, confirmed-live bug (2026-08-06):

@@ -66,6 +66,8 @@ function makeCtx(patch: Partial<HerderContext> = {}): HerderContext {
     nearestWaterPointName: null,
     nearestWaterPointDistanceKm: null,
     nearestWaterPointStatus: null,
+    nearestWorkingWaterPointName: null,
+    nearestWorkingWaterPointDistanceKm: null,
     lastKnownLat: null,
     lastKnownLon: null,
     lastKnownLocationSource: null,

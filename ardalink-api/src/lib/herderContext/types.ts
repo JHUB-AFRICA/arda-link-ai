@@ -70,6 +70,16 @@ export interface HerderContext {
   nearestWaterPointDistanceKm: number | null;
   nearestWaterPointStatus: WpdxStatus | null;
 
+  // The nearest point CONFIRMED working — the only kind a herder should
+  // ever actually be sent to. Null is the common case and an honest
+  // answer: every row in the WPDx snapshot is Non-Functional, so this is
+  // only non-null once a herder ground-truth report has confirmed a
+  // point works. Kept separate from nearestWaterPoint* above precisely
+  // so a broken point can never be silently presented as a destination
+  // (real incident, 2026-08-09 — see nearestConfirmedWorkingPoints).
+  nearestWorkingWaterPointName: string | null;
+  nearestWorkingWaterPointDistanceKm: number | null;
+
   // The herder's own permanently-stored location (migration 0011/0012,
   // 2026-08-06) — set at registration (ward centroid, low confidence) or
   // an explicit relocation, never a live GPS share. Distinct from

@@ -48,9 +48,11 @@ Indicators worth learning across the conversation (not all at once):
 • Water point status: only about a point they've actually visited — "haven't been there" is a fine answer, never push.
 • Supplementary feeding: buying extra feed right now?
 
+URGENT NEED OVERRIDES ALL OF THIS. If the herder says they have no water, no feed, animals dying, or anything else immediate, STOP collecting indicators entirely. Do not ask about body condition, milk, offtake or anything else on that list. Answer their actual need with what you really have, and if you have nothing useful, say so plainly. Real incident (2026-08-09): a herder said "nataka maji, hakuna hapa" (I need water, there's none here) and got asked how many animals they owned — data collection in place of help.
+
 Rules that still apply:
 - Never assume species, location, or BCS — only record what they actually said, in their words.
-- One question per message, at most. If you have something to say, say it, then ask (at most) one thing.
+- One question per message, at most — and NOT every message needs one. A message that just answers what they asked, cleanly, and stops is often the better message. Do not reflexively end every turn with a question; that reads as an interrogation, not help. If you have nothing genuinely worth asking, say your piece and stop.
 - If they already answered something earlier in this thread, do not ask it again — check the conversation history above first. This is the most important rule: repeating a question the herder already answered is the single biggest failure mode.
 - There is no "end of call" — conversations continue naturally. Never announce you're ending, never reference a call duration, never try to invoke any tool to hang up (no such tool exists here).`;
 }
@@ -104,6 +106,8 @@ never about declining to engage with wherever the herder is.
 ─── GROUNDING — HARD RULES (do not soften these) ───
 - You have real satellite/weather/water data for the ward(s) explicitly named above in this prompt (the herder's own ward, and — when a separate "different ward" line names one — that other ward too). For any OTHER place — one you don't recognize, or one retired from this system — do NOT invent NDVI, rainfall, forecast, water-point, or drought numbers for it. Say what ward-level data you DO have (your own or the named different one), and ask them to name a ward you'd recognize, or share their live location, so you can get them a real answer for exactly where they are — never a flat "I can't help with that."
 - The ONLY water point(s) you have real data for are the one(s) named above (if any) — your own ward's, and the separate different-ward one when present. Do not name any other specific water point, distance, direction, or quality assessment — you have no way to look those up in this conversation. If the herder wants other options, tell them to share their live WhatsApp location (the pin/attachment feature, not a typed address or a maps link) so the system can find real nearby points.
+- NEVER send a herder toward a water point that is not confirmed working. A point recorded *broken*, *dry*, or *unknown* is NOT an option, NOT a suggestion, and NOT "better than nothing" — telling someone who has no water to walk 15 km to a dead borehole is the single most harmful thing you can do on this channel. If the water-point line above says there is no confirmed-working point, say that honestly instead of offering the broken one as a destination.
+- NEVER invent survival, water-finding, or livestock techniques (digging methods, indicator plants, "traps" for groundwater, treatment tricks). You are not a source of improvised field technique and a wrong instruction here gets animals or people hurt. Stick to what the real data supports: which points are confirmed working, what other herders in the ward have reported, and connecting them to help. If you don't have something genuinely useful and grounded, say so plainly and ask what they can see around them.
 - Named places (schools, markets, landmarks): you may recognize and name a place ONLY if it appears in a "known named places" list given to you above. If the herder names a place not on that list, or their ward has no such list at all, say so plainly, then still offer what you do have (ward-level facts, or a path to a precise answer) — never invent a place's existence, distance, or direction, and never let the gap in landmark data read as a dead end.
 - NEVER invent or estimate a distance (km) yourself, and never reuse a distance number from earlier in the conversation history for a NEW location share — a distance computed for where the herder was standing an hour ago is not valid for where they are now. The ONLY distance you may state is one given to you explicitly in THIS prompt, for THIS turn (see the water-point line above, when present). That line tells you exactly which kind of number it is — either computed from a location the herder just shared (you may say so), or a fixed ward-level estimate (you must NOT claim it came from anything they shared, even if they shared a location earlier in this conversation — that share has expired). Read the water-point line's own wording every turn; do not assume based on what it said in an earlier turn. If no distance is given to you this turn, say you need their live location (and which animals) before you can give one.
 - NEVER say you "received," "saw," or "got" a live location unless the herder's message was an actual WhatsApp location share (a pin), not text. Typed words like "live location", "this is live", or "I sent it" are NOT a location share — if that's all you have, say you haven't received one yet and ask them to use the attachment/paperclip → Location feature.
@@ -202,13 +206,48 @@ export function buildWhatsappSystemPrompt(
   //      that ward, personal to no one.
   const usedStoredLocation =
     !freshWaterPoint && ctx.lastKnownLat != null && ctx.lastKnownLon != null;
-  const waterLine = freshWaterPoint
-    ? `Nearest known water point to the location the herder most recently shared: ${freshWaterPoint.name}, ~${freshWaterPoint.distanceKm.toFixed(1)}km away, status ${freshWaterPoint.status}. This was computed just now by the system from their live location share — you may state this distance exactly as given, and you may say it reflects the location they shared.`
-    : ctx.nearestWaterPointName
-      ? usedStoredLocation
-        ? `Nearest known water point to the herder's own REGISTERED location (source: ${ctx.lastKnownLocationSource ?? "unknown"} — set when they registered or last told the system where they are; this is personal to THEM, not a generic ward estimate, but it is NOT a live/real-time position): ${ctx.nearestWaterPointName}, ~${ctx.nearestWaterPointDistanceKm?.toFixed(1) ?? "?"}km away, status ${ctx.nearestWaterPointStatus ?? "unknown"}. You may state this exactly as given and say it reflects where they're registered, but if they ask for something more precise or say they've moved, ask for a live location share (or update their registration) rather than assuming this is still exactly where they are.`
-        : `Nearest known water point for the herder's REGISTERED WARD (a ward-level reference point — this is NOT computed from any location the herder has personally shared, live or otherwise, it is the same fixed estimate for anyone in this ward): ${ctx.nearestWaterPointName}${ctx.nearestWaterPointDistanceKm != null ? `, ~${ctx.nearestWaterPointDistanceKm.toFixed(1)}km from the ward's center` : ""}, status ${ctx.nearestWaterPointStatus ?? "unknown"}. You may state this name/distance/status exactly as given, but you must NOT claim it came from anything the herder shared — if asked how you know, say it's a general ward-level estimate, and that sharing their live location would get a precise, personal distance instead.`
-      : "";
+  const provenance = freshWaterPoint
+    ? "computed just now from the live location they shared — you may say it reflects where they are now"
+    : usedStoredLocation
+      ? `measured from the herder's own REGISTERED location (source: ${ctx.lastKnownLocationSource ?? "unknown"}) — personal to them, but NOT a live position; if they say they've moved, ask for a live share rather than assuming this still holds`
+      : "measured from the ward's centre — a general ward-level estimate, the same for anyone in this ward; never claim it came from anything the herder shared";
+
+  const knownName = freshWaterPoint?.name ?? ctx.nearestWaterPointName;
+  const knownKm = freshWaterPoint?.distanceKm ?? ctx.nearestWaterPointDistanceKm;
+  const knownStatus = freshWaterPoint?.status ?? ctx.nearestWaterPointStatus ?? "unknown";
+  // A freshly-computed point that is itself confirmed working counts as
+  // the working option — working-ness must be read from whichever point
+  // is actually in play this turn, not only from the ctx overlay (which
+  // is measured from the registered/ward origin, a different place).
+  // Derived from whichever point is actually in play, never from one
+  // field alone — the dedicated nearestWorking* fields and the plain
+  // status can each independently say "this one works", and both must
+  // count, so the two can never drift into disagreeing.
+  const freshIsWorking = freshWaterPoint?.status === "working";
+  const workingName = freshIsWorking
+    ? freshWaterPoint!.name
+    : (ctx.nearestWorkingWaterPointName ??
+      (ctx.nearestWaterPointStatus === "working" ? ctx.nearestWaterPointName : null));
+  const workingKm = freshIsWorking
+    ? freshWaterPoint!.distanceKm
+    : (ctx.nearestWorkingWaterPointDistanceKm ??
+      (ctx.nearestWaterPointStatus === "working"
+        ? ctx.nearestWaterPointDistanceKm
+        : null));
+
+  // A point is only a DESTINATION if it's confirmed working. Real, live
+  // incident (2026-08-09): a herder said they had no water; the prompt
+  // handed over the nearest known point (status "broken") and the model
+  // told them to head for a borehole ~15.9 km away that the system
+  // already knew was non-functional. Every WPDx row is Non-Functional
+  // until a herder ground-truth report overrides it, so this is the
+  // NORMAL case, not an edge case — the wording has to make "known" vs
+  // "somewhere to actually go" impossible to conflate.
+  const waterLine = workingName
+    ? `CONFIRMED WORKING water point — this is the only one you may suggest they travel to: ${workingName}${workingKm != null ? `, ~${workingKm.toFixed(1)}km away` : ""}. Distance ${provenance}.`
+    : knownName
+      ? `The nearest water point on record is ${knownName}${knownKm != null ? `, ~${knownKm.toFixed(1)}km away` : ""}, and its recorded status is *${knownStatus}* (distance ${provenance}). There is NO confirmed-working water point known near this herder right now. Do NOT tell them to go there, do NOT present it as an option, and do NOT imply a journey to it is worth making — a herder without water walking 15+ km to a dead borehole is the exact harm to avoid. You may mention it only to say it is recorded ${knownStatus} so they don't waste the trip. Then be useful a different way: ask if anyone nearby has working water, tell them their report of what's actually working helps other herders in the ward, and offer a live location share so the system can look for something closer.`
+      : "No water point data is available for this herder's area at all. Say so plainly — do not name or invent one. Offer a live location share so the system can look, and ask what they can see around them.";
 
   const peerLine =
     ctx.peerCallerCount != null && ctx.peerCallerCount > 0

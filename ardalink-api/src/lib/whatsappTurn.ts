@@ -229,21 +229,56 @@ async function handleMalisho(
     logInteraction(from, ctx, "malisho", "malisho", text);
     return;
   }
-  const nearWard = ctx.wardName
-    ? `${lang === "sw" ? "karibu na" : "near"} ${ctx.wardName}`
+
+  // Lead with an honest header BEFORE any pin. Real, live incident
+  // (2026-08-09): this sent three unlabelled pins captioned only "near
+  // <ward>", which reads as three places to go — while every WPDx row
+  // is Non-Functional, so all three were dead boreholes. A pin is a
+  // strong "go here" signal; it must never be sent without its status
+  // attached, and a herder must never be left thinking a broken point
+  // is worth the walk.
+  const working = points.filter((p) => p.status === "working");
+  const header = working.length
+    ? lang === "sw"
+      ? `Maji yaliyothibitishwa kufanya kazi (${working.length}). Nyingine hapa chini zimerekodiwa mbovu — nimeziweka ili usipoteze safari bure. ⚠️`
+      : `Confirmed working water (${working.length}). The others below are recorded broken — sent only so you don't waste the trip. ⚠️`
     : lang === "sw"
-      ? "karibu na kituo cha wodi"
-      : "near the ward center";
+      ? "⚠️ Hakuna maji yaliyothibitishwa kufanya kazi karibu nawe kwenye rekodi zetu. Hizi hapa chini ZIMEREKODIWA MBOVU — usitembee kwenda huko bila kuthibitisha. Ukijua mahali penye maji yanayofanya kazi, niambie — itasaidia wachungaji wengine wa ward hii."
+      : "⚠️ We have NO confirmed-working water point near you on record. The ones below are RECORDED BROKEN — don't make the journey without confirming first. If you know somewhere with working water, tell me — it helps other herders in this ward.";
+  await sendWhatsappSessionMessage(from, header);
+  logOutbound(from, ctx, "text", header);
+
+  const statusLabel = (s: string): string =>
+    lang === "sw"
+      ? s === "working"
+        ? "INAFANYA KAZI"
+        : s === "broken"
+          ? "MBOVU"
+          : "HAIJULIKANI"
+      : s === "working"
+        ? "WORKING"
+        : s === "broken"
+          ? "BROKEN"
+          : "UNKNOWN";
+
   for (const p of points) {
-    await sendWhatsappLocation(from, p.point.lat, p.point.lon, p.displayName, nearWard);
-    logOutbound(from, ctx, "location", p.displayName);
+    // Status rides on the pin's own label — a pin can get forwarded or
+    // re-read on its own, detached from any surrounding text.
+    await sendWhatsappLocation(
+      from,
+      p.point.lat,
+      p.point.lon,
+      `${p.displayName} — ${statusLabel(p.status)}`,
+      `${p.distanceKm.toFixed(1)}km`,
+    );
+    logOutbound(from, ctx, "location", `${p.displayName} (${p.status})`);
   }
   logInteraction(
     from,
     ctx,
     "malisho",
     "malisho",
-    points.map((p) => p.displayName).join(", "),
+    points.map((p) => `${p.displayName} (${p.status})`).join(", "),
   );
 }
 

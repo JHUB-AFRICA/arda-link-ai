@@ -21,6 +21,55 @@ describe("buildWhatsappSystemPrompt — ward identifies, doesn't confine", () =>
   );
 });
 
+describe("buildWhatsappSystemPrompt — never route a herder to a broken water point", () => {
+  it(
+    "forbids sending the herder to the nearest point when it is recorded broken and nothing is confirmed working " +
+      "(regression: 2026-08-09 real incident — a herder said 'nataka maji, hakuna hapa' and was pointed at " +
+      "Burat borehole 3W5, ~15.9km away, which the system already knew was broken. Every WPDx row is " +
+      "Non-Functional, so this is the NORMAL case, not an edge case)",
+    () => {
+      const ctx: ReturnType<typeof baseContext> = {
+        ...baseContext("+254799954672", "burat"),
+        nearestWaterPointName: "Burat borehole/tubewell 3W5",
+        nearestWaterPointDistanceKm: 15.9,
+        nearestWaterPointStatus: "broken",
+        nearestWorkingWaterPointName: null,
+        nearestWorkingWaterPointDistanceKm: null,
+      };
+      const prompt = buildWhatsappSystemPrompt(ctx, "sw", true, null);
+
+      expect(prompt).toContain("NO confirmed-working water point known");
+      expect(prompt).toContain("Do NOT tell them to go there");
+      expect(prompt).toContain("dead borehole");
+      // Must never frame a broken point the way a usable one is framed.
+      expect(prompt).not.toContain("CONFIRMED WORKING water point");
+    },
+  );
+
+  it("presents a confirmed-working point as the one travellable option when one exists", () => {
+    const ctx: ReturnType<typeof baseContext> = {
+      ...baseContext("+254799954672", "burat"),
+      nearestWaterPointName: "Burat borehole/tubewell 3W5",
+      nearestWaterPointDistanceKm: 15.9,
+      nearestWaterPointStatus: "broken",
+      nearestWorkingWaterPointName: "Ngare Mara pan",
+      nearestWorkingWaterPointDistanceKm: 6.2,
+    };
+    const prompt = buildWhatsappSystemPrompt(ctx, "sw", true, null);
+    expect(prompt).toContain("CONFIRMED WORKING water point");
+    expect(prompt).toContain("Ngare Mara pan");
+    expect(prompt).toContain("6.2km");
+  });
+
+  it("bans invented survival/water-finding technique, and stops indicator-collection under urgent need", () => {
+    const ctx = baseContext("+254799954672", "burat");
+    const prompt = buildWhatsappSystemPrompt(ctx, "sw", true, null);
+    expect(prompt).toContain("NEVER invent survival, water-finding, or livestock techniques");
+    expect(prompt).toContain("URGENT NEED OVERRIDES ALL OF THIS");
+    expect(prompt).toContain("NOT every message needs one");
+  });
+});
+
 describe("buildWhatsappSystemPrompt — water-point attribution", () => {
   it("attributes a fresh water point to the herder's live location share", () => {
     const ctx = baseContext("+254799954672", "bula-pesa");
@@ -29,8 +78,11 @@ describe("buildWhatsappSystemPrompt — water-point attribution", () => {
       distanceKm: 2.0,
       status: "working",
     });
-    expect(prompt).toContain("the location the herder most recently shared");
-    expect(prompt).toContain("computed just now by the system from their live location share");
+    expect(prompt).toContain("computed just now from the live location they shared");
+    expect(prompt).toContain("reflects where they are now");
+    // A working fresh point is a real destination — must not fall into
+    // the broken-point "do not go there" branch.
+    expect(prompt).toContain("CONFIRMED WORKING water point");
   });
 
   it(
@@ -50,13 +102,13 @@ describe("buildWhatsappSystemPrompt — water-point attribution", () => {
 
       expect(prompt).toContain("Ngare Mara piped water GW2");
       expect(prompt).toContain("25.7km");
-      expect(prompt).toContain("ward-level reference point");
+      expect(prompt).toContain("measured from the ward's centre");
       expect(prompt).toContain(
-        "NOT computed from any location the herder has personally shared",
+        "never claim it came from anything the herder shared",
       );
-      // The exact ambiguous phrase that let the LLM invent this attribution
-      // must never appear on the fallback path.
-      expect(prompt).not.toContain("the location the herder most recently shared");
+      // The exact ambiguous phrasing that let the LLM invent this
+      // attribution must never appear on the ward-centroid path.
+      expect(prompt).not.toContain("live location they shared");
       expect(prompt).not.toContain("refreshed from their most recent shared location");
     },
   );
@@ -85,11 +137,11 @@ describe("buildWhatsappSystemPrompt — water-point attribution", () => {
       expect(prompt).toContain("3.2km");
       expect(prompt).toContain("own REGISTERED location");
       expect(prompt).toContain("whatsapp_registration");
-      expect(prompt).toContain("NOT a live/real-time position");
+      expect(prompt).toContain("NOT a live position");
       // Must not be confused with either the live-share wording or the
       // "same for anyone in this ward" wording — it's personal, but not live.
-      expect(prompt).not.toContain("the location the herder most recently shared");
-      expect(prompt).not.toContain("the same fixed estimate for anyone in this ward");
+      expect(prompt).not.toContain("live location they shared");
+      expect(prompt).not.toContain("the same for anyone in this ward");
     },
   );
 

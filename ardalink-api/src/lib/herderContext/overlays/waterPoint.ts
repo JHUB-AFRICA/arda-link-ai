@@ -12,7 +12,11 @@
  */
 
 import { recentWaterPointGroundTruth, latestCorrectionFor } from "../../supabase/index.js";
-import { centroidForTenant, nearestWorkingKnownPoints } from "../../wpdx.js";
+import {
+  centroidForTenant,
+  nearestWorkingKnownPoints,
+  nearestConfirmedWorkingPoints,
+} from "../../wpdx.js";
 import { tenantForWardId } from "../../wardMapping.js";
 import type { HerderContext } from "../types.js";
 
@@ -47,12 +51,22 @@ export async function overlayNearestWaterPoint(
   );
   const nearest = nearestWorkingKnownPoints(origin, 1, overrides);
   const top = nearest[0];
-  if (!top) return ctx;
+  // Separately: the nearest point actually CONFIRMED working — usually
+  // none, since every WPDx row is Non-Functional until a herder report
+  // overrides it. Kept apart from `top` so a broken point can never be
+  // silently handed to the prompt as somewhere to go.
+  const working = nearestConfirmedWorkingPoints(origin, 1, overrides)[0] ?? null;
+  if (!top && !working) return ctx;
   return {
     ...ctx,
-    nearestWaterPointName: top.displayName,
-    nearestWaterPointDistanceKm:
-      Math.round(top.distanceKm * 10) / 10,
-    nearestWaterPointStatus: top.status,
+    nearestWaterPointName: top?.displayName ?? ctx.nearestWaterPointName,
+    nearestWaterPointDistanceKm: top
+      ? Math.round(top.distanceKm * 10) / 10
+      : ctx.nearestWaterPointDistanceKm,
+    nearestWaterPointStatus: top?.status ?? ctx.nearestWaterPointStatus,
+    nearestWorkingWaterPointName: working?.displayName ?? null,
+    nearestWorkingWaterPointDistanceKm: working
+      ? Math.round(working.distanceKm * 10) / 10
+      : null,
   };
 }

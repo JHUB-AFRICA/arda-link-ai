@@ -226,6 +226,34 @@ function interpretHerderStatus(raw: string): WpdxStatus {
  * then 'broken' — same behaviour as workingFirst on nearestPoints
  * but the overlay dominates the WPDx snapshot's baseline status.
  */
+/**
+ * Points whose status is genuinely 'working', nearest first — NOT the
+ * "working ranked first but broken ones still included" behaviour of
+ * `nearestWorkingKnownPoints` below (whose name is misleading and whose
+ * callers have repeatedly treated its top result as somewhere to send a
+ * herder).
+ *
+ * This exists because of a real, live incident (2026-08-09): every one
+ * of the 10 rows in the WPDx snapshot is `Non-Functional`, so
+ * `nearestWorkingKnownPoints` can only ever return broken points unless
+ * a herder ground-truth report has overridden one — and the prompt
+ * presented the top row as "nearest water point", which the model
+ * turned into a recommendation. A herder who said they had no water was
+ * told to head for a borehole ~15.9 km away that the system already
+ * knew was broken. Returning an EMPTY array when nothing is confirmed
+ * working is the honest answer, and callers must handle it as such
+ * rather than falling back to a broken point.
+ */
+export function nearestConfirmedWorkingPoints(
+  origin: { lat: number; lon: number },
+  n: number,
+  overrides: WaterPointOverride[] = [],
+): NearbyPoint[] {
+  return nearestWorkingKnownPoints(origin, WPDX_ISIOLO.length, overrides)
+    .filter((p) => p.status === "working")
+    .slice(0, Math.max(0, n));
+}
+
 export function nearestWorkingKnownPoints(
   origin: { lat: number; lon: number },
   n: number,
