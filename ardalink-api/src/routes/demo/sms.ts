@@ -14,6 +14,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { resolveHerderContext, buildLocalizedBrief } from "../../lib/herderContext";
 import { centroidForTenant, formatUssdLines } from "../../lib/wpdx";
+import { tenantForWardId } from "../../lib/wardMapping";
 
 const router: IRouter = Router();
 
@@ -47,9 +48,10 @@ async function replyFor(from: string, text: string): Promise<{ intent: string; r
     // Nearest 5 water points from the WPDx snapshot, ranked with
     // working infrastructure first. SMS body caps around 160 chars so
     // the lines are already truncated by the helper.
-    const origin =
-      centroidForTenant(DEMO_TENANT_ID) ?? { lat: 0.3453, lon: 37.5810 };
-    const lines = formatUssdLines(origin, 5, { workingFirst: true });
+    const origin = ctx.wardId
+      ? await centroidForTenant(tenantForWardId(ctx.wardId))
+      : await centroidForTenant(DEMO_TENANT_ID);
+    const lines = origin ? formatUssdLines(origin, 5, { workingFirst: true }) : [];
     const body =
       lines.length > 0
         ? lines.join("; ")

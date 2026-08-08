@@ -5,6 +5,7 @@ import {
   buildLocalizedBrief,
 } from "../lib/herderContext/index.js";
 import { centroidForTenant, formatUssdLines } from "../lib/wpdx.js";
+import { tenantForWardId } from "../lib/wardMapping.js";
 import { languageForCaller } from "../lib/voiceCopy.js";
 import { initiateOutboundCall, sendSmsViaAt } from "../lib/africastalking.js";
 import { logLeadInteraction } from "../lib/supabase/index.js";
@@ -145,10 +146,23 @@ router.post("/sms-callback", async (req, res): Promise<void> => {
         // WPDx-backed water points (same as USSD selection 2 and
         // the demo SMS simulator). Prefer working infrastructure
         // first so herders see the good options at the top.
+        //
+        // Real, confirmed bug (2026-08-06, same pattern as WhatsApp's
+        // handleMalisho before its own fix): this always resolved
+        // centroidForTenant(DEFAULT_TENANT_ID), ignoring ctx.wardId, so
+        // every SMS herder outside Bula Pesa got Bula Pesa's water
+        // points. Fixed to prefer the herder's own registered location,
+        // then their own ward's real centroid (straight from Supabase,
+        // no hardcoded fallback table/literal — see wpdx.ts's
+        // centroidForTenant).
         const origin =
-          centroidForTenant(DEFAULT_TENANT_ID) ??
-          { lat: 0.3453, lon: 37.5810 };
-        const lines = formatUssdLines(origin, 5, { workingFirst: true });
+          ctx.lastKnownLat != null && ctx.lastKnownLon != null
+            ? { lat: ctx.lastKnownLat, lon: ctx.lastKnownLon }
+            : ((await centroidForTenant(tenantForWardId(ctx.wardId))) ??
+              (await centroidForTenant(DEFAULT_TENANT_ID)));
+        const lines = origin
+          ? formatUssdLines(origin, 5, { workingFirst: true })
+          : [];
         const body =
           lines.length > 0
             ? lines.join("; ")

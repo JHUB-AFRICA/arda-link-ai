@@ -11,6 +11,8 @@ interface Fixture {
     latestWeather: unknown;
     neighborAdvice: unknown;
     recentGroundTruthCalls: unknown[] | null;
+    centroid?: { lat: number; lon: number } | null;
+    lead?: unknown;
   };
   local: {
     pastoralist: unknown;
@@ -72,6 +74,16 @@ vi.mock("../src/lib/supabase/index.js", () => ({
   wardCellStressSummary: async () => null,
   nearestCellForCoordinates: async () => null,
   latestCellSnapshot: async () => null,
+  // Ward centroid, straight from Supabase's real wards.centroid column
+  // (2026-08-06, replacing a hardcoded WARD_CENTROIDS table) — default
+  // to a plausible always-present value so existing tests (none of
+  // which care about the exact centroid) keep resolving an origin the
+  // same way they did before that change.
+  centroidForWardId: async () => fx.supabase.centroid ?? { lat: 0.3453, lon: 37.581 },
+  // Direct lead-by-phone read (2026-08-06, backs overlayStoredLocation)
+  // — default null (no stored location) so existing tests fall through
+  // to the ward-centroid path unchanged.
+  leadByPhone: async () => fx.supabase.lead ?? null,
 }));
 
 vi.mock("../src/lib/intelligence.js", () => ({

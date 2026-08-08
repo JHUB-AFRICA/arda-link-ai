@@ -29,8 +29,8 @@ export async function overlayNearestWaterPoint(
   const origin =
     ctx.lastKnownLat != null && ctx.lastKnownLon != null
       ? { lat: ctx.lastKnownLat, lon: ctx.lastKnownLon }
-      : (centroidForTenant(tenantForWardId(ctx.wardId)) ??
-        centroidForTenant("bula-pesa"));
+      : ((await centroidForTenant(tenantForWardId(ctx.wardId))) ??
+        (await centroidForTenant("bula-pesa")));
   if (!origin) return ctx;
   const rawOverrides = (await recentWaterPointGroundTruth(90)) ?? [];
   // Operator-review layer (migration 0009): if an operator has corrected

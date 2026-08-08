@@ -48,6 +48,29 @@ export const listWards = (mode: SupabaseMode = "interactive") =>
     { cache: true, mode },
   );
 
+/**
+ * A ward's real centroid, straight from Supabase's `wards.centroid`
+ * column — the single source of truth, not a hand-copied snapshot of it.
+ * Replaces the hardcoded `WARD_CENTROIDS` table that used to live in
+ * `wpdx.ts` (2026-08-06): those values were numerically near-identical
+ * to this same Supabase data, meaning they were a stale manual copy
+ * that would silently drift the moment a ward's real geometry/centroid
+ * was ever recomputed. Reuses `listWards()`'s cache (60s TTL), so this
+ * is cheap after the first call in a given window. GeoJSON coordinate
+ * order is `[lon, lat]` — inverted here to the `{lat, lon}` shape every
+ * caller in this codebase already expects.
+ */
+export async function centroidForWardId(
+  wardId: string,
+  mode: SupabaseMode = "interactive",
+): Promise<{ lat: number; lon: number } | null> {
+  const wards = await listWards(mode);
+  const ward = wards?.find((w) => w.ward_id === wardId);
+  const coords = ward?.centroid?.coordinates;
+  if (!coords) return null;
+  return { lat: coords[1], lon: coords[0] };
+}
+
 /** Active/finished wards only (view). Cached. */
 export const listActiveWards = (mode: SupabaseMode = "interactive") =>
   sbGet<SbWard>(

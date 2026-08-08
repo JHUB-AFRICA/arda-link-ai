@@ -27,6 +27,7 @@ export {
   type SbLatestWeather,
   type SbNeighborAdvice,
   listWards,
+  centroidForWardId,
   listActiveWards,
   listActiveWardsWithGeometry,
   listWardNeighbors,

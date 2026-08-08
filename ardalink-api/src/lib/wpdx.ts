@@ -18,6 +18,8 @@
  */
 
 import { WPDX_ISIOLO, type WpdxPoint } from "./data/wpdxIsiolo.js";
+import { wardIdForTenant } from "./wardMapping.js";
+import { centroidForWardId } from "./supabase/index.js";
 
 const FUNCTIONAL_LABELS = new Set([
   "Functional",
@@ -248,23 +250,24 @@ export function nearestWorkingKnownPoints(
 }
 
 /**
- * Ward centroids — coarse approximations from the Supabase active_wards
- * centroids we shipped in the ward map. Used as the origin coord when a
- * caller only names a ward and doesn't share GPS. Bounded to the 5
- * Isiolo Sub-County wards we treat as canonical tenants.
+ * Ward centroid for a tenant slug, read straight from Supabase's real
+ * `wards.centroid` column (see `centroidForWardId`) — no hardcoded
+ * fallback table. Used as the origin coord when a caller only names a
+ * ward and doesn't share GPS.
+ *
+ * **Replaced 2026-08-06** a hardcoded `WARD_CENTROIDS` table that lived
+ * here: those values were numerically near-identical to Supabase's real
+ * data, meaning they were a stale hand-copied snapshot rather than a
+ * live read — exactly the kind of drift risk this repo has already been
+ * bitten by more than once this session (WPDx, migration catch-ups).
+ * `centroidForWardId` reuses `listWards()`'s 60s cache, so this stays
+ * cheap on repeated calls.
  */
-const WARD_CENTROIDS: Record<string, { lat: number; lon: number }> = {
-  wabera: { lat: 0.3746, lon: 37.5921 },
-  "bula-pesa": { lat: 0.3453, lon: 37.5810 },
-  "ngare-mara": { lat: 0.6614, lon: 37.9040 },
-  burat: { lat: 0.4375, lon: 37.4785 },
-  oldonyiro: { lat: 0.6392, lon: 37.1345 },
-};
-
-export function centroidForTenant(
+export async function centroidForTenant(
   tenantSlug: string,
-): { lat: number; lon: number } | null {
-  return WARD_CENTROIDS[tenantSlug.toLowerCase()] ?? null;
+): Promise<{ lat: number; lon: number } | null> {
+  const wardId = wardIdForTenant(tenantSlug);
+  return centroidForWardId(wardId);
 }
 
 /**

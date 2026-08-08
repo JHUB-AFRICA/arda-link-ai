@@ -22,6 +22,7 @@ import {
   buildLocalizedBrief,
 } from "../../lib/herderContext/index.js";
 import { centroidForTenant, nearestWorkingKnownPoints } from "../../lib/wpdx.js";
+import { tenantForWardId } from "../../lib/wardMapping.js";
 import { languageForCaller } from "../../lib/voiceCopy.js";
 import { extractIndicators } from "../../lib/openai/index.js";
 import { buildWhatsappSystemPrompt } from "../../lib/whatsappConversation.js";
@@ -50,9 +51,10 @@ async function replyFor(
     return { kind: "text", reply: buildLocalizedBrief(ctx, lang) };
   }
   if (action === "malisho") {
-    const origin =
-      centroidForTenant(DEMO_TENANT_ID) ?? { lat: 0.3453, lon: 37.581 };
-    const points = nearestWorkingKnownPoints(origin, 3);
+    const origin = ctx.wardId
+      ? await centroidForTenant(tenantForWardId(ctx.wardId))
+      : await centroidForTenant(DEMO_TENANT_ID);
+    const points = origin ? nearestWorkingKnownPoints(origin, 3) : [];
     return {
       kind: "locations",
       reply:

@@ -220,7 +220,7 @@ async function ussdSubscribeFinalize(
   // is the herder's own explicit statement of where they are (picking a
   // ward from the menu), exactly the kind of change that should be
   // permanently recorded per the owner's requirement.
-  const centroid = centroidForTenant(tenantForWardId(ward.code));
+  const centroid = await centroidForTenant(tenantForWardId(ward.code));
   void setCurrentLocation({
     phoneNumber: phone,
     wardId: ward.code,
@@ -246,14 +246,23 @@ async function ussdSubscribeFinalize(
     : `END You are subscribed. ArdaLink will call tomorrow to confirm. A welcome SMS is on the way.`;
 }
 
-function buildWaterPointsReply(): string {
-  // Pulls the nearest 5 water points from the WPDx snapshot, anchored
-  // to the default demo tenant's ward centroid. Working points are
-  // ranked first so the herder sees usable infrastructure before broken.
-  // AT USSD screens cap around 160 chars, so we're deliberately terse.
-  const origin =
-    centroidForTenant(DEFAULT_TENANT_ID) ?? { lat: 0.3453, lon: 37.5810 };
-  const lines = formatUssdLines(origin, 5, { workingFirst: true });
+async function buildWaterPointsReply(phone: string): Promise<string> {
+  // Pulls the nearest 5 water points from the WPDx snapshot, anchored to
+  // the CALLER's own ward centroid (straight from Supabase's real
+  // wards.centroid — no hardcoded fallback table/literal). Real,
+  // confirmed bug (2026-08-06, same pattern as WhatsApp's handleMalisho
+  // before its own fix): this used to always resolve
+  // centroidForTenant(DEFAULT_TENANT_ID), ignoring who was actually
+  // calling, so every USSD caller outside the default tenant's ward got
+  // that ward's water points regardless of their own. Working points
+  // are ranked first so the herder sees usable infrastructure before
+  // broken. AT USSD screens cap around 160 chars, so we're deliberately
+  // terse.
+  const id = await identityForPhone(phone);
+  const origin = id?.ward_id
+    ? await centroidForTenant(tenantForWardId(id.ward_id))
+    : await centroidForTenant(DEFAULT_TENANT_ID);
+  const lines = origin ? formatUssdLines(origin, 5, { workingFirst: true }) : [];
   const body =
     lines.length > 0
       ? lines.map((l, i) => `${i + 1}. ${l}`).join("\n")
@@ -346,7 +355,7 @@ router.post("/ussd-callback", async (req, res): Promise<void> => {
           return;
         case "2":
           res.set("Content-Type", "text/plain");
-          res.send(buildWaterPointsReply());
+          res.send(await buildWaterPointsReply(phone));
           return;
         case "3":
           res.set("Content-Type", "text/plain");

@@ -214,10 +214,9 @@ async function handleMalisho(
   const origin =
     ctx.lastKnownLat != null && ctx.lastKnownLon != null
       ? { lat: ctx.lastKnownLat, lon: ctx.lastKnownLon }
-      : (centroidForTenant(tenantForWardId(ctx.wardId)) ??
-        centroidForTenant(DEFAULT_TENANT_ID) ??
-        { lat: 0.3453, lon: 37.581 });
-  const points = nearestWorkingKnownPoints(origin, 3);
+      : ((await centroidForTenant(tenantForWardId(ctx.wardId))) ??
+        (await centroidForTenant(DEFAULT_TENANT_ID)));
+  const points = origin ? nearestWorkingKnownPoints(origin, 3) : [];
   if (points.length === 0) {
     const text =
       lang === "sw" ? "Hakuna data ya WPDx bado." : "No WPDx data yet.";
@@ -337,7 +336,7 @@ async function handleRegistrationTurn(
   });
 
   if (pending.draftWardId) {
-    const centroid = centroidForTenant(tenantForWardId(pending.draftWardId));
+    const centroid = await centroidForTenant(tenantForWardId(pending.draftWardId));
     void setCurrentLocation({
       phoneNumber: from,
       wardId: pending.draftWardId,

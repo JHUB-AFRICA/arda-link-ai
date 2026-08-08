@@ -14,6 +14,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { resolveHerderContext, buildLocalizedBrief } from "../../lib/herderContext";
 import { centroidForTenant, formatUssdLines } from "../../lib/wpdx";
+import { tenantForWardId } from "../../lib/wardMapping";
 
 const router: IRouter = Router();
 
@@ -298,9 +299,10 @@ async function screenFor(
         // screen. When the herder isn't in `pastoralists` yet we anchor
         // to the demo tenant's ward centroid.
         const ctx = await resolveHerderContext(phone, DEMO_TENANT_ID);
-        const origin =
-          centroidForTenant(DEMO_TENANT_ID) ?? { lat: 0.3453, lon: 37.5810 };
-        const lines = formatUssdLines(origin, 5, { workingFirst: true });
+        const origin = ctx.wardId
+          ? await centroidForTenant(tenantForWardId(ctx.wardId))
+          : await centroidForTenant(DEMO_TENANT_ID);
+        const lines = origin ? formatUssdLines(origin, 5, { workingFirst: true }) : [];
         // Fallback: if WPDx has no rows for this county, still render
         // something rather than an empty screen.
         const body =
