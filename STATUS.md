@@ -1239,6 +1239,25 @@ before any code was written.
   imprecise. Left as-is given the effort to fix (reordering which
   write captures the snapshot first) versus the low real-world impact.
 
+- **I4 `fix(location)`** — owner's explicit direction: no fallback
+  hardcoding, pull straight from system data. `wpdx.ts`'s
+  `WARD_CENTROIDS` table was a hand-copied snapshot of Supabase's real
+  `wards.centroid` column (confirmed numerically near-identical — the
+  kind of drift risk this repo has already been bitten by more than
+  once this session). Added `centroidForWardId()` to
+  `supabase/wards.ts` (reuses `listWards()`'s 60s cache);
+  `centroidForTenant()` is now an async wrapper over it, no hardcoded
+  table, no literal fallback coordinate. Updated every call site
+  (async now) and removed every layered hardcoded literal (`?? {lat:
+  0.3453, lon: 37.581}`) in favor of an honest "no data" path. Also
+  found and fixed two previously-undiscovered instances of the exact
+  I0/Phase-0 `handleMalisho` bug — SMS's `MALISHO` keyword and USSD's
+  `buildWaterPointsReply()` both ignored the caller's own ward the same
+  way WhatsApp did before its fix. Full suite green: 423 tests.
+  Live-verified: a herder registered in Oldonyiro now gets real
+  Oldonyiro-area water points from "Malisho" (WhatsApp), not Bula
+  Pesa's.
+
 *Next*: Phase 3 (intelligent ward + landmark resolution) — not started.
 
 *Prior cycle (2026-07-07 baseline)*:
