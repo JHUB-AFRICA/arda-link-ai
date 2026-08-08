@@ -20,7 +20,8 @@ import {
   type HerderContext,
 } from "./herderContext/index.js";
 import { centroidForTenant, nearestWorkingKnownPoints } from "./wpdx.js";
-import { tenantForWardId, WARD_PICKER_LIST } from "./wardMapping.js";
+import { tenantForWardId, wardIdFromLocationText, WARD_PICKER_LIST } from "./wardMapping.js";
+import { landmarksBlockForWard } from "./data/landmarks/index.js";
 import {
   startRegistration,
   getRegistrationState,
@@ -46,6 +47,9 @@ import {
   markPastoralistOptedOut,
   upsertPastoralistLead,
   setCurrentLocation,
+  listWards,
+  latestSatelliteFor,
+  centroidForWardId,
   type SbWhatsappMessageInsert,
 } from "./supabase/index.js";
 import { extractIndicators, generateActionTag } from "./openai/index.js";
@@ -525,6 +529,57 @@ async function handleAudioNote(
   logInteraction(from, ctx, "audio_note", null, text);
 }
 
+export interface QueryWardFacts {
+  wardId: string;
+  wardName: string;
+  ndviMean: number | null;
+  vci: number | null;
+  waterPoint: { name: string; distanceKm: number; status: string } | null;
+  landmarksBlock: string | null;
+}
+
+/**
+ * Phase 3 of the location/registration/landmark plan (2026-08-06):
+ * "directions from anywhere" — a herder can ask about a ward other than
+ * their own registered one (visiting relatives, scouting new grazing,
+ * asking on behalf of someone else). Runs the existing
+ * `wardIdFromLocationText()` alias-matcher (already used elsewhere in
+ * this codebase — never a new LLM-driven guess) against the herder's
+ * raw text; if it resolves to a DIFFERENT ward than their own, fetches
+ * that ward's real facts fresh so the LLM has something grounded to
+ * say about it instead of either refusing or silently answering as if
+ * it were the herder's home ward.
+ *
+ * Returns null when no other ward is named (the overwhelmingly common
+ * case), so this adds no extra Supabase round-trips to the normal path.
+ */
+async function resolveQueryWard(
+  rawText: string,
+  homeWardId: string,
+): Promise<QueryWardFacts | null> {
+  const wardId = wardIdFromLocationText(rawText);
+  if (!wardId || wardId === homeWardId) return null;
+
+  const [wards, sat, centroid] = await Promise.all([
+    listWards(),
+    latestSatelliteFor(wardId),
+    centroidForWardId(wardId),
+  ]);
+  const wardName = wards?.find((w) => w.ward_id === wardId)?.name ?? wardId;
+  const [nearest] = centroid ? nearestWorkingKnownPoints(centroid, 1) : [];
+
+  return {
+    wardId,
+    wardName,
+    ndviMean: sat?.ndvi_mean ?? null,
+    vci: sat?.vci_value ?? null,
+    waterPoint: nearest
+      ? { name: nearest.displayName, distanceKm: nearest.distanceKm, status: nearest.status }
+      : null,
+    landmarksBlock: landmarksBlockForWard(wardId),
+  };
+}
+
 /**
  * Free-form conversational turn. Reuses the same channel-agnostic
  * pieces the voice deterministic pipeline uses: extractIndicators() /
@@ -605,6 +660,11 @@ async function handleFreeText(
       })()
     : null;
 
+  // "Directions from anywhere" (Phase 3) — only fires when the herder's
+  // text actually names a different, known ward; the overwhelmingly
+  // common case (no other ward mentioned) costs nothing extra.
+  const queryWard = await resolveQueryWard(rawText, ctx.wardId);
+
   const history = await recentWhatsappMessages(from, 12);
   // Only plain text in/out turns are real conversational content —
   // status rows, template sends, location pins, and interactive
@@ -632,6 +692,7 @@ async function handleFreeText(
     hasHistory,
     freshWaterPoint,
     gapMinutes,
+    queryWard,
   );
 
   const historyMessages: LlmMessage[] = conversational.map((m) => ({

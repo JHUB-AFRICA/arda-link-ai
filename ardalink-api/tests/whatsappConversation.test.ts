@@ -81,6 +81,56 @@ describe("buildWhatsappSystemPrompt — water-point attribution", () => {
   });
 });
 
+describe("buildWhatsappSystemPrompt — Phase 3: landmarks + query-ward", () => {
+  it("splices in the herder's own ward's curated landmark block when one exists (Bula Pesa)", () => {
+    const ctx = baseContext("+254799954672", "bula-pesa"); // wardId 242 = Bulla Pesa
+    const prompt = buildWhatsappSystemPrompt(ctx, "en", false, null);
+    expect(prompt).toContain("Known named places in the herder's ward");
+    // A real, spot-checked entry from bulaPesaLandmarks.ts.
+    expect(prompt).toContain("Shibli Petrol Station");
+  });
+
+  it(
+    "gives an honest 'no data' line, never an invented landmark, for a ward with no curated catalogue " +
+      "(regression: 2026-08-06 real incident — a herder named 'police post' and the bot had no way " +
+      "to recognize it at all, silently ignoring it rather than saying so)",
+    () => {
+      const ctx: ReturnType<typeof baseContext> = {
+        ...baseContext("+254799954672", "ngare-mara"), // wardId 245 — no landmark file
+      };
+      const prompt = buildWhatsappSystemPrompt(ctx, "en", false, null);
+      expect(prompt).toContain("No curated named-place catalogue exists for this ward yet");
+      expect(prompt).not.toContain("Known named places in the herder's ward");
+    },
+  );
+
+  it("labels a different-ward query clearly, never conflating it with the herder's own ward", () => {
+    const ctx: ReturnType<typeof baseContext> = {
+      ...baseContext("+254799954672", "bula-pesa"),
+      wardName: "Bulla Pesa",
+    };
+    const prompt = buildWhatsappSystemPrompt(ctx, "en", true, null, 3, {
+      wardId: "245",
+      wardName: "Ngare Mara",
+      ndviMean: 0.31,
+      vci: 42,
+      waterPoint: { name: "Ngare Mara piped water GW2", distanceKm: 5.4, status: "working" },
+      landmarksBlock: null,
+    });
+    expect(prompt).toContain("names a DIFFERENT ward than their own registered one");
+    expect(prompt).toContain("Ngare Mara");
+    expect(prompt).toContain("their own ward is Bulla Pesa");
+    expect(prompt).toContain("Ngare Mara piped water GW2");
+    expect(prompt).toContain("5.4km");
+  });
+
+  it("omits the query-ward line entirely when no other ward was named", () => {
+    const ctx = baseContext("+254799954672", "bula-pesa");
+    const prompt = buildWhatsappSystemPrompt(ctx, "en", false, null, null, null);
+    expect(prompt).not.toContain("names a DIFFERENT ward");
+  });
+});
+
 describe("buildWhatsappSystemPrompt — stale-thread time awareness", () => {
   const ctx = baseContext("+254799954672", "bula-pesa");
 

@@ -58,6 +58,9 @@ interface Fx {
   registrationState: Record<string, unknown> | null;
   upsertedLeads: Array<Record<string, unknown>>;
   setCurrentLocationCalls: Array<Record<string, unknown>>;
+  wards?: Array<{ ward_id: string; name: string }>;
+  satelliteByWard?: Record<string, { ndvi_mean: number | null; vci_value: number | null }>;
+  centroidByWard?: Record<string, { lat: number; lon: number } | null>;
 }
 
 const fx: Fx = {
@@ -175,6 +178,13 @@ vi.mock("../src/lib/supabase/index.js", () => ({
   setCurrentLocation: async (input: Record<string, unknown>) => {
     fx.setCurrentLocationCalls.push(input);
   },
+  // Phase 3's resolveQueryWard() — only exercised when a message names
+  // a different ward than the fixture's own (fx.ctx.wardId, default
+  // "242"); default to empty/null so pre-existing tests (none of which
+  // are testing cross-ward resolution) keep working unchanged.
+  listWards: async () => fx.wards ?? [],
+  latestSatelliteFor: async (wardId: string) => fx.satelliteByWard?.[wardId] ?? null,
+  centroidForWardId: async (wardId: string) => fx.centroidByWard?.[wardId] ?? null,
 }));
 
 vi.mock("../src/lib/openai/index.js", () => ({
@@ -252,12 +262,14 @@ vi.mock("../src/lib/whatsappConversation.js", () => ({
     hasHistory: boolean,
     freshWaterPoint?: { name: string; distanceKm: number; status: string } | null,
     gapMinutes?: number | null,
+    queryWard?: { wardId: string; wardName: string } | null,
   ) =>
     `system prompt hasHistory=${hasHistory}` +
     (freshWaterPoint
       ? ` freshWaterPoint=${freshWaterPoint.name}@${freshWaterPoint.distanceKm.toFixed(1)}km(${freshWaterPoint.status}) computed just now by the system`
       : "") +
-    (gapMinutes != null ? ` gapMinutes=${gapMinutes.toFixed(1)}` : ""),
+    (gapMinutes != null ? ` gapMinutes=${gapMinutes.toFixed(1)}` : "") +
+    (queryWard ? ` queryWard=${queryWard.wardId}(${queryWard.wardName})` : ""),
 }));
 
 let app: Express;
@@ -730,6 +742,36 @@ describe("POST /api/whatsapp-webhook", () => {
       // ever reached) — state is left as-is, exactly as a real herder
       // resuming registration afterward would expect.
       expect(fx.registrationState).toMatchObject({ step: "ask_ward" });
+    });
+  });
+
+  describe("directions from anywhere (Phase 3)", () => {
+    it("resolves a different named ward's real facts when the herder asks about it, not their own", async () => {
+      // fx.ctx.wardId defaults to "242" (Bulla Pesa) — herder asks about
+      // Ngare Mara ("245") instead.
+      fx.wards = [
+        { ward_id: "242", name: "Bulla Pesa" },
+        { ward_id: "245", name: "Ngare Mara" },
+      ];
+      fx.satelliteByWard = { "245": { ndvi_mean: 0.31, vci_value: 42 } };
+      fx.centroidByWard = { "245": { lat: 0.6614, lon: 37.904 } };
+      const res = await request(app)
+        .post("/api/whatsapp-webhook")
+        .send(webhookBody({ type: "text", text: { body: "Kuna maji Ngare Mara?" } }));
+      expect(res.status).toBe(200);
+      await new Promise((r) => setTimeout(r, 0));
+      const systemMessage = fx.lastCompleteMessages.find((m) => m.role === "system");
+      expect(systemMessage?.content).toContain("queryWard=245(Ngare Mara)");
+    });
+
+    it("never triggers a query-ward resolution when the herder doesn't name a different ward", async () => {
+      const res = await request(app)
+        .post("/api/whatsapp-webhook")
+        .send(webhookBody({ type: "text", text: { body: "Ng'ombe wangu ni wagonjwa" } }));
+      expect(res.status).toBe(200);
+      await new Promise((r) => setTimeout(r, 0));
+      const systemMessage = fx.lastCompleteMessages.find((m) => m.role === "system");
+      expect(systemMessage?.content).not.toContain("queryWard=");
     });
   });
 });

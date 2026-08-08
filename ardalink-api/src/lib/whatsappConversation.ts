@@ -25,6 +25,8 @@
  */
 
 import type { HerderContext } from "./herderContext/index.js";
+import type { QueryWardFacts } from "./whatsappTurn.js";
+import { landmarksBlockForWard } from "./data/landmarks/index.js";
 
 /**
  * Same indicator taxonomy as openai/voicePrompt.ts's indicatorCollectionBlock(),
@@ -85,8 +87,9 @@ Rules that still apply:
 function whatsappGroundingRules(): string {
   return `
 ─── GROUNDING — HARD RULES (do not soften these) ───
-- The ONLY ward you have real satellite/weather data for is the one named above. If the herder names a different place — including one you don't recognize, or a place you know was retired from this system — do NOT invent NDVI, rainfall, forecast, or drought numbers for it. Say plainly you only have verified data for their registered ward, and ask where relative to it they mean.
-- The ONLY water point you have real data for is the one named above (if any). Do not name any other specific water point, distance, direction, or quality assessment — you have no way to look those up in this conversation. If the herder wants other options, tell them to share their live WhatsApp location (the pin/attachment feature, not a typed address or a maps link) so the system can find real nearby points.
+- The ONLY wards you have real satellite/weather/water data for are the ones NAMED ABOVE in this prompt (the herder's own ward, and — only when a separate "different ward" line explicitly names one — that other ward too). If the herder names any OTHER place not given to you above — including one you don't recognize, or a place you know was retired from this system — do NOT invent NDVI, rainfall, forecast, water-point, or drought numbers for it. Say plainly you only have verified data for the ward(s) named above, and ask where relative to one of them they mean.
+- The ONLY water point(s) you have real data for are the one(s) named above (if any) — your own ward's, and the separate different-ward one when present. Do not name any other specific water point, distance, direction, or quality assessment — you have no way to look those up in this conversation. If the herder wants other options, tell them to share their live WhatsApp location (the pin/attachment feature, not a typed address or a maps link) so the system can find real nearby points.
+- Named places (schools, markets, landmarks): you may recognize and name a place ONLY if it appears in a "known named places" list given to you above. If the herder names a place not on that list, or their ward has no such list at all, say so plainly — never invent a place's existence, distance, or direction.
 - NEVER invent or estimate a distance (km) yourself, and never reuse a distance number from earlier in the conversation history for a NEW location share — a distance computed for where the herder was standing an hour ago is not valid for where they are now. The ONLY distance you may state is one given to you explicitly in THIS prompt, for THIS turn (see the water-point line above, when present). That line tells you exactly which kind of number it is — either computed from a location the herder just shared (you may say so), or a fixed ward-level estimate (you must NOT claim it came from anything they shared, even if they shared a location earlier in this conversation — that share has expired). Read the water-point line's own wording every turn; do not assume based on what it said in an earlier turn. If no distance is given to you this turn, say you need their live location (and which animals) before you can give one.
 - NEVER say you "received," "saw," or "got" a live location unless the herder's message was an actual WhatsApp location share (a pin), not text. Typed words like "live location", "this is live", or "I sent it" are NOT a location share — if that's all you have, say you haven't received one yet and ask them to use the attachment/paperclip → Location feature.
 - You cannot open links, and you cannot see a map from a description of a place. If the herder pastes a link (Google Maps or otherwise) or describes a location in words, say you can't read that — ask them to share their live location instead.
@@ -132,10 +135,35 @@ export function buildWhatsappSystemPrompt(
   hasHistory: boolean,
   freshWaterPoint?: FreshWaterPoint | null,
   gapMinutes?: number | null,
+  queryWard?: QueryWardFacts | null,
 ): string {
   const wardLine = ctx.wardName
     ? `Ward: ${ctx.wardName}${ctx.wardMonth ? ` (${ctx.wardMonth})` : ""}`
     : "Ward: unknown — ask where the herder is grazing if it becomes relevant.";
+
+  // Phase 3 (2026-08-06): named places the herder can be told apart by
+  // name, not just a ward-level number. Only Bula Pesa has curated
+  // landmark data today (src/lib/data/landmarks) — for every other
+  // ward this is an explicit, honest "we don't have that" line, never
+  // an invented place. Real incident this guards against: a herder
+  // named a landmark ("police post") and the bot had no way to
+  // recognize it at all, silently ignoring it rather than saying so.
+  const landmarksLine = ctx.wardId
+    ? (() => {
+        const block = landmarksBlockForWard(ctx.wardId);
+        return block
+          ? `Known named places in the herder's ward (use these to recognize a place they name and anchor your reply to it — never invent one not on this list):\n${block}`
+          : "No curated named-place catalogue exists for this ward yet. If the herder names a specific place (a school, market, landmark), acknowledge it by name but do NOT invent its distance/direction — you only have ward-level precision here. Offer a live location share for anything more specific.";
+      })()
+    : "";
+
+  // "Directions from anywhere" — the herder asked about a DIFFERENT
+  // ward than their own (wardIdFromLocationText matched something in
+  // their text). State plainly which ward's data this is so the model
+  // never conflates it with the herder's own registered ward.
+  const queryWardLine = queryWard
+    ? `The herder's message names a DIFFERENT ward than their own registered one: *${queryWard.wardName}* (their own ward is ${ctx.wardName ?? "unknown"} — do not mix the two up or imply these facts are about their home ward). For ${queryWard.wardName}: NDVI ${queryWard.ndviMean != null ? queryWard.ndviMean.toFixed(2) : "unknown"}, VCI ${queryWard.vci ?? "unknown"}.${queryWard.waterPoint ? ` Nearest known water point there: ${queryWard.waterPoint.name}, ~${queryWard.waterPoint.distanceKm.toFixed(1)}km from that ward's centre, status ${queryWard.waterPoint.status} — a ward-level estimate, not tied to any specific spot within it.` : " No known water point data for that ward."}${queryWard.landmarksBlock ? `\nKnown named places in ${queryWard.wardName}:\n${queryWard.landmarksBlock}` : ""}`
+    : "";
 
   const droughtLine =
     ctx.wardNdviPct != null || ctx.wardDroughtSeverity
@@ -202,6 +230,8 @@ ${wardLine}
 ${droughtLine}
 ${waterLine}
 ${peerLine}
+${landmarksLine}
+${queryWardLine}
 
 ${whatsappIndicatorGuidance()}
 
