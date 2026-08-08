@@ -2,6 +2,25 @@ import { describe, it, expect } from "vitest";
 import { buildWhatsappSystemPrompt } from "../src/lib/whatsappConversation.js";
 import { baseContext } from "../src/lib/herderContext/base.js";
 
+describe("buildWhatsappSystemPrompt — ward identifies, doesn't confine", () => {
+  it(
+    "frames ward as an identifier, never a hard boundary on where the bot will help " +
+      "(owner's explicit direction: pastoralists move, ward is not a blocker to " +
+      "navigation/access, the goal is optimizing herder activity and availing " +
+      "information — real transcripts showed the old wording producing flat refusals " +
+      "like 'sina data ya ward nyingine' for any place outside the registered ward)",
+    () => {
+      const ctx = baseContext("+254799954672", "bula-pesa");
+      const prompt = buildWhatsappSystemPrompt(ctx, "en", false, null);
+      expect(prompt).toContain("ward identifies, it doesn't confine");
+      expect(prompt).toContain("never a reason to withhold help or refuse to engage");
+      expect(prompt).toContain("never a flat \"I can't help with that.\"");
+      // The old, more refusal-flavored wording must not linger.
+      expect(prompt).not.toContain("say plainly you only have verified data for the ward(s) named above, and ask where relative to one of them they mean");
+    },
+  );
+});
+
 describe("buildWhatsappSystemPrompt — water-point attribution", () => {
   it("attributes a fresh water point to the herder's live location share", () => {
     const ctx = baseContext("+254799954672", "bula-pesa");
