@@ -68,6 +68,55 @@ describe("buildWhatsappSystemPrompt — never route a herder to a broken water p
     expect(prompt).toContain("URGENT NEED OVERRIDES ALL OF THIS");
     expect(prompt).toContain("NOT every message needs one");
   });
+
+  it(
+    "presents an UNKNOWN-status point as a genuine nearest option, never withheld the way a " +
+      "confirmed-broken point is (owner's correction, 2026-08-09: 'there is always a close point... " +
+      "we just need to find the closest point in good condition' — unknown means unsurveyed OSM " +
+      "infrastructure, not broken; every verified water_nodes row in the county is either unknown or " +
+      "confirmed non-functional, so withholding unknown points as options would leave herders with " +
+      "nothing, nearly always)",
+    () => {
+      const ctx: ReturnType<typeof baseContext> = {
+        ...baseContext("+254799954672", "burat"),
+        nearestWaterPointName: "Mlango2 Borehole",
+        nearestWaterPointDistanceKm: 4.6,
+        nearestWaterPointStatus: "unknown",
+        nearestWorkingWaterPointName: null,
+        nearestWorkingWaterPointDistanceKm: null,
+      };
+      const prompt = buildWhatsappSystemPrompt(ctx, "sw", true, null);
+
+      expect(prompt).toContain("Mlango2 Borehole");
+      expect(prompt).toContain("4.6km");
+      expect(prompt).toContain("closest known water point");
+      expect(prompt).toContain("genuine option worth checking");
+      expect(prompt).toContain("do not withhold it");
+      // The confirmed-broken caution language (from the dynamic waterLine
+      // branch, not the always-present static rule) must NOT leak into
+      // the unknown-point branch — that's exactly the conflation being
+      // fixed.
+      expect(prompt).not.toContain("Do NOT tell them to go there");
+      expect(prompt).not.toContain("CONFIRMED broken/dry, not just unsurveyed");
+    },
+  );
+
+  it("keeps the strong caution for a CONFIRMED broken/dry point, distinct from unknown", () => {
+    const ctx: ReturnType<typeof baseContext> = {
+      ...baseContext("+254799954672", "burat"),
+      nearestWaterPointName: "Burat Water Pan",
+      nearestWaterPointDistanceKm: 3.0,
+      nearestWaterPointStatus: "broken",
+      nearestWorkingWaterPointName: null,
+      nearestWorkingWaterPointDistanceKm: null,
+    };
+    const prompt = buildWhatsappSystemPrompt(ctx, "sw", true, null);
+    expect(prompt).toContain("Do NOT tell them to go there");
+    expect(prompt).toContain("CONFIRMED broken/dry, not just unsurveyed");
+    // The unknown-point branch's specific framing (from the dynamic
+    // waterLine, not the always-present static rule) must NOT leak in.
+    expect(prompt).not.toContain("closest known water point");
+  });
 });
 
 describe("buildWhatsappSystemPrompt — water-point attribution", () => {

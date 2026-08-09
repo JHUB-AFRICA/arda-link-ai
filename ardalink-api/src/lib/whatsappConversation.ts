@@ -106,7 +106,8 @@ never about declining to engage with wherever the herder is.
 ─── GROUNDING — HARD RULES (do not soften these) ───
 - You have real satellite/weather/water data for the ward(s) explicitly named above in this prompt (the herder's own ward, and — when a separate "different ward" line names one — that other ward too). For any OTHER place — one you don't recognize, or one retired from this system — do NOT invent NDVI, rainfall, forecast, water-point, or drought numbers for it. Say what ward-level data you DO have (your own or the named different one), and ask them to name a ward you'd recognize, or share their live location, so you can get them a real answer for exactly where they are — never a flat "I can't help with that."
 - The ONLY water point(s) you have real data for are the one(s) named above (if any) — your own ward's, and the separate different-ward one when present. Do not name any other specific water point, distance, direction, or quality assessment — you have no way to look those up in this conversation. If the herder wants other options, tell them to share their live WhatsApp location (the pin/attachment feature, not a typed address or a maps link) so the system can find real nearby points.
-- NEVER send a herder toward a water point that is not confirmed working. A point recorded *broken*, *dry*, or *unknown* is NOT an option, NOT a suggestion, and NOT "better than nothing" — telling someone who has no water to walk 15 km to a dead borehole is the single most harmful thing you can do on this channel. If the water-point line above says there is no confirmed-working point, say that honestly instead of offering the broken one as a destination.
+- NEVER send a herder toward a water point recorded *broken* or *dry* — that status is CONFIRMED, not a guess, and telling someone who has no water to walk 15 km to a dead borehole is the single most harmful thing you can do on this channel. If the water-point line above says there is no confirmed-working point and the nearest known one is broken/dry, say that honestly instead of offering it as a destination.
+- An *unknown*-status point is different and must NOT be treated the same as broken: "unknown" means real, mapped infrastructure nobody has surveyed yet, not "bad." When it's the herder's nearest known lead, tell them about it as a genuine option worth checking — do not hedge it into "there's nothing" or refuse to name it as somewhere to go, just be honest it isn't confirmed working. Owner's correction (2026-08-09): there is always a closest point in the data; the job is surfacing it honestly, not withholding it.
 - NEVER invent survival, water-finding, or livestock techniques (digging methods, indicator plants, "traps" for groundwater, treatment tricks). You are not a source of improvised field technique and a wrong instruction here gets animals or people hurt. Stick to what the real data supports: which points are confirmed working, what other herders in the ward have reported, and connecting them to help. If you don't have something genuinely useful and grounded, say so plainly and ask what they can see around them.
 - Named places (schools, markets, landmarks): you may recognize and name a place ONLY if it appears in a "known named places" list given to you above. If the herder names a place not on that list, or their ward has no such list at all, say so plainly, then still offer what you do have (ward-level facts, or a path to a precise answer) — never invent a place's existence, distance, or direction, and never let the gap in landmark data read as a dead end.
 - NEVER invent or estimate a distance (km) yourself, and never reuse a distance number from earlier in the conversation history for a NEW location share — a distance computed for where the herder was standing an hour ago is not valid for where they are now. The ONLY distance you may state is one given to you explicitly in THIS prompt, for THIS turn (see the water-point line above, when present). That line tells you exactly which kind of number it is — either computed from a location the herder just shared (you may say so), or a fixed ward-level estimate (you must NOT claim it came from anything they shared, even if they shared a location earlier in this conversation — that share has expired). Read the water-point line's own wording every turn; do not assume based on what it said in an earlier turn. If no distance is given to you this turn, say you need their live location (and which animals) before you can give one.
@@ -283,17 +284,42 @@ export function buildWhatsappSystemPrompt(
   // range) — asking about a point 40km away just wastes their reply.
   const CONFIRMABLE_KM = 12;
   const worthAskingAbout = knownName != null && knownKm != null && knownKm <= CONFIRMABLE_KM;
+  // Real, checked fact (2026-08-09): every VERIFIED water_nodes row in
+  // the whole county is either unknown (unsurveyed OSM) or non-functional
+  // (stale 2012 WPDx) — there is currently NOT ONE confirmed-working
+  // point anywhere. The 12 rows that do say "functional" are unverified
+  // legacy demo/seed data, correctly excluded. That means this branch —
+  // "no confirmed working point nearby" — is the DOMINANT case, not an
+  // edge case, so the specific ask below has to land reliably, not
+  // compete with a vaguer question for the model's one-question budget.
   const groundTruthAsk = worthAskingAbout
     ? knownStatus === "unknown"
-      ? ` Since ${knownName} is close enough that they may know it, ask them directly, as one clear question: have they been to ${knownName} recently, and is it working? Their answer is real ground truth — say so.`
-      : ` Since ${knownName} is close enough that they may know it, ask them directly: is ${knownName} still ${knownStatus}, or has it changed since it was last recorded? A "yes it's fixed" or "still broken" answer from them is exactly the ground truth this system needs, and worth asking for even though it isn't a working option today.`
+      ? ` You MUST ask this, as your one question this turn, naming the point and stating the distance: "have you been to ${knownName} (~${knownKm!.toFixed(1)}km away) recently — is it working?" Their answer is real ground truth — say so. Do not substitute a vaguer question (like asking if anyone nearby has water) for this specific one.`
+      : ` You MUST ask this, as your one question this turn, naming the point and stating the distance: "is ${knownName} (~${knownKm!.toFixed(1)}km away) still ${knownStatus}, or has it changed since it was last recorded?" A "yes it's fixed" or "still broken" answer from them is exactly the ground truth this system needs. Do not substitute a vaguer question for this specific one.`
     : "";
 
+  // "Unknown" and "confirmed broken" are NOT the same case and must not
+  // read like they are. Owner's correction (2026-08-09): "there is
+  // always a close point... we have all those points in the database,
+  // we just need to find the closest point in good condition" — right,
+  // and for an UNKNOWN point, "good condition" is genuinely still
+  // possible; unknown means unsurveyed OSM infrastructure, not broken.
+  // Withholding it as an option starves the herder of their single best,
+  // real, nearest lead for no reason. The J1 incident this file's other
+  // caution exists for (2026-08-09, same day) was about a CONFIRMED
+  // broken/non-functional point — that caution stays, scoped to only
+  // that case.
+  const distanceNote =
+    knownKm != null
+      ? `, ~${knownKm.toFixed(1)}km away — ALWAYS state this distance figure in your reply, don't just name the point`
+      : "";
   const waterLine = workingName
     ? `CONFIRMED WORKING water point — this is the only one you may suggest they travel to: ${workingName}${workingKm != null ? `, ~${workingKm.toFixed(1)}km away` : ""}. Distance ${provenance}.`
-    : knownName
-      ? `The nearest water point on record is ${knownName}${knownKm != null ? `, ~${knownKm.toFixed(1)}km away` : ""}, and its recorded status is *${knownStatus}* (distance ${provenance}). There is NO confirmed-working water point known near this herder right now. Do NOT tell them to go there, do NOT present it as an option, and do NOT imply a journey to it is worth making — a herder without water walking 15+ km to a dead borehole is the exact harm to avoid. You may mention it only to say it is recorded ${knownStatus} so they don't waste the trip.${groundTruthAsk} Then be useful a different way: ask if anyone nearby has working water, tell them their report of what's actually working helps other herders in the ward, and offer a live location share so the system can look for something closer.`
-      : "No water point data is available for this herder's area at all. Say so plainly — do not name or invent one. Offer a live location share so the system can look, and ask what they can see around them.";
+    : knownName && knownStatus === "unknown"
+      ? `Their closest known water point is ${knownName}${distanceNote} (distance ${provenance}). Its status has never been surveyed — "unknown" means real, mapped infrastructure that nobody has confirmed working OR broken, NOT broken. Since it's their nearest real lead, tell them about it as a genuine option worth checking — do not hedge this into "there's nothing" or refuse to name it as somewhere to go. Be honest that it isn't confirmed, but do not withhold it.${groundTruthAsk} Offer a live location share too, so the system can look for anything closer or already-confirmed.`
+      : knownName
+        ? `The nearest water point on record is ${knownName}${distanceNote}, and its recorded status is *${knownStatus}* (distance ${provenance}) — CONFIRMED broken/dry, not just unsurveyed. There is NO confirmed-working water point known near this herder right now. Do NOT tell them to go there, do NOT present it as an option, and do NOT imply a journey to it is worth making — a herder without water walking 15+ km to a dead borehole is the exact harm to avoid. You may mention it only to say it is recorded ${knownStatus} so they don't waste the trip.${groundTruthAsk} ${worthAskingAbout ? "Beyond that one question, tell" : "Ask if anyone nearby has working water, tell"} them their report of what's actually working helps other herders in the ward, and offer a live location share so the system can look for something closer.`
+        : "No water point data is available for this herder's area at all. Say so plainly — do not name or invent one. Offer a live location share so the system can look, and ask what they can see around them.";
 
   const peerLine =
     ctx.peerCallerCount != null && ctx.peerCallerCount > 0
