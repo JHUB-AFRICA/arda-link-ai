@@ -14,6 +14,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { resolveHerderContext, buildLocalizedBrief } from "../../lib/herderContext";
 import { centroidForTenant, formatUssdLines } from "../../lib/wpdx";
+import { formatRealWaterLines } from "../../lib/waterNodes";
 import { tenantForWardId } from "../../lib/wardMapping";
 
 const router: IRouter = Router();
@@ -302,7 +303,10 @@ async function screenFor(
         const origin = ctx.wardId
           ? await centroidForTenant(tenantForWardId(ctx.wardId))
           : await centroidForTenant(DEMO_TENANT_ID);
-        const lines = origin ? formatUssdLines(origin, 5, { workingFirst: true }) : [];
+        const lines = origin
+          ? ((await formatRealWaterLines(origin, 5)) ??
+            formatUssdLines(origin, 5, { workingFirst: true }))
+          : [];
         // Fallback: if WPDx has no rows for this county, still render
         // something rather than an empty screen.
         const body =

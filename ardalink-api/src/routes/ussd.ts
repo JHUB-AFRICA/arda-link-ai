@@ -1,6 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { logger } from "../lib/logger.js";
 import { centroidForTenant, formatUssdLines } from "../lib/wpdx.js";
+import { formatRealWaterLines } from "../lib/waterNodes.js";
 import {
   resolveHerderContext,
   buildLocalizedBrief,
@@ -262,7 +263,12 @@ async function buildWaterPointsReply(phone: string): Promise<string> {
   const origin = id?.ward_id
     ? await centroidForTenant(tenantForWardId(id.ward_id))
     : await centroidForTenant(DEFAULT_TENANT_ID);
-  const lines = origin ? formatUssdLines(origin, 5, { workingFirst: true }) : [];
+  // Real water_nodes first (see waterNodes.ts); the static WPDx
+  // snapshot is only a fallback for an unreachable engine.
+  const lines = origin
+    ? ((await formatRealWaterLines(origin, 5)) ??
+      formatUssdLines(origin, 5, { workingFirst: true }))
+    : [];
   const body =
     lines.length > 0
       ? lines.map((l, i) => `${i + 1}. ${l}`).join("\n")

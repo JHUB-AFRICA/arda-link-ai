@@ -14,6 +14,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { resolveHerderContext, buildLocalizedBrief } from "../../lib/herderContext";
 import { centroidForTenant, formatUssdLines } from "../../lib/wpdx";
+import { formatRealWaterLines } from "../../lib/waterNodes";
 import { tenantForWardId } from "../../lib/wardMapping";
 
 const router: IRouter = Router();
@@ -51,7 +52,10 @@ async function replyFor(from: string, text: string): Promise<{ intent: string; r
     const origin = ctx.wardId
       ? await centroidForTenant(tenantForWardId(ctx.wardId))
       : await centroidForTenant(DEMO_TENANT_ID);
-    const lines = origin ? formatUssdLines(origin, 5, { workingFirst: true }) : [];
+    const lines = origin
+      ? ((await formatRealWaterLines(origin, 5)) ??
+        formatUssdLines(origin, 5, { workingFirst: true }))
+      : [];
     const body =
       lines.length > 0
         ? lines.join("; ")

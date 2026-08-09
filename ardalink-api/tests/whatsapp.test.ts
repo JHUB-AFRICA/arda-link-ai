@@ -218,6 +218,30 @@ vi.mock("../src/lib/engine.js", () => ({
   fetchGrazingAdvisory: async () => fx.grazingAdvisory,
 }));
 
+// Real water_nodes lookups (2026-08-09) — driven off the same
+// fx.waterPoints fixture the old static-snapshot path used, so existing
+// expectations keep their meaning while exercising the real-data path.
+vi.mock("../src/lib/waterNodes.js", () => ({
+  nearestRealWaterPoints: async (
+    _origin: { lat: number; lon: number },
+    n: number,
+  ) =>
+    fx.waterPoints.slice(0, n).map((p) => ({
+      name: p.displayName,
+      lat: p.point.lat,
+      lon: p.point.lon,
+      distanceKm: p.distanceKm,
+      status: p.status,
+      sourceType: "borehole",
+    })),
+  nearestWorkingRealWaterPoint: async () =>
+    fx.waterPoints.find((p) => p.status === "working") ?? null,
+  formatRealWaterLines: async () => null,
+  loadUsableWaterNodes: async () => [],
+  clearWaterNodeCache: () => {},
+  normalizeFunctionalStatus: (s: string) => s,
+}));
+
 vi.mock("../src/lib/trustScore.js", () => ({
   computeTrustScore: () => ({ score: 70, flags: [] }),
   logTrustScore: vi.fn(),
@@ -419,9 +443,11 @@ describe("POST /api/whatsapp-webhook", () => {
       expect(res.status).toBe(200);
       await new Promise((r) => setTimeout(r, 0));
       expect(fx.sentSessionMessages[0].text).toContain(
-        "NO confirmed-working water point near you",
+        "Every water point near you is recorded BROKEN/DRY",
       );
-      expect(fx.sentSessionMessages[0].text).toContain("RECORDED BROKEN");
+      expect(fx.sentSessionMessages[0].text).toContain(
+        "Don't make the journey without confirming first",
+      );
       expect(fx.sentLocations[0].name).toBe("Burat borehole/tubewell 3W5 — BROKEN");
     },
   );

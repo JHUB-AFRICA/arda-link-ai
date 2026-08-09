@@ -16,7 +16,9 @@ import {
   centroidForTenant,
   nearestWorkingKnownPoints,
   nearestConfirmedWorkingPoints,
+  type WpdxStatus,
 } from "../../wpdx.js";
+import { nearestRealWaterPoints } from "../../waterNodes.js";
 import { tenantForWardId } from "../../wardMapping.js";
 import type { HerderContext } from "../types.js";
 
@@ -49,13 +51,32 @@ export async function overlayNearestWaterPoint(
       return correction ? { ...o, water_point_status: correction.corrected_value } : o;
     }),
   );
-  const nearest = nearestWorkingKnownPoints(origin, 1, overrides);
-  const top = nearest[0];
-  // Separately: the nearest point actually CONFIRMED working — usually
-  // none, since every WPDx row is Non-Functional until a herder report
-  // overrides it. Kept apart from `top` so a broken point can never be
-  // silently handed to the prompt as somewhere to go.
-  const working = nearestConfirmedWorkingPoints(origin, 1, overrides)[0] ?? null;
+  // REAL water_nodes first (205 rows, the same data the dashboard shows).
+  // The static WPDx snapshot below is a 10-row 2012 survey where every
+  // row is Non-Functional — only a fallback for when the engine is
+  // unreachable, never the primary source (2026-08-09: reading it as
+  // primary is what made the bot believe Isiolo had no working water).
+  const real = await nearestRealWaterPoints(origin, 500);
+  let top: { displayName: string; distanceKm: number; status: WpdxStatus } | null = null;
+  let working: { displayName: string; distanceKm: number } | null = null;
+
+  if (real && real.length > 0) {
+    const first = real[0]!;
+    top = { displayName: first.name, distanceKm: first.distanceKm, status: first.status };
+    const w = real.find((r) => r.status === "working");
+    working = w ? { displayName: w.name, distanceKm: w.distanceKm } : null;
+  } else if (real === null) {
+    const fallback = nearestWorkingKnownPoints(origin, 1, overrides)[0];
+    if (fallback) {
+      top = {
+        displayName: fallback.displayName,
+        distanceKm: fallback.distanceKm,
+        status: fallback.status,
+      };
+    }
+    const fw = nearestConfirmedWorkingPoints(origin, 1, overrides)[0];
+    working = fw ? { displayName: fw.displayName, distanceKm: fw.distanceKm } : null;
+  }
   if (!top && !working) return ctx;
   return {
     ...ctx,

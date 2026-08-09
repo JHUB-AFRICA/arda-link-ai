@@ -5,6 +5,7 @@ import {
   buildLocalizedBrief,
 } from "../lib/herderContext/index.js";
 import { centroidForTenant, formatUssdLines } from "../lib/wpdx.js";
+import { formatRealWaterLines } from "../lib/waterNodes.js";
 import { tenantForWardId } from "../lib/wardMapping.js";
 import { languageForCaller } from "../lib/voiceCopy.js";
 import { initiateOutboundCall, sendSmsViaAt } from "../lib/africastalking.js";
@@ -160,8 +161,11 @@ router.post("/sms-callback", async (req, res): Promise<void> => {
             ? { lat: ctx.lastKnownLat, lon: ctx.lastKnownLon }
             : ((await centroidForTenant(tenantForWardId(ctx.wardId))) ??
               (await centroidForTenant(DEFAULT_TENANT_ID)));
+        // Real water_nodes first (see waterNodes.ts); the static WPDx
+        // snapshot is only a fallback for an unreachable engine.
         const lines = origin
-          ? formatUssdLines(origin, 5, { workingFirst: true })
+          ? ((await formatRealWaterLines(origin, 5)) ??
+            formatUssdLines(origin, 5, { workingFirst: true }))
           : [];
         const body =
           lines.length > 0

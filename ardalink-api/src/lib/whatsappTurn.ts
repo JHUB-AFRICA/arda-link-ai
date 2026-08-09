@@ -20,6 +20,7 @@ import {
   type HerderContext,
 } from "./herderContext/index.js";
 import { centroidForTenant, nearestWorkingKnownPoints } from "./wpdx.js";
+import { nearestRealWaterPoints } from "./waterNodes.js";
 import { tenantForWardId, wardIdFromLocationText, WARD_PICKER_LIST } from "./wardMapping.js";
 import { landmarksBlockForWard } from "./data/landmarks/index.js";
 import {
@@ -220,7 +221,25 @@ async function handleMalisho(
       ? { lat: ctx.lastKnownLat, lon: ctx.lastKnownLon }
       : ((await centroidForTenant(tenantForWardId(ctx.wardId))) ??
         (await centroidForTenant(DEFAULT_TENANT_ID)));
-  const points = origin ? nearestWorkingKnownPoints(origin, 3) : [];
+  // REAL water_nodes (the same 205 the dashboard shows), falling back to
+  // the static 10-row WPDx snapshot only if the engine is unreachable.
+  const real = origin ? await nearestRealWaterPoints(origin, 3) : null;
+  const points: Array<{
+    point: { lat: number; lon: number };
+    displayName: string;
+    status: string;
+    distanceKm: number;
+  }> =
+    real !== null
+      ? real.map((r) => ({
+          point: { lat: r.lat, lon: r.lon },
+          displayName: r.name,
+          status: r.status,
+          distanceKm: r.distanceKm,
+        }))
+      : origin
+        ? nearestWorkingKnownPoints(origin, 3)
+        : [];
   if (points.length === 0) {
     const text =
       lang === "sw" ? "Hakuna data ya WPDx bado." : "No WPDx data yet.";
@@ -238,13 +257,18 @@ async function handleMalisho(
   // attached, and a herder must never be left thinking a broken point
   // is worth the walk.
   const working = points.filter((p) => p.status === "working");
+  const unknown = points.filter((p) => p.status === "unknown");
   const header = working.length
     ? lang === "sw"
-      ? `Maji yaliyothibitishwa kufanya kazi (${working.length}). Nyingine hapa chini zimerekodiwa mbovu — nimeziweka ili usipoteze safari bure. ⚠️`
-      : `Confirmed working water (${working.length}). The others below are recorded broken — sent only so you don't waste the trip. ⚠️`
-    : lang === "sw"
-      ? "⚠️ Hakuna maji yaliyothibitishwa kufanya kazi karibu nawe kwenye rekodi zetu. Hizi hapa chini ZIMEREKODIWA MBOVU — usitembee kwenda huko bila kuthibitisha. Ukijua mahali penye maji yanayofanya kazi, niambie — itasaidia wachungaji wengine wa ward hii."
-      : "⚠️ We have NO confirmed-working water point near you on record. The ones below are RECORDED BROKEN — don't make the journey without confirming first. If you know somewhere with working water, tell me — it helps other herders in this ward.";
+      ? `Maji yaliyothibitishwa kufanya kazi (${working.length}). Hali ya kila moja imeandikwa kwenye pin. 💧`
+      : `Confirmed working water (${working.length}). Each pin carries its own status. 💧`
+    : unknown.length
+      ? lang === "sw"
+        ? "Hizi ni sehemu halisi za maji karibu nawe. Hali yao HAIJATHIBITISHWA bado — zipo kwenye ramani lakini hatujui kama zinafanya kazi leo. Ukifika, niambie hali yake; itasaidia wachungaji wengine. 💧📍"
+        : "These are real water points near you. Their condition is NOT yet confirmed — they're on the map, but we don't know if they're working today. If you reach one, tell me what you found; it helps other herders. 💧📍"
+      : lang === "sw"
+        ? "⚠️ Sehemu za maji zilizo karibu nawe zote zimerekodiwa MBOVU/KAVU. Usitembee kwenda huko bila kuthibitisha. Ukijua mahali penye maji yanayofanya kazi, niambie — itasaidia wachungaji wengine wa ward hii."
+        : "⚠️ Every water point near you is recorded BROKEN/DRY. Don't make the journey without confirming first. If you know somewhere with working water, tell me — it helps other herders in this ward.";
   await sendWhatsappSessionMessage(from, header);
   logOutbound(from, ctx, "text", header);
 
@@ -601,7 +625,19 @@ async function resolveQueryWard(
     centroidForWardId(wardId),
   ]);
   const wardName = wards?.find((w) => w.ward_id === wardId)?.name ?? wardId;
-  const [nearest] = centroid ? nearestWorkingKnownPoints(centroid, 1) : [];
+  const realNear = centroid ? await nearestRealWaterPoints(centroid, 1) : null;
+  const nearest =
+    realNear !== null
+      ? (realNear[0]
+          ? {
+              displayName: realNear[0].name,
+              distanceKm: realNear[0].distanceKm,
+              status: realNear[0].status as string,
+            }
+          : undefined)
+      : centroid
+        ? nearestWorkingKnownPoints(centroid, 1)[0]
+        : undefined;
 
   return {
     wardId,
@@ -687,7 +723,14 @@ async function handleFreeText(
   // general fix behind the narrow keyword intercepts above: don't rely
   // on catching every phrasing, make the real data available up front.
   const freshWaterPoint = pendingLocation
-    ? (() => {
+    ? await (async () => {
+        // Real water_nodes first; static WPDx snapshot only if the
+        // engine is unreachable (see waterNodes.ts's header).
+        const real = await nearestRealWaterPoints(pendingLocation, 1);
+        if (real !== null) {
+          const r = real[0];
+          return r ? { name: r.name, distanceKm: r.distanceKm, status: r.status } : null;
+        }
         const [nearest] = nearestWorkingKnownPoints(pendingLocation, 1);
         return nearest
           ? { name: nearest.displayName, distanceKm: nearest.distanceKm, status: nearest.status }
