@@ -23,6 +23,7 @@ import { centroidForTenant, nearestWorkingKnownPoints } from "./wpdx.js";
 import { nearestRealWaterPoints } from "./waterNodes.js";
 import { tenantForWardId, wardIdFromLocationText, WARD_PICKER_LIST } from "./wardMapping.js";
 import { landmarksBlockForWard } from "./data/landmarks/index.js";
+import { findLandmarkMention } from "./data/landmarks/match.js";
 import {
   startRegistration,
   getRegistrationState,
@@ -743,6 +744,37 @@ async function handleFreeText(
   // common case (no other ward mentioned) costs nothing extra.
   const queryWard = await resolveQueryWard(rawText, ctx.wardId);
 
+  // Landmarks as a location estimate, not just a name to recognize in
+  // prose (2026-08-09): if the herder's own message names a curated
+  // landmark, its real coordinates are a far better distance-calc
+  // anchor than the ward centroid. A live GPS share always wins when
+  // both are present — freshWaterPoint is already computed from that.
+  const landmarkMatch = freshWaterPoint
+    ? null
+    : (findLandmarkMention(rawText, ctx.wardId) ??
+      findLandmarkMention(rawText, queryWard?.wardId ?? null));
+  const landmarkWaterPoint = landmarkMatch
+    ? await (async () => {
+        const origin = { lat: landmarkMatch.lat, lon: landmarkMatch.lon };
+        const real = await nearestRealWaterPoints(origin, 1);
+        if (real !== null) {
+          const r = real[0];
+          return r
+            ? { name: r.name, distanceKm: r.distanceKm, status: r.status, landmarkName: landmarkMatch.name }
+            : null;
+        }
+        const [nearest] = nearestWorkingKnownPoints(origin, 1);
+        return nearest
+          ? {
+              name: nearest.displayName,
+              distanceKm: nearest.distanceKm,
+              status: nearest.status,
+              landmarkName: landmarkMatch.name,
+            }
+          : null;
+      })()
+    : null;
+
   const history = await recentWhatsappMessages(from, 12);
   // Only plain text in/out turns are real conversational content —
   // status rows, template sends, location pins, and interactive
@@ -771,6 +803,7 @@ async function handleFreeText(
     freshWaterPoint,
     gapMinutes,
     queryWard,
+    landmarkWaterPoint,
   );
 
   const historyMessages: LlmMessage[] = conversational.map((m) => ({

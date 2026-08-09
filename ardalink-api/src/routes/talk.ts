@@ -266,6 +266,7 @@ router.post("/talk/record", async (req: Request, res: Response): Promise<void> =
         bcs_score: indicators?.bcs_score ?? null,
         mortality_rate: mortalityNum,
         offtake_rate: offtakeNum,
+        water_point_name: indicators?.water_point_name ?? null,
         water_point_status: indicators?.water_point_status ?? null,
         water_trek_distance_km: trekKm,
         supplementary_feeding:

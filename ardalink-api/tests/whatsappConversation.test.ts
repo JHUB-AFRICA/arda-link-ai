@@ -229,3 +229,47 @@ describe("buildWhatsappSystemPrompt — stale-thread time awareness", () => {
     expect(prompt).not.toContain("SAME herder and thread");
   });
 });
+
+describe("buildWhatsappSystemPrompt — landmark mention as a location estimate", () => {
+  it(
+    "treats a named landmark as a real, distinct location tier, more precise than " +
+      "the ward centroid but honestly labelled as text-matched, not a live GPS fix " +
+      "(2026-08-09: landmarks previously only fed the prompt as prose to recognize, " +
+      "never as a coordinate anything computed a distance from)",
+    () => {
+      const ctx = baseContext("+254799954672", "bula-pesa");
+      const prompt = buildWhatsappSystemPrompt(ctx, "en", true, null, null, null, {
+        name: "Kilimani St. Paul Nursery School borehole",
+        distanceKm: 0.4,
+        status: "unknown",
+        landmarkName: "Abubakar Mosque",
+      });
+      expect(prompt).toContain("Abubakar Mosque");
+      expect(prompt).toContain("Location estimate for THIS turn");
+      expect(prompt).toContain("computed from the named place they just mentioned");
+      expect(prompt).toContain("text-matched, not a live GPS fix");
+      expect(prompt).toContain("Kilimani St. Paul Nursery School borehole");
+    },
+  );
+
+  it("lets a live GPS share win over a landmark mention when both are somehow present", () => {
+    const ctx = baseContext("+254799954672", "bula-pesa");
+    const prompt = buildWhatsappSystemPrompt(
+      ctx,
+      "en",
+      true,
+      { name: "Live Pin Point", distanceKm: 1.2, status: "working" },
+      null,
+      null,
+      { name: "Fallback Point", distanceKm: 0.4, status: "unknown", landmarkName: "Abubakar Mosque" },
+    );
+    expect(prompt).toContain("computed just now from the live location they shared");
+    expect(prompt).not.toContain("computed from the named place they just mentioned");
+  });
+
+  it("says nothing about a landmark tier when none was matched", () => {
+    const ctx = baseContext("+254799954672", "bula-pesa");
+    const prompt = buildWhatsappSystemPrompt(ctx, "en", true, null, null, null, null);
+    expect(prompt).not.toContain("Location estimate for THIS turn");
+  });
+});

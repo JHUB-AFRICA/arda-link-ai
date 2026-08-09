@@ -157,13 +157,17 @@ describe("POST /api/ussd-callback — AT USSD gateway", () => {
     expect(res.text).toMatch(/^END /);
   });
 
-  it("returns Malisho list on selection 2 (WPDx-backed)", async () => {
-    // Since 2026-07-08 the water-points list is generated from the
-    // WPDx snapshot in `src/lib/data/wpdxIsiolo.ts`, not a hardcoded
-    // 4-name list. WPDx coverage for Isiolo is sparse (10 rows, all in
-    // Burat/Ngare Mara/Cherab/Oldo-Nyiro wards), so we assert on the
-    // stable structural bits: END prefix, "Malisho" header, at least
-    // one numbered line with a distance-in-km suffix.
+  it("returns Malisho list on selection 2 (real water_nodes data)", async () => {
+    // Since 2026-08-09 the water-points list reads real water_nodes data
+    // (see waterNodes.ts), not the hardcoded 2012 WPDx snapshot. This
+    // suite has no Supabase/engine configured (see tests/setup.ts) so
+    // origin resolution deterministically comes up empty here — real
+    // coverage of the point list + ground-truth confirm sub-flow (CON,
+    // pressing a point's own number, recording a status) is proved live
+    // against the running service with real config, the same standard
+    // used for the water_nodes real-data fix itself. This test only
+    // pins the webhook-shape contract: still Malisho-branded, still a
+    // valid CON/END reply either way.
     const res = await request(app)
       .post("/api/ussd-callback")
       .type("form")
@@ -175,11 +179,27 @@ describe("POST /api/ussd-callback — AT USSD gateway", () => {
       });
 
     expect(res.status).toBe(200);
-    expect(res.text).toMatch(/^END /);
+    expect(res.text).toMatch(/^(CON|END) /);
     expect(res.text).toContain("Malisho");
-    // A numbered line ending in `<n>km)` proves we rendered at least
-    // one WPDx point (or the fallback string when the snapshot is empty).
-    expect(res.text).toMatch(/(\d+km\)|Hakuna data ya WPDx)/);
+    expect(res.text).toMatch(/(\d+km\)|Hakuna data ya maji)/);
+  });
+
+  it("handles a point-confirm keystroke without crashing (no data in this env)", async () => {
+    // Same no-Supabase-in-tests caveat as above — with no real points to
+    // pick from, this exercises the "invalid choice" branch rather than
+    // the confirm question. Proves the new level-2/3 routing for top="2"
+    // doesn't throw; the real confirm→record path is live-verified.
+    const res = await request(app)
+      .post("/api/ussd-callback")
+      .type("form")
+      .send({
+        sessionId: "AT-ussd-004b",
+        serviceCode: "*123*8#",
+        phoneNumber: "+254711082200",
+        text: "2*1",
+      });
+    expect(res.status).toBe(200);
+    expect(res.text.length).toBeGreaterThan(0);
   });
 
   it("returns CON submenu on Ongea (selection 3)", async () => {

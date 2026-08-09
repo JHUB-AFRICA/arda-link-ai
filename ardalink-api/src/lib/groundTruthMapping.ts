@@ -78,6 +78,7 @@ export function mapExtractedIndicatorsToGroundTruthRow(
     bcs_score: indicators?.bcs_score ?? null,
     mortality_rate: mortalityRate,
     offtake_rate: offtakeRate,
+    water_point_name: indicators?.water_point_name ?? null,
     water_point_status: indicators?.water_point_status ?? null,
     water_trek_distance_km: trekDistanceKm,
     supplementary_feeding:

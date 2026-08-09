@@ -9,7 +9,11 @@ import { formatRealWaterLines } from "../lib/waterNodes.js";
 import { tenantForWardId } from "../lib/wardMapping.js";
 import { languageForCaller } from "../lib/voiceCopy.js";
 import { initiateOutboundCall, sendSmsViaAt } from "../lib/africastalking.js";
-import { logLeadInteraction } from "../lib/supabase/index.js";
+import {
+  logLeadInteraction,
+  insertGroundTruthCall,
+  isSupabaseConfigured,
+} from "../lib/supabase/index.js";
 
 const DEFAULT_TENANT_ID =
   process.env.DETERMINISTIC_TENANT_ID ?? "bula-pesa";
@@ -162,10 +166,13 @@ router.post("/sms-callback", async (req, res): Promise<void> => {
             : ((await centroidForTenant(tenantForWardId(ctx.wardId))) ??
               (await centroidForTenant(DEFAULT_TENANT_ID)));
         // Real water_nodes first (see waterNodes.ts); the static WPDx
-        // snapshot is only a fallback for an unreachable engine.
+        // snapshot is only a fallback for an unreachable engine. Capped
+        // at 3 (not 5) so the "text MAJI to report" hint below survives
+        // the 160-char single-segment budget instead of always getting
+        // truncated away — matches WhatsApp handleMalisho's own cap.
         const lines = origin
-          ? ((await formatRealWaterLines(origin, 5)) ??
-            formatUssdLines(origin, 5, { workingFirst: true }))
+          ? ((await formatRealWaterLines(origin, 3)) ??
+            formatUssdLines(origin, 3, { workingFirst: true }))
           : [];
         const body =
           lines.length > 0
@@ -175,7 +182,61 @@ router.post("/sms-callback", async (req, res): Promise<void> => {
               : "No WPDx data yet";
         reply(
           (lang === "sw" ? "Malisho karibu nawe: " : "Water points near you: ") +
-            body,
+            body +
+            (lang === "sw"
+              ? " Tuma MAJI SAWA/MBAYA kuripoti."
+              : " Text MAJI SAWA/MBAYA to report."),
+        );
+        return;
+      }
+      case "MAJI":
+      case "WATER": {
+        // Ground-truth confirm — most water_nodes rows are unsurveyed
+        // ("unknown"), not broken, and a herder close enough to know one
+        // is the best source we have for turning that into a real
+        // answer. References ctx.nearestWaterPointName — the same point
+        // the MALISHO reply just showed as nearest — so no extra state
+        // needs to be threaded across this stateless keyword callback.
+        const statusWord = (rawText.trim().split(/\s+/)[1] ?? "").toUpperCase();
+        const isWorking = /^(SAWA|POA|OK|FINE|WORKING)$/.test(statusWord);
+        const isBroken = /^(MBAYA|HARIBIKA|IMEHARIBIKA|BROKEN|BAD|DRY|KAVU)$/.test(
+          statusWord,
+        );
+        if (!isWorking && !isBroken) {
+          reply(
+            lang === "sw"
+              ? "Tuma 'MAJI SAWA' (inafanya kazi) au 'MAJI MBAYA' (imeharibika) kuripoti kituo cha karibu nawe."
+              : "Text 'MAJI SAWA' (working) or 'MAJI MBAYA' (broken) to report the water point nearest you.",
+          );
+          return;
+        }
+        const pointName = ctx.nearestWaterPointName;
+        if (!pointName) {
+          reply(
+            lang === "sw"
+              ? "Sina kituo cha maji cha karibu cha kuthibitisha bado. Tuma MALISHO kwanza."
+              : "No nearby water point on file to confirm yet. Text MALISHO first.",
+          );
+          return;
+        }
+        if (ctx.pastoralistId && ctx.wardId && isSupabaseConfigured()) {
+          void insertGroundTruthCall({
+            pastoralist_id: ctx.pastoralistId,
+            ward_id: ctx.wardId,
+            call_timestamp: new Date().toISOString(),
+            water_point_name: pointName,
+            water_point_status: isWorking ? "operational_good" : "not_operational",
+            source_language: lang,
+            transcript: rawText,
+            channel: "sms",
+            reported_lat: ctx.lastKnownLat ?? null,
+            reported_lon: ctx.lastKnownLon ?? null,
+          });
+        }
+        reply(
+          lang === "sw"
+            ? `Asante — tumerekodi ${pointName}: ${isWorking ? "inafanya kazi" : "haifanyi kazi"}.`
+            : `Thanks — recorded ${pointName}: ${isWorking ? "working" : "not working"}.`,
         );
         return;
       }

@@ -20,6 +20,7 @@ export interface SbGroundTruthCallRead {
   bcs_score: number | null;
   mortality_rate: number | null;
   offtake_rate: number | null;
+  water_point_name: string | null;
   water_point_status: string | null;
   milk_production_liters: number | null;
   water_trek_distance_km: number | null;
@@ -45,6 +46,7 @@ export interface SbGroundTruthCallInsert {
   bcs_score?: number | null;
   mortality_rate?: number | null;
   offtake_rate?: number | null;
+  water_point_name?: string | null;
   water_point_status?: string | null;
   milk_production_liters?: number | null;
   water_trek_distance_km?: number | null;
@@ -94,7 +96,7 @@ export const recentGroundTruthCalls = (
 ) => {
   const safeLimit = Math.min(Math.max(limit, 1), 100);
   return sbGet<SbGroundTruthCallRead>(
-    `ground_truth_calls?select=call_id,pastoralist_id,ward_id,call_timestamp,bcs_score,mortality_rate,offtake_rate,water_point_status,milk_production_liters,water_trek_distance_km,supplementary_feeding,trust_score,source_language,transcript,created_at,pastoralists(phone_number,full_name,preferred_language,ward_id)&order=call_timestamp.desc&limit=${safeLimit}`,
+    `ground_truth_calls?select=call_id,pastoralist_id,ward_id,call_timestamp,bcs_score,mortality_rate,offtake_rate,water_point_name,water_point_status,milk_production_liters,water_trek_distance_km,supplementary_feeding,trust_score,source_language,transcript,created_at,pastoralists(phone_number,full_name,preferred_language,ward_id)&order=call_timestamp.desc&limit=${safeLimit}`,
     { mode },
   );
 };

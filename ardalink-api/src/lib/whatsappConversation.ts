@@ -148,6 +148,16 @@ export interface FreshWaterPoint {
   status: string;
 }
 
+/** A water point computed from a curated landmark the herder just named
+ * in THIS message (see whatsappTurn.ts's findLandmarkMention/handleFreeText)
+ * — a real, specific point, more precise than the ward centroid but not
+ * a live GPS fix. Kept distinct from FreshWaterPoint so the prompt's
+ * provenance wording can never claim a text-matched landmark was a live
+ * location share. */
+export interface LandmarkWaterPoint extends FreshWaterPoint {
+  landmarkName: string;
+}
+
 export function buildWhatsappSystemPrompt(
   ctx: HerderContext,
   lang: "sw" | "en",
@@ -155,6 +165,7 @@ export function buildWhatsappSystemPrompt(
   freshWaterPoint?: FreshWaterPoint | null,
   gapMinutes?: number | null,
   queryWard?: QueryWardFacts | null,
+  landmarkWaterPoint?: LandmarkWaterPoint | null,
 ): string {
   // "Ward" here is an identifier/starting point, not where the herder
   // is necessarily standing right now — a pastoralist moves, and this
@@ -181,6 +192,14 @@ export function buildWhatsappSystemPrompt(
       })()
     : "";
 
+  // The herder's OWN message named a curated landmark this turn — that's
+  // a real location estimate, not just a name to recognize in prose.
+  // Say so plainly so the model treats it as "where they are" for this
+  // turn instead of asking a redundant "where are you" question.
+  const landmarkRecognizedLine = landmarkWaterPoint
+    ? `Location estimate for THIS turn: the herder's message named "${landmarkWaterPoint.landmarkName}", a known place — treat that as their approximate current position rather than asking where they are again.`
+    : "";
+
   // "Directions from anywhere" — the herder asked about a DIFFERENT
   // ward than their own (wardIdFromLocationText matched something in
   // their text). State plainly which ward's data this is so the model
@@ -194,27 +213,35 @@ export function buildWhatsappSystemPrompt(
       ? `Drought signal: NDVI ${ctx.wardNdviPct != null ? `${ctx.wardNdviPct.toFixed(0)}% vs normal` : "unknown"}, severity ${ctx.wardDroughtSeverity ?? "unknown"}, VCI ${ctx.wardVci ?? "unknown"}.`
       : "";
 
-  // Three distinct tiers, most-precise first, each with its own honest
+  // Four distinct tiers, most-precise first, each with its own honest
   // label — never let the model conflate them (real incident,
   // 2026-08-06, is exactly this: a ward-wide estimate got described as
   // if it came from a location share):
   //   1. freshWaterPoint — computed THIS turn from a live GPS share.
-  //   2. ctx.lastKnownLat/Lon set — the herder's own permanently-stored
+  //   2. landmarkWaterPoint — computed THIS turn from a named place the
+  //      herder mentioned in their message (see findLandmarkMention) —
+  //      a real, specific point, but text-matched, not a GPS fix.
+  //   3. ctx.lastKnownLat/Lon set — the herder's own permanently-stored
   //      location (registration or an explicit relocation), personal to
   //      them but NOT live/real-time.
-  //   3. Plain ward centroid — the same fixed estimate for anyone in
+  //   4. Plain ward centroid — the same fixed estimate for anyone in
   //      that ward, personal to no one.
+  const usedLandmark = !freshWaterPoint && landmarkWaterPoint != null;
   const usedStoredLocation =
-    !freshWaterPoint && ctx.lastKnownLat != null && ctx.lastKnownLon != null;
+    !freshWaterPoint && !usedLandmark && ctx.lastKnownLat != null && ctx.lastKnownLon != null;
   const provenance = freshWaterPoint
     ? "computed just now from the live location they shared — you may say it reflects where they are now"
-    : usedStoredLocation
-      ? `measured from the herder's own REGISTERED location (source: ${ctx.lastKnownLocationSource ?? "unknown"}) — personal to them, but NOT a live position; if they say they've moved, ask for a live share rather than assuming this still holds`
-      : "measured from the ward's centre — a general ward-level estimate, the same for anyone in this ward; never claim it came from anything the herder shared";
+    : usedLandmark
+      ? `computed from the named place they just mentioned (${landmarkWaterPoint!.landmarkName}) — a real, specific point, more precise than a ward-wide estimate, but text-matched, not a live GPS fix; if they actually mean somewhere else, ask for a live share`
+      : usedStoredLocation
+        ? `measured from the herder's own REGISTERED location (source: ${ctx.lastKnownLocationSource ?? "unknown"}) — personal to them, but NOT a live position; if they say they've moved, ask for a live share rather than assuming this still holds`
+        : "measured from the ward's centre — a general ward-level estimate, the same for anyone in this ward; never claim it came from anything the herder shared";
 
-  const knownName = freshWaterPoint?.name ?? ctx.nearestWaterPointName;
-  const knownKm = freshWaterPoint?.distanceKm ?? ctx.nearestWaterPointDistanceKm;
-  const knownStatus = freshWaterPoint?.status ?? ctx.nearestWaterPointStatus ?? "unknown";
+  const knownName = freshWaterPoint?.name ?? landmarkWaterPoint?.name ?? ctx.nearestWaterPointName;
+  const knownKm =
+    freshWaterPoint?.distanceKm ?? landmarkWaterPoint?.distanceKm ?? ctx.nearestWaterPointDistanceKm;
+  const knownStatus =
+    freshWaterPoint?.status ?? landmarkWaterPoint?.status ?? ctx.nearestWaterPointStatus ?? "unknown";
   // A freshly-computed point that is itself confirmed working counts as
   // the working option — working-ness must be read from whichever point
   // is actually in play this turn, not only from the ctx overlay (which
@@ -224,16 +251,21 @@ export function buildWhatsappSystemPrompt(
   // status can each independently say "this one works", and both must
   // count, so the two can never drift into disagreeing.
   const freshIsWorking = freshWaterPoint?.status === "working";
+  const landmarkIsWorking = usedLandmark && landmarkWaterPoint!.status === "working";
   const workingName = freshIsWorking
     ? freshWaterPoint!.name
-    : (ctx.nearestWorkingWaterPointName ??
-      (ctx.nearestWaterPointStatus === "working" ? ctx.nearestWaterPointName : null));
+    : landmarkIsWorking
+      ? landmarkWaterPoint!.name
+      : (ctx.nearestWorkingWaterPointName ??
+        (ctx.nearestWaterPointStatus === "working" ? ctx.nearestWaterPointName : null));
   const workingKm = freshIsWorking
     ? freshWaterPoint!.distanceKm
-    : (ctx.nearestWorkingWaterPointDistanceKm ??
-      (ctx.nearestWaterPointStatus === "working"
-        ? ctx.nearestWaterPointDistanceKm
-        : null));
+    : landmarkIsWorking
+      ? landmarkWaterPoint!.distanceKm
+      : (ctx.nearestWorkingWaterPointDistanceKm ??
+        (ctx.nearestWaterPointStatus === "working"
+          ? ctx.nearestWaterPointDistanceKm
+          : null));
 
   // A point is only a DESTINATION if it's confirmed working. Real, live
   // incident (2026-08-09): a herder said they had no water; the prompt
@@ -243,10 +275,24 @@ export function buildWhatsappSystemPrompt(
   // until a herder ground-truth report overrides it, so this is the
   // NORMAL case, not an edge case — the wording has to make "known" vs
   // "somewhere to actually go" impossible to conflate.
+  // Ground-truth ask: most of the water_nodes table (OSM-sourced) has
+  // never been surveyed — status "unknown", not broken. A herder who is
+  // genuinely close to one of these is the single best source we have
+  // for turning "unknown"/stale-"broken" into a real answer. Only worth
+  // asking when they're plausibly close enough to actually know (walking
+  // range) — asking about a point 40km away just wastes their reply.
+  const CONFIRMABLE_KM = 12;
+  const worthAskingAbout = knownName != null && knownKm != null && knownKm <= CONFIRMABLE_KM;
+  const groundTruthAsk = worthAskingAbout
+    ? knownStatus === "unknown"
+      ? ` Since ${knownName} is close enough that they may know it, ask them directly, as one clear question: have they been to ${knownName} recently, and is it working? Their answer is real ground truth — say so.`
+      : ` Since ${knownName} is close enough that they may know it, ask them directly: is ${knownName} still ${knownStatus}, or has it changed since it was last recorded? A "yes it's fixed" or "still broken" answer from them is exactly the ground truth this system needs, and worth asking for even though it isn't a working option today.`
+    : "";
+
   const waterLine = workingName
     ? `CONFIRMED WORKING water point — this is the only one you may suggest they travel to: ${workingName}${workingKm != null ? `, ~${workingKm.toFixed(1)}km away` : ""}. Distance ${provenance}.`
     : knownName
-      ? `The nearest water point on record is ${knownName}${knownKm != null ? `, ~${knownKm.toFixed(1)}km away` : ""}, and its recorded status is *${knownStatus}* (distance ${provenance}). There is NO confirmed-working water point known near this herder right now. Do NOT tell them to go there, do NOT present it as an option, and do NOT imply a journey to it is worth making — a herder without water walking 15+ km to a dead borehole is the exact harm to avoid. You may mention it only to say it is recorded ${knownStatus} so they don't waste the trip. Then be useful a different way: ask if anyone nearby has working water, tell them their report of what's actually working helps other herders in the ward, and offer a live location share so the system can look for something closer.`
+      ? `The nearest water point on record is ${knownName}${knownKm != null ? `, ~${knownKm.toFixed(1)}km away` : ""}, and its recorded status is *${knownStatus}* (distance ${provenance}). There is NO confirmed-working water point known near this herder right now. Do NOT tell them to go there, do NOT present it as an option, and do NOT imply a journey to it is worth making — a herder without water walking 15+ km to a dead borehole is the exact harm to avoid. You may mention it only to say it is recorded ${knownStatus} so they don't waste the trip.${groundTruthAsk} Then be useful a different way: ask if anyone nearby has working water, tell them their report of what's actually working helps other herders in the ward, and offer a live location share so the system can look for something closer.`
       : "No water point data is available for this herder's area at all. Say so plainly — do not name or invent one. Offer a live location share so the system can look, and ask what they can see around them.";
 
   const peerLine =
@@ -290,6 +336,7 @@ ${droughtLine}
 ${waterLine}
 ${peerLine}
 ${landmarksLine}
+${landmarkRecognizedLine}
 ${queryWardLine}
 
 ${whatsappIndicatorGuidance()}

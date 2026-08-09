@@ -1280,6 +1280,101 @@ before any code was written.
 *Next*: nothing queued — the location/registration/landmark plan is
 complete end to end.
 
+**J-series (ward-as-identifier, real water_nodes data, ground-truth confirm loop, landmark location estimation) — 2026-08-09, `feat/operator-console`:**
+
+- **J0 `fix(whatsapp)`** (`816bfe3`) — owner's explicit correction: "ward is
+  just a means of identification and talking but not a blocker to
+  navigation or access of herders... we are optimizing the herders
+  activities and availing information." Reframed
+  `whatsappGroundingRules()`'s ward-related wording from refusal-flavored
+  ("I can't help with that") to helpfulness-flavored (say what ward-level
+  data you DO have, never flatly refuse). Live-verified: asking about an
+  unrecognized ward now gets a constructive fallback instead of a refusal.
+
+- **J1 `fix(whatsapp)`** (`b67bc22`) — real incident: a herder said "sina
+  maji" (no water) and the bot routed them toward a borehole already
+  recorded broken, ~15.9km away, plus invented survival technique and
+  interrogated about herd size instead of helping. Split "nearest known
+  point" from "confirmed-working point" throughout `HerderContext` and
+  the prompt so a broken/unknown point can never be silently presented
+  as a destination; added hard rules banning invented survival technique
+  and forbidding indicator-collection questions once a herder states an
+  urgent need.
+
+- **J2 `fix(water)`** (`807ce5a`) — the actual root cause, per the
+  owner's correction: *"the waterpoints are in the database and i am
+  viewing them in the dashboard as we speak... we need to think about
+  this and remove the hardcoded broken points and all mocks to use real
+  data, we are missing the point."* J1's fix was the wrong layer — every
+  herder-facing water-point path (WhatsApp's `handleMalisho`/
+  `freshWaterPoint`/`resolveQueryWard`, USSD, SMS, both demo simulators)
+  read a hardcoded 10-row 2012 WPDx snapshot (100% `Non-Functional`)
+  instead of the real, live 205-row `water_nodes` table the operator
+  dashboard already displayed correctly. New `src/lib/waterNodes.ts`
+  reads real data through the existing engine-proxy chain
+  (`fetchAdminWaterNodes()`), establishing the correct semantic: OSM
+  points default to `unknown` (real infrastructure, unsurveyed) — NOT
+  broken; only `non-functional`/`dry` count as known-bad. Static WPDx
+  snapshot kept only as an engine-unreachable fallback. Full suite
+  green: 434 tests. Live-verified via WhatsApp: the same test herder now
+  receives real, previously-unreachable nearby points with an honest
+  "status unconfirmed" framing.
+
+- **J3 `feat(ground-truth)`** — the owner's next, explicit three-part
+  ask: verify J2 live on USSD/SMS too, close the ground-truth loop by
+  *asking* herders near an uncertain point to confirm its status, and
+  make landmarks feed location estimation, not just name-recognition.
+  - Live-verified J2 end-to-end on USSD (`*123*2#`) and SMS (`MALISHO`
+    keyword) directly against the running service — both now return the
+    same real `water_nodes` data WhatsApp does.
+  - **Ground-truth confirm loop, closed for the first time**: found that
+    `ground_truth_calls.water_point_name` had existed as a DB column
+    since the very first base migration but was never read/written at
+    the app layer (`groundTruthMapping.ts`, `talk.ts`) — wired it through
+    end to end, including a new column on the ops dashboard's Ground
+    Truth Audit table. WhatsApp's prompt now proactively asks a direct
+    yes/no confirming question ("Is `<name>` still working?") whenever
+    the nearest point is `unknown`/`broken` AND within ~12km — most of
+    `water_nodes` (183/205 rows) is unsurveyed, not broken, and a nearby
+    herder is the best source for turning that into a real answer.
+    USSD's Malisho screen changed from a dead-end `END` to a `CON` list
+    where pressing a point's own number opens a yes/no confirm,
+    recording straight to `ground_truth_calls` (channel `ussd`). SMS
+    gained a matching `MAJI SAWA`/`MAJI MBAYA` keyword, referencing
+    whichever point `ctx.nearestWaterPointName` last showed them — no
+    extra session state needed on this stateless callback.
+  - **Landmarks as a location estimate, not just a name to recognize**:
+    new `src/lib/data/landmarks/match.ts` (`findLandmarkMention()`) turns
+    a landmark named in a herder's own message into its real curated
+    coordinates — previously, all 828 Bula Pesa landmarks fed the
+    prompt only as prose for the LLM to talk about, never as a
+    coordinate anything computed a distance from. Added as a new,
+    honestly-labeled tier in `buildWhatsappSystemPrompt`'s
+    location-provenance ladder (live GPS > named landmark > registered
+    location > ward centroid) — text-matched, so never confused with a
+    live GPS fix. Live-verified: a herder naming "Abubakar Mosque" now
+    gets a water-point distance measured from the mosque itself
+    (~1.1km) instead of the ward centroid, in the same reply as a
+    ground-truth confirm ask about the nearest uncertain point.
+
+  Full suite green: 445 tests (up from 434). **Known gap, flagged for
+  the owner, not fixed here** (same "declared locally, never
+  hand-applied" category as the I-series' 0010/0013 catch-ups): live
+  Supabase is still missing `ground_truth_calls.water_point_name` —
+  confirmed via direct probe (`PGRST204`). New migration
+  `0016_ground_truth_calls_water_point_name.supabase-only.sql` is
+  written and ready; needs pasting into the Supabase SQL editor by hand
+  (no management token in this environment). Until then, ground-truth
+  writes with a water point name fail server-side with a caught,
+  logged 400 and fall back to the local mirror only, and the ops
+  dashboard's Ground Truth Audit panel returns `ready: false`
+  (`supabase_not_configured`) — herder-facing behavior (the confirm
+  question itself, the recorded local copy) is unaffected.
+
+*Next*: apply migration `0016` to live Supabase; consider extending the
+USSD ground-truth confirm sub-flow's ~12km-relevance gating (currently
+WhatsApp-only) if USSD/SMS confirm volume turns out to need it.
+
 *Prior cycle (2026-07-07 baseline)*:
 * Satellite API routes + scheduler.
 * Engine ↔ api tenant attestation (HMAC-SHA256 over `TENANT_ATTESTATION_SECRET`).

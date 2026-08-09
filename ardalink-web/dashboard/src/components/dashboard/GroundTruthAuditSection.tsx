@@ -64,6 +64,7 @@ interface GroundTruthCallRow {
   ward_id: string;
   call_timestamp: string;
   bcs_score: number | null;
+  water_point_name: string | null;
   water_point_status: string | null;
   mortality_rate: number | null;
   offtake_rate: number | null;
@@ -162,6 +163,7 @@ export function GroundTruthAuditSection() {
               <TableHead>Herder</TableHead>
               <TableHead>Ward</TableHead>
               <TableHead>Channel</TableHead>
+              <TableHead>Water point</TableHead>
               <TableHead>Water status</TableHead>
               <TableHead>BCS</TableHead>
               <TableHead>Corrections</TableHead>
@@ -177,6 +179,9 @@ export function GroundTruthAuditSection() {
                 <TableCell className="text-xs text-muted-foreground">{c.ward_id}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">
                   {c.channel ?? "voice"}
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {c.water_point_name ?? "—"}
                 </TableCell>
                 <TableCell className="text-xs">{c.water_point_status ?? "—"}</TableCell>
                 <TableCell className="text-xs">{c.bcs_score ?? "—"}</TableCell>

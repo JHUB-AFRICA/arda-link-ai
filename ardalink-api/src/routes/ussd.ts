@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { logger } from "../lib/logger.js";
-import { centroidForTenant, formatUssdLines } from "../lib/wpdx.js";
-import { formatRealWaterLines } from "../lib/waterNodes.js";
+import { centroidForTenant, nearestWorkingKnownPoints } from "../lib/wpdx.js";
+import { nearestRealWaterPoints } from "../lib/waterNodes.js";
 import {
   resolveHerderContext,
   buildLocalizedBrief,
@@ -12,6 +12,8 @@ import {
   identityForPhone,
   logLeadInteraction,
   setCurrentLocation,
+  insertGroundTruthCall,
+  isSupabaseConfigured,
 } from "../lib/supabase/index.js";
 import { tenantForWardId, WARD_PICKER_LIST } from "../lib/wardMapping.js";
 import { sendSmsViaAt, initiateOutboundCall } from "../lib/africastalking.js";
@@ -58,8 +60,15 @@ const useIntelligenceCore = process.env.ENABLE_INTELLIGENCE_CORE === "true";
  *       2  English brief
  *       0  Back
  *
- *   *2 → Malisho (water points — pulled from bulaPesaWaterPoints data)
- *       Lists top 5 nearest boreholes/dams with quadrant.
+ *   *2 → Malisho (water points — real water_nodes data, see waterNodes.ts)
+ *       Lists top 5 nearest points with status. Pressing a point's own
+ *       number opens a ground-truth confirm (working? yes/no) — most of
+ *       this data is unsurveyed, not broken, and a herder who actually
+ *       knows the point is the best source we have for a real answer.
+ *       0  Back
+ *
+ *   *2*<n> → confirm point <n>
+ *       1  Yes, working    2  No, not working    0  Back
  *
  *   *3 → Ongea na AI (request voice call)
  *       1  Sasa / now
@@ -247,33 +256,64 @@ async function ussdSubscribeFinalize(
     : `END You are subscribed. ArdaLink will call tomorrow to confirm. A welcome SMS is on the way.`;
 }
 
-async function buildWaterPointsReply(phone: string): Promise<string> {
-  // Pulls the nearest 5 water points from the WPDx snapshot, anchored to
-  // the CALLER's own ward centroid (straight from Supabase's real
-  // wards.centroid — no hardcoded fallback table/literal). Real,
-  // confirmed bug (2026-08-06, same pattern as WhatsApp's handleMalisho
-  // before its own fix): this used to always resolve
-  // centroidForTenant(DEFAULT_TENANT_ID), ignoring who was actually
-  // calling, so every USSD caller outside the default tenant's ward got
-  // that ward's water points regardless of their own. Working points
-  // are ranked first so the herder sees usable infrastructure before
-  // broken. AT USSD screens cap around 160 chars, so we're deliberately
-  // terse.
+interface UssdWaterPoint {
+  name: string;
+  distanceKm: number | null;
+  status: "working" | "broken" | "unknown";
+}
+
+/**
+ * Same origin resolution as buildWaterPointsReply, factored out so the
+ * ground-truth confirm sub-flow (level 2/3 below) can re-resolve the
+ * exact same numbered list a few keystrokes later without threading
+ * state through the session — AT re-POSTs the full accumulated text
+ * each step, and phone/ward don't change mid-session, so recomputing
+ * is safe and matches this file's existing Jisajili flow convention.
+ */
+async function resolveWaterPointsForPhone(phone: string): Promise<UssdWaterPoint[]> {
   const id = await identityForPhone(phone);
   const origin = id?.ward_id
     ? await centroidForTenant(tenantForWardId(id.ward_id))
     : await centroidForTenant(DEFAULT_TENANT_ID);
-  // Real water_nodes first (see waterNodes.ts); the static WPDx
-  // snapshot is only a fallback for an unreachable engine.
-  const lines = origin
-    ? ((await formatRealWaterLines(origin, 5)) ??
-      formatUssdLines(origin, 5, { workingFirst: true }))
-    : [];
-  const body =
-    lines.length > 0
-      ? lines.map((l, i) => `${i + 1}. ${l}`).join("\n")
-      : "Hakuna data ya WPDx / no WPDx data";
-  return `END Malisho / Water points:\n${body}\n0. Rudi / Back`;
+  if (!origin) return [];
+  const real = await nearestRealWaterPoints(origin, 5);
+  if (real !== null) {
+    return real.map((r) => ({ name: r.name, distanceKm: r.distanceKm, status: r.status }));
+  }
+  return nearestWorkingKnownPoints(origin, 5).map((p) => ({
+    name: p.displayName,
+    distanceKm: p.distanceKm,
+    status: p.status,
+  }));
+}
+
+async function buildWaterPointsReply(phone: string): Promise<string> {
+  // Pulls the nearest 5 water points, anchored to the CALLER's own ward
+  // centroid (straight from Supabase's real wards.centroid — no
+  // hardcoded fallback table/literal). Real, confirmed bug (2026-08-06,
+  // same pattern as WhatsApp's handleMalisho before its own fix): this
+  // used to always resolve centroidForTenant(DEFAULT_TENANT_ID),
+  // ignoring who was actually calling, so every USSD caller outside the
+  // default tenant's ward got that ward's water points regardless of
+  // their own. Real water_nodes data first (see waterNodes.ts); the
+  // static WPDx snapshot is only a fallback for an unreachable engine.
+  // AT USSD screens cap around 160 chars, so we're deliberately terse.
+  const points = await resolveWaterPointsForPhone(phone);
+  if (points.length === 0) {
+    return "END Malisho / Water points:\nHakuna data ya maji / no water data\n0. Rudi / Back";
+  }
+  const lines = points
+    .map((p, i) => {
+      const km = p.distanceKm != null ? `${p.distanceKm.toFixed(1)}km` : "?";
+      const badge = p.status === "working" ? "OK" : p.status === "broken" ? "BAD" : "?";
+      return `${i + 1}. ${p.name} (${badge}, ${km})`.slice(0, 45);
+    })
+    .join("\n");
+  // Most of this data is unsurveyed ("?"), not broken — a herder who
+  // actually knows one of these points is the best source we have for
+  // turning that into a real answer. Offer the report path as a CON
+  // screen instead of ending the session on the plain list.
+  return `CON Malisho / Water points:\n${lines}\nUnajua hali? Bonyeza namba / Know its status? Press number\n0. Rudi / Back`;
 }
 
 router.post("/ussd-callback", async (req, res): Promise<void> => {
@@ -420,6 +460,28 @@ router.post("/ussd-callback", async (req, res): Promise<void> => {
           return;
         }
       }
+      // Malisho ground-truth confirm, step 1: herder pressed a point
+      // number off the list — ask if it's actually working.
+      if (top === "2") {
+        if (last === "0") {
+          res.set("Content-Type", "text/plain");
+          res.send(MENU_HOME);
+          return;
+        }
+        const idx = Number(last) - 1;
+        const points = await resolveWaterPointsForPhone(phone);
+        const point = points[idx];
+        if (!Number.isInteger(idx) || !point) {
+          res.set("Content-Type", "text/plain");
+          res.send(`END Chaguo batili. / Invalid choice.\n${MENU_HOME}`);
+          return;
+        }
+        res.set("Content-Type", "text/plain");
+        res.send(
+          `CON ${point.name.slice(0, 40)}\nInafanya kazi? / Is it working?\n1. Ndiyo / Yes\n2. Hapana / No\n0. Rudi / Back`,
+        );
+        return;
+      }
       // Call: top="3", last = "1" (now), "2" (tomorrow), "0" (back)
       if (top === "3") {
         if (last === "0") {
@@ -468,6 +530,42 @@ router.post("/ussd-callback", async (req, res): Promise<void> => {
     if (level === 3) {
       const parts = rawText.split("*").filter((s) => s.length > 0);
       const top = parts[0] ?? "";
+      // Malisho ground-truth confirm, step 2: herder answered
+      // yes/no for the point they picked at level 2 — record it.
+      if (top === "2") {
+        const idx = Number(parts[1]) - 1;
+        const statusDigit = parts[2] ?? "";
+        if (statusDigit === "0") {
+          res.set("Content-Type", "text/plain");
+          res.send(MENU_HOME);
+          return;
+        }
+        const points = await resolveWaterPointsForPhone(phone);
+        const point = points[idx];
+        if (!point || (statusDigit !== "1" && statusDigit !== "2")) {
+          res.set("Content-Type", "text/plain");
+          res.send(`END Chaguo batili. / Invalid choice.\n${MENU_HOME}`);
+          return;
+        }
+        const isWorking = statusDigit === "1";
+        const ctx = await resolveHerderContext(phone, DEFAULT_TENANT_ID);
+        if (ctx.pastoralistId && ctx.wardId && isSupabaseConfigured()) {
+          void insertGroundTruthCall({
+            pastoralist_id: ctx.pastoralistId,
+            ward_id: ctx.wardId,
+            call_timestamp: new Date().toISOString(),
+            water_point_name: point.name,
+            water_point_status: isWorking ? "operational_good" : "not_operational",
+            channel: "ussd",
+            source_language: "sw",
+          });
+        }
+        res.set("Content-Type", "text/plain");
+        res.send(
+          `END Asante. Tumerekodi ${point.name.slice(0, 30)}: ${isWorking ? "inafanya kazi" : "haifanyi kazi"}. / Thanks, recorded.`,
+        );
+        return;
+      }
       // Jisajili step 3 — ward captured, ask for language.
       if (top === "5") {
         res.set("Content-Type", "text/plain");
