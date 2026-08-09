@@ -1371,6 +1371,31 @@ complete end to end.
   (`supabase_not_configured`) — herder-facing behavior (the confirm
   question itself, the recorded local copy) is unaffected.
 
+- **J4 `fix(whatsapp)`** — owner's correction to J3's own confirm-loop
+  wording, caught from a live transcript minutes after it shipped: a
+  herder in Burat asking for water got "hakuna waterpoint confirmed
+  working... status yake ni unknown." Owner's exact pushback: *"there
+  is always a close point... we have all those points in the database,
+  we just need to find the closest point in good condition."* Checked
+  the real data directly: every VERIFIED `water_nodes` row county-wide
+  is either `unknown` (unsurveyed OSM) or confirmed `non-functional`
+  (stale 2012 WPDx) — zero rows are confirmed working anywhere right
+  now. (Separately confirmed: the 12 rows that DO say `functional` are
+  unverified legacy demo/seed data from before real WPDx/OSM ingestion
+  existed — owner confirmed these are fabricated, correctly excluded.)
+  The J1 "never route to a non-working point" rule had been treating
+  `unknown` exactly like confirmed-broken, so it withheld the herder's
+  only real nearby lead almost every single time — not an edge case,
+  the dominant one. Split the two: confirmed broken/dry keeps J1's
+  strong caution; `unknown` is now presented as a genuine, named option
+  worth checking, honestly framed as unconfirmed rather than withheld,
+  with a mandatory distance figure and the specific ground-truth
+  question about that exact point (not a vaguer "ask around"
+  fallback). Full suite green: 447 tests (up from 445). Live-verified
+  against the same Burat scenario: the bot now names *Mlango2
+  Borehole* (~4.6km), states the distance, and asks directly "umejaribu
+  Mlango2 Borehole hivi karibuni — inafanya kazi?"
+
 *Next*: apply migration `0016` to live Supabase; consider extending the
 USSD ground-truth confirm sub-flow's ~12km-relevance gating (currently
 WhatsApp-only) if USSD/SMS confirm volume turns out to need it.
