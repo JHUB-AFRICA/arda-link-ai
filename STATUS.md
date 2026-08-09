@@ -1396,9 +1396,55 @@ complete end to end.
   Borehole* (~4.6km), states the distance, and asks directly "umejaribu
   Mlango2 Borehole hivi karibuni — inafanya kazi?"
 
+- **J5 `feat(whatsapp)`** — owner's follow-up direction on J4, same day:
+  *"the bot should ask intelligently and not say the point is
+  unconfirmed but simply guide the herder to the point then after that
+  the bot can ask if the herder was satisfied by the point... we need
+  to be intelligent in getting ground data without being explicit."*
+  J4 still surfaced "unknown"/"unconfirmed" language and a mandatory
+  same-turn confirm question — exactly the explicitness being asked
+  against. Split the recommendation from the check-in across two
+  separate turns: new `water_point_followup_pending` table (migration
+  `0017`, local-mirror only, one row per phone, same convention as
+  `grazing_ring_pending`) remembers which unsurveyed point was last
+  recommended and when. The immediate reply now just guides plainly
+  ("nenda pale kama chaguo la karibu" — go there, it's your nearest
+  option) with zero "unconfirmed" framing. A LATER turn (>=20 min
+  elapsed, so there's been real time to travel; consumed once so it's
+  never asked twice) weaves in a warm, non-survey check-in — "did you
+  find water there?" — alongside whatever the herder is actually asking
+  about then. Extracted the tier-resolution logic shared between the
+  immediate recommendation and the follow-up decision into a new
+  exported `resolveWaterPointPresentation()` in
+  `whatsappConversation.ts`, so both stay in sync by construction
+  instead of duplicated branching.
+
+  **Bug caught and fixed during live verification, before shipping**:
+  the pending-followup write used the herder's own home-ward point
+  (`ctx.nearestWaterPointName`) unconditionally — but when "directions
+  from anywhere" (I5/Phase 3) is active (herder asks about a different,
+  named ward), the point actually surfaced in the reply is that OTHER
+  ward's (`queryWard.waterPoint`), not the home ward's. A herder asking
+  about Burat got told about *Mlango2 Borehole* (Burat), but the
+  pending row was tracking their Oldonyiro home-ward point instead —
+  a later check-in would have asked about the wrong place entirely.
+  Fixed by preferring `queryWard.waterPoint` for the pending write
+  whenever no live GPS/landmark point exists and a query-ward is
+  active. Full suite green: 449 tests (up from 447). Live-verified
+  end-to-end: recommendation turn named the right point with no
+  hedging language; a backdated (45-minute-old) pending row correctly
+  triggered a natural check-in woven into an unrelated weather
+  question ("Je— ulifika Mlango2 kutoka Burat hapo kabla na ukaona
+  maji?"); a fresh unknown-point recommendation in that same turn
+  correctly queued its own new follow-up.
+
 *Next*: apply migration `0016` to live Supabase; consider extending the
 USSD ground-truth confirm sub-flow's ~12km-relevance gating (currently
-WhatsApp-only) if USSD/SMS confirm volume turns out to need it.
+WhatsApp-only) if USSD/SMS confirm volume turns out to need it; USSD/SMS
+don't yet have the delayed-follow-up mechanism J5 built for WhatsApp
+(they still ask immediately when the herder taps/texts a specific
+point) — worth revisiting if that reads as too forward for those
+channels too.
 
 *Prior cycle (2026-07-07 baseline)*:
 * Satellite API routes + scheduler.

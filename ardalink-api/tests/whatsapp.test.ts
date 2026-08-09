@@ -53,6 +53,7 @@ interface Fx {
   optedOutPhones: string[];
   lastCompleteMessages: Array<{ role: string; content: string }>;
   pendingLocation: { lat: number; lon: number } | null;
+  pendingFollowup: { waterPointName: string } | null;
   grazingAdvisory: Record<string, unknown> | null;
   centroidForTenantCalls: string[];
   registrationState: Record<string, unknown> | null;
@@ -97,6 +98,7 @@ const fx: Fx = {
   optedOutPhones: [],
   lastCompleteMessages: [],
   pendingLocation: null,
+  pendingFollowup: null,
   grazingAdvisory: null,
   centroidForTenantCalls: [],
   registrationState: null,
@@ -198,6 +200,12 @@ vi.mock("../src/lib/grazingRingPending.js", () => ({
   clearPendingLocation: async () => {},
 }));
 
+vi.mock("../src/lib/waterPointFollowupPending.js", () => ({
+  upsertWaterPointFollowup: async () => {},
+  getWaterPointFollowup: async () => fx.pendingFollowup ?? null,
+  clearWaterPointFollowup: async () => {},
+}));
+
 vi.mock("../src/lib/whatsappRegistrationPending.js", () => ({
   startRegistration: async () => {
     fx.registrationState = { step: "ask_name" };
@@ -294,6 +302,43 @@ vi.mock("../src/lib/whatsappConversation.js", () => ({
       : "") +
     (gapMinutes != null ? ` gapMinutes=${gapMinutes.toFixed(1)}` : "") +
     (queryWard ? ` queryWard=${queryWard.wardId}(${queryWard.wardName})` : ""),
+  // Mirrors the real resolveWaterPointPresentation's mode logic closely
+  // enough for these tests — they only assert on the reply shape, not
+  // on this function's own output directly.
+  resolveWaterPointPresentation: (
+    ctx: {
+      nearestWaterPointName?: string | null;
+      nearestWaterPointDistanceKm?: number | null;
+      nearestWaterPointStatus?: string | null;
+      nearestWorkingWaterPointName?: string | null;
+      nearestWorkingWaterPointDistanceKm?: number | null;
+    },
+    freshWaterPoint?: { name: string; distanceKm: number; status: string } | null,
+    landmarkWaterPoint?: { name: string; distanceKm: number; status: string } | null,
+  ) => {
+    const workingName =
+      freshWaterPoint?.status === "working"
+        ? freshWaterPoint.name
+        : landmarkWaterPoint?.status === "working"
+          ? landmarkWaterPoint.name
+          : (ctx.nearestWorkingWaterPointName ??
+            (ctx.nearestWaterPointStatus === "working" ? ctx.nearestWaterPointName : null));
+    const workingKm =
+      freshWaterPoint?.status === "working"
+        ? freshWaterPoint.distanceKm
+        : landmarkWaterPoint?.status === "working"
+          ? landmarkWaterPoint.distanceKm
+          : (ctx.nearestWorkingWaterPointDistanceKm ??
+            (ctx.nearestWaterPointStatus === "working" ? ctx.nearestWaterPointDistanceKm : null));
+    if (workingName) return { mode: "working", name: workingName, distanceKm: workingKm ?? null, status: "working" };
+    const name = freshWaterPoint?.name ?? landmarkWaterPoint?.name ?? ctx.nearestWaterPointName ?? null;
+    const status = freshWaterPoint?.status ?? landmarkWaterPoint?.status ?? ctx.nearestWaterPointStatus ?? "unknown";
+    const distanceKm =
+      freshWaterPoint?.distanceKm ?? landmarkWaterPoint?.distanceKm ?? ctx.nearestWaterPointDistanceKm ?? null;
+    if (name && status === "unknown") return { mode: "unknown", name, distanceKm, status };
+    if (name) return { mode: "broken", name, distanceKm, status };
+    return { mode: "none", name: null, distanceKm: null, status: "unknown" };
+  },
 }));
 
 let app: Express;
@@ -334,6 +379,7 @@ beforeEach(async () => {
   fx.optedOutPhones = [];
   fx.lastCompleteMessages = [];
   fx.pendingLocation = null;
+  fx.pendingFollowup = null;
   fx.grazingAdvisory = null;
   fx.centroidForTenantCalls = [];
   fx.registrationState = null;

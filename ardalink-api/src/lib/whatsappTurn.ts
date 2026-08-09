@@ -25,6 +25,11 @@ import { tenantForWardId, wardIdFromLocationText, WARD_PICKER_LIST } from "./war
 import { landmarksBlockForWard } from "./data/landmarks/index.js";
 import { findLandmarkMention } from "./data/landmarks/match.js";
 import {
+  upsertWaterPointFollowup,
+  getWaterPointFollowup,
+  clearWaterPointFollowup,
+} from "./waterPointFollowupPending.js";
+import {
   startRegistration,
   getRegistrationState,
   advanceRegistrationState,
@@ -713,7 +718,20 @@ async function handleFreeText(
   }
 
   const { complete } = await import("./llm/index.js");
-  const { buildWhatsappSystemPrompt } = await import("./whatsappConversation.js");
+  const { buildWhatsappSystemPrompt, resolveWaterPointPresentation } = await import(
+    "./whatsappConversation.js"
+  );
+
+  // Implicit ground-truth check-in (2026-08-09): owner's direction —
+  // don't tell a herder a point's status is "unconfirmed" and ask them
+  // to verify it in the same breath; guide them there like a real
+  // recommendation, then check in on a LATER turn whether it panned
+  // out. Read+clear before this turn's own recommendation is computed
+  // below, so a stale check-in never gets re-asked and a fresh one
+  // (written further down, if this turn recommends another unknown
+  // point) can't be clobbered by this read.
+  const pendingFollowup = await getWaterPointFollowup(from);
+  if (pendingFollowup) void clearWaterPointFollowup(from);
 
   // Fell through the fast-paths above (no species/distance keyword
   // matched) but a location is still pending — availing the real nearest
@@ -796,6 +814,34 @@ async function handleFreeText(
   const gapMinutes = lastMessageAt
     ? (Date.now() - new Date(lastMessageAt).getTime()) / 60_000
     : null;
+  // If this turn is about to recommend an unsurveyed ("unknown") point
+  // as the herder's nearest real option, remember it so a LATER turn can
+  // check in naturally instead of surveying them right now. When the
+  // herder asked about a DIFFERENT ward (queryWard active) and neither a
+  // live GPS share nor a landmark mention exists, the point actually
+  // surfaced in the reply is queryWard's own — not ctx's home-ward one
+  // — real gap caught live (2026-08-09): a herder in Burat asking about
+  // Burat got told about Mlango2 Borehole (Burat), but the pending
+  // follow-up was tracking the herder's home-ward point instead, so a
+  // later check-in would have asked about the wrong place entirely.
+  const presentation =
+    !freshWaterPoint && !landmarkWaterPoint && queryWard?.waterPoint
+      ? {
+          mode:
+            queryWard.waterPoint.status === "working"
+              ? ("working" as const)
+              : queryWard.waterPoint.status === "unknown"
+                ? ("unknown" as const)
+                : ("broken" as const),
+          name: queryWard.waterPoint.name,
+          distanceKm: queryWard.waterPoint.distanceKm,
+          status: queryWard.waterPoint.status,
+        }
+      : resolveWaterPointPresentation(ctx, freshWaterPoint, landmarkWaterPoint);
+  if (presentation.mode === "unknown" && presentation.name) {
+    void upsertWaterPointFollowup(from, presentation.name);
+  }
+
   const systemPrompt = buildWhatsappSystemPrompt(
     ctx,
     lang,
@@ -804,6 +850,7 @@ async function handleFreeText(
     gapMinutes,
     queryWard,
     landmarkWaterPoint,
+    pendingFollowup,
   );
 
   const historyMessages: LlmMessage[] = conversational.map((m) => ({

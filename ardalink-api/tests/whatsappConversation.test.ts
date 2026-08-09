@@ -70,12 +70,12 @@ describe("buildWhatsappSystemPrompt — never route a herder to a broken water p
   });
 
   it(
-    "presents an UNKNOWN-status point as a genuine nearest option, never withheld the way a " +
-      "confirmed-broken point is (owner's correction, 2026-08-09: 'there is always a close point... " +
-      "we just need to find the closest point in good condition' — unknown means unsurveyed OSM " +
-      "infrastructure, not broken; every verified water_nodes row in the county is either unknown or " +
-      "confirmed non-functional, so withholding unknown points as options would leave herders with " +
-      "nothing, nearly always)",
+    "presents an UNKNOWN-status point as a plain, genuine recommendation — never withheld the way " +
+      "a confirmed-broken point is, and never flagged as 'unconfirmed' in the same turn (owner's " +
+      "corrections, 2026-08-09: first, 'there is always a close point... we just need to find the " +
+      "closest point in good condition' — unknown means unsurveyed OSM infrastructure, not broken; " +
+      "second, 'guide the herder to the point then after that ask if satisfied... intelligent in " +
+      "getting ground data without being explicit' — don't survey them the moment you recommend it)",
     () => {
       const ctx: ReturnType<typeof baseContext> = {
         ...baseContext("+254799954672", "burat"),
@@ -90,8 +90,11 @@ describe("buildWhatsappSystemPrompt — never route a herder to a broken water p
       expect(prompt).toContain("Mlango2 Borehole");
       expect(prompt).toContain("4.6km");
       expect(prompt).toContain("closest known water point");
-      expect(prompt).toContain("genuine option worth checking");
-      expect(prompt).toContain("do not withhold it");
+      expect(prompt).toContain("Recommend it plainly and normally");
+      // Must NOT tell the model to ask about the point's status in this
+      // same turn — that's the explicit survey framing being removed in
+      // favor of a later, gentler follow-up turn (see the next test).
+      expect(prompt).not.toContain("You MUST ask this, as your one question this turn");
       // The confirmed-broken caution language (from the dynamic waterLine
       // branch, not the always-present static rule) must NOT leak into
       // the unknown-point branch — that's exactly the conflation being
@@ -100,6 +103,29 @@ describe("buildWhatsappSystemPrompt — never route a herder to a broken water p
       expect(prompt).not.toContain("CONFIRMED broken/dry, not just unsurveyed");
     },
   );
+
+  it("checks in naturally on a LATER turn about a previously-recommended unknown point, without surveying at recommendation time", () => {
+    const ctx = baseContext("+254799954672", "burat");
+    const prompt = buildWhatsappSystemPrompt(
+      ctx,
+      "sw",
+      true,
+      null,
+      null,
+      null,
+      null,
+      { waterPointName: "Mlango2 Borehole" },
+    );
+    expect(prompt).toContain("CHECK IN NATURALLY");
+    expect(prompt).toContain("Mlango2 Borehole");
+    expect(prompt).toContain("NOT like a survey");
+  });
+
+  it("says nothing about a follow-up check-in when none is pending", () => {
+    const ctx = baseContext("+254799954672", "burat");
+    const prompt = buildWhatsappSystemPrompt(ctx, "sw", true, null);
+    expect(prompt).not.toContain("CHECK IN NATURALLY");
+  });
 
   it("keeps the strong caution for a CONFIRMED broken/dry point, distinct from unknown", () => {
     const ctx: ReturnType<typeof baseContext> = {
