@@ -1,18 +1,36 @@
 name: ardalink
 
-# Cloud-agnostic local stack — all services pinned to digest-less tags for now.
-# Use `make up` (or `docker compose up`) to start the full ArdaLink platform.
+# Production hand-off stack — same services as compose.yml, but pulls
+# pre-built images from Docker Hub instead of building from source. Use
+# this when the person bringing the stack up doesn't have (or shouldn't
+# need) the source tree — just this file, .env, and `docker compose pull`.
 #
-# Services:
-#   postgres   — shared database (public + gis_engine schemas)
-#   redis      — rate limiting, token store, scheduler coordination
-#   engine     — ardalink-engine (FastAPI, port 5001)
-#   api        — ardalink-api   (Express 5, port 3000)
-#   web        — ardalink-web   (nginx + static, port 8080)
-#   caddy      — reverse proxy with auto-TLS (ports 80/443)
-#   evolution-postgres, evolution-api — optional self-hosted WhatsApp
-#              gateway (profile "evolution"), see the "WhatsApp providers"
-#              section in README.md
+# Images: munene1212/ardalink-api, munene1212/ardalink-engine,
+# munene1212/ardalink-web — public repos, tagged both `latest` and a
+# dated release (see ARDALINK_IMAGE_TAG below). Prefer pinning to the
+# dated tag in any real deployment — `latest` moves.
+#
+# Services (identical to compose.yml — see that file's own header for
+# the full description of each):
+#   postgres, redis, engine, api, web, caddy (profile "tls"),
+#   evolution-postgres + evolution-api (profile "evolution")
+#
+# Bring-up:
+#   cp .env.example .env   # fill in real secrets — see that file's comments
+#   docker compose -f compose.prod.yml pull
+#   docker compose -f compose.prod.yml up -d
+#   docker compose -f compose.prod.yml --profile tls up -d       # + Caddy/TLS
+#   docker compose -f compose.prod.yml --profile evolution up -d # + self-hosted WhatsApp bridge
+#
+# NOTE on the WhatsApp bridge: `evolution-api` here is a fresh,
+# unlinked instance (evoapicloud/evolution-api, third-party image, not
+# built by us) — bringing this profile up gives you a NEW WhatsApp
+# session to QR-link, not a copy of any existing production session.
+# If this deployment is meant to take over serving real WhatsApp
+# traffic from an existing bridge (see architecture.md / deployment.md
+# for the currently-live VPS setup), that's a real cutover with its own
+# session-migration considerations — coordinate before treating this
+# profile as a drop-in replacement.
 
 x-logging: &default-logging
   logging:
@@ -58,9 +76,7 @@ services:
 
   engine:
     <<: [*default-restart, *default-logging]
-    build:
-      context: ../engine
-      dockerfile: Dockerfile
+    image: munene1212/ardalink-engine:${ARDALINK_IMAGE_TAG:-latest}
     environment:
       DATABASE_URL: postgresql://ardalink:${POSTGRES_PASSWORD:-ardalink_dev_only}@postgres:5432/ardalink
       GIS_ENGINE_SCHEMA: gis_engine
@@ -83,9 +99,7 @@ services:
 
   api:
     <<: [*default-restart, *default-logging]
-    build:
-      context: ../api
-      dockerfile: Dockerfile
+    image: munene1212/ardalink-api:${ARDALINK_IMAGE_TAG:-latest}
     environment:
       NODE_ENV: production
       PORT: "3000"
@@ -94,10 +108,7 @@ services:
       REDIS_URL: redis://redis:6379
       # Supabase — the REAL production data store (wards, pastoralists,
       # water_nodes ground truth, whatsapp_messages). Without these two,
-      # the app silently degrades to local-Postgres-only mode — every
-      # herder-facing feature built around real data (water points,
-      # ground truth, landmarks) falls back to stale/absent data with
-      # no hard failure, so this is easy to miss until a herder notices.
+      # the app silently degrades to local-Postgres-only mode.
       SUPABASE_URL: ${SUPABASE_URL}
       SUPABASE_SECRET_KEY: ${SUPABASE_SECRET_KEY}
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT}
@@ -105,16 +116,9 @@ services:
       AZURE_OPENAI_CHAT_DEPLOYMENT: ${AZURE_OPENAI_CHAT_DEPLOYMENT:-gpt-4o}
       AZURE_OPENAI_WHISPER_DEPLOYMENT: ${AZURE_OPENAI_WHISPER_DEPLOYMENT:-whisper}
       AZURE_OPENAI_REALTIME_DEPLOYMENT: ${AZURE_OPENAI_REALTIME_DEPLOYMENT:-gpt-4o-realtime-preview}
-      # Azure Speech — TTS/STT for the voice/USSD call-back path.
-      # Optional (voice features degrade gracefully without it), but
-      # not previously wired through this compose file at all.
       AZURE_SPEECH_ENDPOINT: ${AZURE_SPEECH_ENDPOINT:-}
       AZURE_SPEECH_KEY: ${AZURE_SPEECH_KEY:-}
       AZURE_SPEECH_REGION: ${AZURE_SPEECH_REGION:-}
-      # Extra trusted origins for the Azure Realtime WebSocket bridge —
-      # set this to the new deployer's own public domain (see
-      # src/lib/originGuard.ts); localhost and the known tunnel
-      # providers are trusted by default without this.
       TRUSTED_ORIGIN_HOSTS: ${TRUSTED_ORIGIN_HOSTS:-}
       GOOGLE_SERVICE_ACCOUNT_JSON: ${GOOGLE_SERVICE_ACCOUNT_JSON:-}
       AFRICASTALKING_USERNAME: ${AFRICASTALKING_USERNAME:-sandbox}
@@ -124,10 +128,6 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       TENANT_ATTESTATION_SECRET: ${TENANT_ATTESTATION_SECRET}
       ARDALINK_ENGINE_BASE: http://engine:5001
-      # WhatsApp provider selection — default 360dialog, no local infra
-      # needed. Flip WA_PROVIDER=evolution to use the optional
-      # evolution-api service below (profile "evolution"); harmless
-      # no-op env vars when that profile isn't running.
       WA_PROVIDER: ${WA_PROVIDER:-360dialog}
       THREESIXTYDIALOG_API_KEY: ${THREESIXTYDIALOG_API_KEY:-}
       THREESIXTYDIALOG_PHONE_NUMBER_ID: ${THREESIXTYDIALOG_PHONE_NUMBER_ID:-}
@@ -146,9 +146,7 @@ services:
 
   web:
     <<: [*default-restart, *default-logging]
-    build:
-      context: ../web
-      dockerfile: Dockerfile
+    image: munene1212/ardalink-web:${ARDALINK_IMAGE_TAG:-latest}
     environment:
       API_BASE_URL: http://api:3000
     depends_on:
@@ -157,13 +155,8 @@ services:
       - "127.0.0.1:8080:80"
 
   # Optional: self-hosted WhatsApp gateway (WA_PROVIDER=evolution).
-  # Bring up with: docker compose --profile evolution up
-  # Needs its own Postgres (schema isolation from ArdaLink's own
-  # database) but shares the existing `redis` service on a separate DB
-  # index. A true end-to-end test still needs a real Meta WABA phone
-  # number — this profile only gets the container running locally; see
-  # README.md's "WhatsApp providers" section for the manual smoke-test
-  # recipe (POST /instance/create, POST /message/sendText/:instance).
+  # See this file's header note above before treating this as a
+  # drop-in replacement for any existing production bridge.
   evolution-postgres:
     <<: [*default-restart, *default-logging]
     image: postgres:16-alpine

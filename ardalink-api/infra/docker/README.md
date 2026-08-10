@@ -29,6 +29,28 @@ After `make up`:
 - `docker compose --profile evolution up` — adds the optional self-hosted WhatsApp gateway (see below)
 - `make logs`, `make down`, `make reset` — see `Makefile`
 
+## Handing off to a different deployer (pre-built images)
+
+If someone else is standing up the stack and shouldn't need the source
+tree, use `compose.prod.yml` instead of `compose.yml` — it's the same
+services, but pulls pre-built images from Docker Hub
+(`munene1212/ardalink-api`, `munene1212/ardalink-engine`,
+`munene1212/ardalink-web` — public repos) instead of building locally:
+
+```bash
+cd ardalink/infra/docker
+cp .env.example .env                          # fill in real secrets
+docker compose -f compose.prod.yml pull
+docker compose -f compose.prod.yml up -d
+```
+
+Pin `ARDALINK_IMAGE_TAG` in `.env` to a dated release tag (e.g.
+`2026-08-10`) rather than relying on the default `latest` — `latest`
+moves every time a new build is pushed, a dated tag doesn't. See
+`compose.prod.yml`'s own header for the WhatsApp-bridge cutover caveat
+before bringing up the `evolution` profile on a deployment meant to
+take over live traffic.
+
 ## WhatsApp providers
 
 ArdaLink's WhatsApp channel supports two interchangeable providers behind
