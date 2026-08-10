@@ -32,24 +32,30 @@ After `make up`:
 ## Handing off to a different deployer (pre-built images)
 
 If someone else is standing up the stack and shouldn't need the source
-tree, use `compose.prod.yml` instead of `compose.yml` — it's the same
-services, but pulls pre-built images from Docker Hub
-(`munene1212/ardalink-api`, `munene1212/ardalink-engine`,
-`munene1212/ardalink-web` — public repos) instead of building locally:
+tree, use `compose.prod.yml` instead of `compose.yml` — pulls pre-built
+images from Docker Hub (`munene1212/ardalink-api`,
+`munene1212/ardalink-engine`, `munene1212/ardalink-web` — public repos)
+instead of building locally, and — unlike `compose.yml`'s local-dev
+version — bundles the self-hosted WhatsApp bridge (`evolution-postgres`
++ `evolution-api`) as a core part of the stack, not an opt-in profile:
 
 ```bash
 cd ardalink/infra/docker
 cp .env.example .env                          # fill in real secrets
 docker compose -f compose.prod.yml pull
-docker compose -f compose.prod.yml up -d
+docker compose -f compose.prod.yml up -d       # brings up Evolution too, no extra flag
 ```
 
 Pin `ARDALINK_IMAGE_TAG` in `.env` to a dated release tag (e.g.
 `2026-08-10`) rather than relying on the default `latest` — `latest`
-moves every time a new build is pushed, a dated tag doesn't. See
-`compose.prod.yml`'s own header for the WhatsApp-bridge cutover caveat
-before bringing up the `evolution` profile on a deployment meant to
-take over live traffic.
+moves every time a new build is pushed, a dated tag doesn't. `api`'s
+`WA_PROVIDER` defaults to `evolution` in this file (vs. `360dialog` in
+local dev) since Evolution is always up here — override it in `.env`
+if this deployment should use a hosted BSP instead. See
+`compose.prod.yml`'s own header for the WhatsApp session/cutover caveat
+(bringing this stack up creates a NEW WhatsApp session to QR-link, not
+a copy of any existing production session) before pointing a real WABA
+number at it.
 
 ## WhatsApp providers
 

@@ -10,27 +10,31 @@ name: ardalink
 # dated release (see ARDALINK_IMAGE_TAG below). Prefer pinning to the
 # dated tag in any real deployment — `latest` moves.
 #
-# Services (identical to compose.yml — see that file's own header for
-# the full description of each):
-#   postgres, redis, engine, api, web, caddy (profile "tls"),
-#   evolution-postgres + evolution-api (profile "evolution")
+# Services (identical to compose.yml except Evolution — see below —
+# is a core part of THIS stack, not an opt-in profile):
+#   postgres, redis, engine, api, web, evolution-postgres, evolution-api,
+#   caddy (profile "tls")
 #
-# Bring-up:
+# Bring-up (Evolution comes up automatically, no extra flag needed):
 #   cp .env.example .env   # fill in real secrets — see that file's comments
 #   docker compose -f compose.prod.yml pull
 #   docker compose -f compose.prod.yml up -d
-#   docker compose -f compose.prod.yml --profile tls up -d       # + Caddy/TLS
-#   docker compose -f compose.prod.yml --profile evolution up -d # + self-hosted WhatsApp bridge
+#   docker compose -f compose.prod.yml --profile tls up -d   # + Caddy/TLS
 #
 # NOTE on the WhatsApp bridge: `evolution-api` here is a fresh,
 # unlinked instance (evoapicloud/evolution-api, third-party image, not
-# built by us) — bringing this profile up gives you a NEW WhatsApp
-# session to QR-link, not a copy of any existing production session.
-# If this deployment is meant to take over serving real WhatsApp
-# traffic from an existing bridge (see architecture.md / deployment.md
-# for the currently-live VPS setup), that's a real cutover with its own
-# session-migration considerations — coordinate before treating this
-# profile as a drop-in replacement.
+# built by us) — bringing this stack up gives you a NEW WhatsApp session
+# to QR-link (see RUNBOOK.md's manual smoke-test / instance-create
+# recipe), not a copy of any existing production session. If this
+# deployment is meant to take over serving real WhatsApp traffic from
+# an existing bridge (see architecture.md / deployment.md for the
+# currently-live VPS setup), that's a real cutover with its own
+# session-migration considerations — coordinate before pointing a real
+# WABA number at this instance. Because Evolution is bundled by
+# default here, WA_PROVIDER also defaults to `evolution` in this file
+# (compose.yml's local-dev default stays `360dialog`) — override
+# WA_PROVIDER=360dialog in .env if this deployment should use a hosted
+# BSP instead.
 
 x-logging: &default-logging
   logging:
@@ -128,7 +132,11 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       TENANT_ATTESTATION_SECRET: ${TENANT_ATTESTATION_SECRET}
       ARDALINK_ENGINE_BASE: http://engine:5001
-      WA_PROVIDER: ${WA_PROVIDER:-360dialog}
+      # Evolution is bundled by default in THIS stack (unlike
+      # compose.yml's local-dev, opt-in-profile version), so the
+      # default provider here is `evolution`, not `360dialog` — override
+      # in .env if this deployment should use a hosted BSP instead.
+      WA_PROVIDER: ${WA_PROVIDER:-evolution}
       THREESIXTYDIALOG_API_KEY: ${THREESIXTYDIALOG_API_KEY:-}
       THREESIXTYDIALOG_PHONE_NUMBER_ID: ${THREESIXTYDIALOG_PHONE_NUMBER_ID:-}
       EVOLUTION_API_BASE_URL: http://evolution-api:8080
@@ -141,6 +149,8 @@ services:
         condition: service_started
       redis:
         condition: service_healthy
+      evolution-api:
+        condition: service_started
     ports:
       - "127.0.0.1:3000:3000"
 
@@ -154,13 +164,13 @@ services:
     ports:
       - "127.0.0.1:8080:80"
 
-  # Optional: self-hosted WhatsApp gateway (WA_PROVIDER=evolution).
-  # See this file's header note above before treating this as a
-  # drop-in replacement for any existing production bridge.
+  # Self-hosted WhatsApp gateway — a core part of this stack (not an
+  # opt-in profile, unlike compose.yml's local-dev version). See this
+  # file's header note above before treating this as a drop-in
+  # replacement for any existing production bridge.
   evolution-postgres:
     <<: [*default-restart, *default-logging]
     image: postgres:16-alpine
-    profiles: ["evolution"]
     environment:
       POSTGRES_USER: evolution
       POSTGRES_PASSWORD: ${EVOLUTION_POSTGRES_PASSWORD:-evolution_dev_only}
@@ -176,7 +186,6 @@ services:
   evolution-api:
     <<: [*default-restart, *default-logging]
     image: evoapicloud/evolution-api:v2.3.7
-    profiles: ["evolution"]
     environment:
       DATABASE_PROVIDER: postgresql
       DATABASE_CONNECTION_URI: postgresql://evolution:${EVOLUTION_POSTGRES_PASSWORD:-evolution_dev_only}@evolution-postgres:5432/evolution
