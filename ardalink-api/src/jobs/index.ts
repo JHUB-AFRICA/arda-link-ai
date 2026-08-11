@@ -46,10 +46,13 @@ export {
   isHeartbeatJobEnabled,
   getLastHeartbeat,
   DEFAULT_CHECKS,
+  DEFAULT_SCHEMA_CHECKS,
   type HeartbeatSnapshot,
   type TableHeartbeat,
   type TableCheck,
   type TableStatus,
   type PipelineStatus,
   type Role,
+  type SchemaCheck,
+  type SchemaCheckResult,
 } from "./heartbeatJob.js";

@@ -149,6 +149,69 @@ describe("Heartbeat — snapshot logic", () => {
     expect(herders.every((t) => t.status === "informational")).toBe(true);
   });
 
+  it("escalates an otherwise-healthy pipeline to degraded when a schema check fails", async () => {
+    const fresh = nowIso();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.includes("water_point_name")) {
+        return new Response(
+          '{"code":"PGRST204","message":"Could not find the \'water_point_name\' column"}',
+          { status: 400, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response(
+        JSON.stringify([{ created_at: fresh, occurred_at: fresh }]),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    const { runHeartbeat, resetHeartbeatCacheForTest } = await import(
+      "../src/jobs/heartbeatJob.js"
+    );
+    resetHeartbeatCacheForTest();
+    const snap = await runHeartbeat();
+    expect(snap.status).toBe("degraded");
+    expect(snap.schemaChecks).toEqual([
+      { table: "ground_truth_calls", column: "water_point_name", ok: false },
+    ]);
+  });
+
+  it("reports schemaChecks ok and leaves status untouched when the column exists", async () => {
+    const fresh = nowIso();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      return new Response(
+        JSON.stringify([{ created_at: fresh, occurred_at: fresh, water_point_name: null }]),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    const { runHeartbeat, resetHeartbeatCacheForTest } = await import(
+      "../src/jobs/heartbeatJob.js"
+    );
+    resetHeartbeatCacheForTest();
+    const snap = await runHeartbeat();
+    expect(snap.status).toBe("healthy");
+    expect(snap.schemaChecks.every((c) => c.ok)).toBe(true);
+  });
+
+  it("a schema mismatch never downgrades an already-degraded/unknown status label", async () => {
+    // Every fetch (freshness AND schema) fails identically — mirrors the
+    // existing "non-2xx" test's mock shape. The freshness verdict already
+    // lands on "unknown" (all writers unknown); the schema failure must
+    // not fight with that by forcing "degraded" instead.
+    vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      return new Response('{"code":"42703","message":"column does not exist"}', {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    const { runHeartbeat, resetHeartbeatCacheForTest } = await import(
+      "../src/jobs/heartbeatJob.js"
+    );
+    resetHeartbeatCacheForTest();
+    const snap = await runHeartbeat();
+    expect(snap.status).toBe("unknown");
+    expect(snap.schemaChecks.every((c) => !c.ok)).toBe(true);
+  });
+
   it("getLastHeartbeat returns the cached snapshot after runHeartbeat", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
       return new Response(
@@ -233,5 +296,6 @@ describe("Heartbeat — jobs registry re-export", () => {
     expect(typeof jobs.isHeartbeatJobEnabled).toBe("function");
     expect(typeof jobs.getLastHeartbeat).toBe("function");
     expect(Array.isArray(jobs.DEFAULT_CHECKS)).toBe(true);
+    expect(Array.isArray(jobs.DEFAULT_SCHEMA_CHECKS)).toBe(true);
   });
 });

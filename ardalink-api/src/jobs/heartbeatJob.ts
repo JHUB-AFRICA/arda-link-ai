@@ -87,12 +87,40 @@ export interface TableHeartbeat {
   status: TableStatus;
 }
 
+/**
+ * A column-existence probe — distinct from the freshness checks above.
+ * Exists because a `*.supabase-only.sql` migration in
+ * `docs/local-dev/migrations/` can sit un-applied against the live
+ * project indefinitely with nothing ever noticing: `ground_truth_calls
+ * .water_point_name` went unapplied for over a month (migration 0016),
+ * during which every ground-truth write silently 400'd and the ops
+ * dashboard's Ground Truth Audit panel misreported the cause as
+ * "supabase_not_configured". A missing column is a schema-drift bug,
+ * not a staleness one, so it's tracked separately from `tables` but
+ * still escalates `status` — see `runHeartbeat()`.
+ */
+export interface SchemaCheck {
+  table: string;
+  column: string;
+}
+
+export const DEFAULT_SCHEMA_CHECKS: readonly SchemaCheck[] = [
+  { table: "ground_truth_calls", column: "water_point_name" },
+];
+
+export interface SchemaCheckResult {
+  table: string;
+  column: string;
+  ok: boolean;
+}
+
 export type PipelineStatus = "healthy" | "degraded" | "unknown";
 
 export interface HeartbeatSnapshot {
   checkedAt: string;
   status: PipelineStatus;
   tables: TableHeartbeat[];
+  schemaChecks: SchemaCheckResult[];
 }
 
 let cached: HeartbeatSnapshot | null = null;
@@ -142,6 +170,39 @@ async function fetchNewestTimestamp(
       "[Heartbeat] probe crashed",
     );
     return { isoTs: null, ok: false };
+  }
+}
+
+async function fetchColumnExists(check: SchemaCheck): Promise<SchemaCheckResult> {
+  const sbBase = (process.env.SUPABASE_URL ?? "").replace(/\/$/, "");
+  const sbKey = (process.env.SUPABASE_SECRET_KEY ?? "").trim();
+  const url =
+    `${sbBase}/rest/v1/${check.table}` +
+    `?select=${encodeURIComponent(check.column)}` +
+    `&limit=1`;
+  try {
+    const res = await fetch(url, {
+      headers: {
+        apikey: sbKey,
+        Authorization: `Bearer ${sbKey}`,
+        Accept: "application/json",
+      },
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      logger.warn(
+        { status: res.status, table: check.table, column: check.column, body: body.slice(0, 200) },
+        "[Heartbeat] schema probe non-2xx — column likely missing (unapplied migration?)",
+      );
+    }
+    return { table: check.table, column: check.column, ok: res.ok };
+  } catch (err) {
+    logger.warn(
+      { err: String(err), table: check.table, column: check.column },
+      "[Heartbeat] schema probe crashed",
+    );
+    return { table: check.table, column: check.column, ok: false };
   }
 }
 
@@ -197,6 +258,7 @@ function evaluate(
 
 export async function runHeartbeat(
   checks: readonly TableCheck[] = DEFAULT_CHECKS,
+  schemaChecks: readonly SchemaCheck[] = DEFAULT_SCHEMA_CHECKS,
 ): Promise<HeartbeatSnapshot> {
   const now = Date.now();
   const checkedAt = new Date(now).toISOString();
@@ -214,6 +276,7 @@ export async function runHeartbeat(
           c.thresholdMs != null ? Math.round(c.thresholdMs / 1000) : null,
         status: "unknown",
       })),
+      schemaChecks: [],
     };
     cached = snap;
     logger.warn(
@@ -222,26 +285,55 @@ export async function runHeartbeat(
     return snap;
   }
 
-  const results = await Promise.all(
-    checks.map(async (c) => {
-      const { isoTs, ok } = await fetchNewestTimestamp(c);
-      return evaluate(c, isoTs, ok, now);
-    }),
-  );
+  const [results, schemaResults] = await Promise.all([
+    Promise.all(
+      checks.map(async (c) => {
+        const { isoTs, ok } = await fetchNewestTimestamp(c);
+        return evaluate(c, isoTs, ok, now);
+      }),
+    ),
+    Promise.all(schemaChecks.map((c) => fetchColumnExists(c))),
+  ]);
 
   const writers = results.filter((r) => r.role === "writer-driven");
   const anyStaleWriter = writers.some((r) => r.status === "stale");
   const allWritersUnknown =
     writers.length > 0 && writers.every((r) => r.status === "unknown");
-  const status: PipelineStatus = anyStaleWriter
+  const freshnessStatus: PipelineStatus = anyStaleWriter
     ? "degraded"
     : allWritersUnknown
       ? "unknown"
       : "healthy";
 
-  const snap: HeartbeatSnapshot = { checkedAt, status, tables: results };
+  // A schema-drift finding is always bad news, but it should never
+  // paper over — or get papered over by — the freshness verdict above:
+  // if the pipeline is already `degraded`/`unknown` for staleness
+  // reasons, a missing column doesn't change what an operator needs to
+  // do next (go look at the pipeline); it only escalates a genuinely
+  // `healthy`-looking pipeline that's actually silently dropping writes
+  // on the floor, which is exactly the month-long ground_truth_calls
+  // gap this check exists to catch next time.
+  const anySchemaMismatch = schemaResults.some((r) => !r.ok);
+  const status: PipelineStatus =
+    anySchemaMismatch && freshnessStatus === "healthy"
+      ? "degraded"
+      : freshnessStatus;
+
+  const snap: HeartbeatSnapshot = {
+    checkedAt,
+    status,
+    tables: results,
+    schemaChecks: schemaResults,
+  };
   cached = snap;
 
+  if (anySchemaMismatch) {
+    const missing = schemaResults.filter((r) => !r.ok);
+    logger.error(
+      { status, missing },
+      "[Heartbeat] Schema mismatch — a column the app writes/reads is missing live (unapplied *.supabase-only.sql migration?)",
+    );
+  }
   if (status === "degraded") {
     const staleTables = results
       .filter((r) => r.status === "stale")

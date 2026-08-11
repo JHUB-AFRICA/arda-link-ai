@@ -52,6 +52,7 @@ function makeCtx(patch: Partial<HerderContext> = {}): HerderContext {
     wardStressedPct: null,
     wardNdviPct: null,
     wardNdviMean: 0.28,
+    wardNdviAsOf: null,
     wardVci: null,
     wardRainfall30dMm: null,
     wardTemperatureC: null,

@@ -28,6 +28,7 @@ import {
 } from "../../lib/engine.js";
 import {
   recentGroundTruthCalls,
+  probeGroundTruthCallsFailureReason,
   correctionsForCallIds,
   insertGroundTruthCorrection,
   CORRECTABLE_GROUND_TRUTH_FIELDS,
@@ -220,7 +221,13 @@ router.get("/ops/ground-truth/recent", async (req, res): Promise<void> => {
   const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
   const calls = await recentGroundTruthCalls(limit);
   if (calls === null) {
-    res.json({ ready: false, reason: "supabase_not_configured", calls: [] });
+    // Don't assume the cause — sbGet() collapses every failure mode
+    // (unconfigured, unreachable, a missing column) into the same
+    // `null`. Probe once, on-demand, so an operator sees the real
+    // reason instead of a hardcoded guess that was wrong for a month
+    // straight when this table was actually reachable but 400ing.
+    const reason = await probeGroundTruthCallsFailureReason();
+    res.json({ ready: false, reason, calls: [] });
     return;
   }
   const callIds = calls.map((c) => c.call_id);

@@ -34,17 +34,6 @@ import {
 import { mirrorWeatherForecastBatch } from "../lib/localMirror.js";
 import type { InsertWeatherForecast } from "@workspace/db";
 
-// 5 Isiolo Sub-County ward centroids. Duplicated from wpdx.ts's
-// WARD_CENTROIDS because we lookup by ward_id here rather than
-// tenant slug and the two mappings drift independently.
-const WARD_CENTROIDS_BY_ID: Record<string, { lat: number; lon: number }> = {
-  "241": { lat: 0.3746, lon: 37.5921 }, // Wabera
-  "242": { lat: 0.3453, lon: 37.5810 }, // Bulla Pesa
-  "245": { lat: 0.6614, lon: 37.9040 }, // Ngare Mara
-  "246": { lat: 0.4375, lon: 37.4785 }, // Burat
-  "247": { lat: 0.6392, lon: 37.1345 }, // Oldonyiro
-};
-
 const FORECAST_HORIZON_DAYS = 14;
 // Real ensemble endpoint — 39-member DWD ICON global ensemble, free,
 // no key. `ensemble-api.open-meteo.com` was verified unreachable from
@@ -482,7 +471,14 @@ export async function runForecastJob(): Promise<void> {
   let wardsOk = 0;
   let observationsWritten = 0;
   for (const w of wards) {
-    const centroid = WARD_CENTROIDS_BY_ID[w.ward_id];
+    // Read straight off the row `listActiveWards()` already fetched —
+    // no second lookup needed, `active_wards` carries `centroid`
+    // directly. Replaces a hand-copied WARD_CENTROIDS_BY_ID table that
+    // could silently drift from Supabase's real values (the exact
+    // pattern already fixed once in wpdx.ts's centroidForTenant on
+    // 2026-08-06 — this file just never got the same fix).
+    const coords = w.centroid?.coordinates;
+    const centroid = coords ? { lat: coords[1], lon: coords[0] } : null;
     if (!centroid) {
       logger.warn(
         { wardId: w.ward_id },

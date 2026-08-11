@@ -92,12 +92,20 @@ def _build_corridor_rows() -> list[tuple]:
     return [
         ("LC-ISL-N1", "Oldonyiro-Burat Dry Season Route",
          line("Oldonyiro", "Burat", "Bulla Pesa"), 0.62, 0.35),
+        # "Garba Tulla" (two words) doesn't exist in WARDS — the real key
+        # (geo/wards.py) is "Garbatulla" (one word, matching Supabase's
+        # wards.name for ward_id 248). Same for "Ngaremara" below vs. the
+        # real "Ngare Mara". Both were a KeyError that crashed the
+        # engine's entire startup lifespan on any fresh/empty database
+        # (confirmed live, 2026-08-11 deployment audit) — display names
+        # in the tuple's second field are free-text and unaffected;
+        # only the line()-lookup arguments needed to match WARDS' keys.
         ("LC-ISL-E1", "Garba Tulla-Cherab Pastoral Corridor",
-         line("Garba Tulla", "Cherab", "Sericho"), 0.78, 0.71),
+         line("Garbatulla", "Cherab", "Sericho"), 0.78, 0.71),
         ("LC-ISL-S1", "Kinna-Garba Tulla Trekking Route",
-         line("Kinna", "Garba Tulla", "Chari"), 0.55, 0.48),
+         line("Kinna", "Garbatulla", "Chari"), 0.55, 0.48),
         ("LC-ISL-C1", "Ngaremara-Chari Transhumance Path",
-         line("Ngaremara", "Burat", "Chari"), 0.66, 0.52),
+         line("Ngare Mara", "Burat", "Chari"), 0.66, 0.52),
         ("LC-ISL-W1", "Wabera-Oldonyiro Wet Season Route",
          line("Wabera", "Bulla Pesa", "Oldonyiro"), 0.49, 0.29),
     ]
