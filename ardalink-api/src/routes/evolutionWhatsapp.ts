@@ -99,19 +99,19 @@ export function fromEvolutionWebhook(
   const from = toE164FromJid(body.data.key.remoteJid);
   const msg = body.data.message ?? {};
 
-  if (msg.conversation) {
-    return { from, type: "text", text: msg.conversation, raw: body.data };
-  }
-
-  // Unverified branches — see docstring above.
-  const rowId = msg.listResponseMessage?.singleSelectReply?.selectedRowId;
-  if (rowId) {
-    return { from, type: "list_reply", replyId: rowId, raw: body.data };
-  }
-  const buttonId = msg.buttonsResponseMessage?.selectedButtonId;
-  if (buttonId) {
-    return { from, type: "button_reply", replyId: buttonId, raw: body.data };
-  }
+  // Location MUST be checked before `msg.conversation` — real, confirmed
+  // bug (2026-08-11, live transcripts): a herder shared a real "Live
+  // Location" (with a caption, e.g. "Unaona hii?" typed alongside it) and
+  // the bot replied "I only received your words, not the location." A
+  // location share carrying a caption populates BOTH `conversation` (the
+  // caption text) AND `locationMessage`/`liveLocationMessage` in the SAME
+  // message object — checking `conversation` first silently swallowed
+  // the location every time a caption was present, with no error, no
+  // log, nothing to indicate data was lost. Location must always win
+  // when both are present; the caption text is sacrificed for now (a
+  // real but much smaller gap than losing the location entirely — see
+  // the docstring above for the plan to carry both once needed).
+  //
   // Static "Send Current Location" and continuously-updating "Share Live
   // Location" both land here, treated identically — matching Evolution's
   // own webhook formatter, which does the same (see the interface comment
@@ -133,6 +133,20 @@ export function fromEvolutionWebhook(
       },
       raw: body.data,
     };
+  }
+
+  if (msg.conversation) {
+    return { from, type: "text", text: msg.conversation, raw: body.data };
+  }
+
+  // Unverified branches — see docstring above.
+  const rowId = msg.listResponseMessage?.singleSelectReply?.selectedRowId;
+  if (rowId) {
+    return { from, type: "list_reply", replyId: rowId, raw: body.data };
+  }
+  const buttonId = msg.buttonsResponseMessage?.selectedButtonId;
+  if (buttonId) {
+    return { from, type: "button_reply", replyId: buttonId, raw: body.data };
   }
   if (msg.audioMessage) {
     return { from, type: "audio", audioRef: msg.audioMessage, raw: body.data };

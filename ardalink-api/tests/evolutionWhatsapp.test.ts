@@ -128,6 +128,30 @@ describe("fromEvolutionWebhook", () => {
     });
   });
 
+  it(
+    "prefers location over a caption when a live location share carries text too " +
+      "(regression: 2026-08-11 real incident — a herder shared a real 'Live Location' " +
+      "with the caption 'Unaona hii?' and the bot replied 'I only received your words, " +
+      "not the location' — checking msg.conversation before the location fields silently " +
+      "swallowed the location whenever a caption was present)",
+    () => {
+      const result = fromEvolutionWebhook({
+        event: "messages.upsert",
+        data: {
+          key: { remoteJid: "254712345678@s.whatsapp.net", fromMe: false },
+          message: {
+            conversation: "Unaona hii?",
+            liveLocationMessage: { degreesLatitude: 0.3532143, degreesLongitude: 37.5830788 },
+          },
+        },
+      });
+      expect(result).toMatchObject({
+        type: "location",
+        location: { lat: 0.3532143, lon: 37.5830788 },
+      });
+    },
+  );
+
   it("normalizes a group JID (@g.us) without leaking the suffix into phone_number", () => {
     const result = fromEvolutionWebhook({
       event: "messages.upsert",
