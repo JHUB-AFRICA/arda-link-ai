@@ -161,8 +161,28 @@ router.post("/evolution-whatsapp-webhook", async (req, res): Promise<void> => {
   // non-2xx/slow responses with exponential backoff.
   res.status(200).json({ received: true });
 
-  const normalized = fromEvolutionWebhook((req.body ?? {}) as EvoWebhookBody);
-  if (!normalized) return;
+  const rawBody = (req.body ?? {}) as EvoWebhookBody;
+  const normalized = fromEvolutionWebhook(rawBody);
+  if (!normalized) {
+    // Real, confirmed gap (2026-08-11): a payload that fails to match
+    // ANY known shape (text/location/list/button/audio/status) used to
+    // vanish here with zero trace — no log, nothing in whatsapp_messages,
+    // nothing to diagnose from. This is exactly how a herder's message
+    // reads as "completely ignored" from the outside: not a wrong reply,
+    // no reply at all. Every unrecognized inbound message.upsert payload
+    // now gets logged in full so a real gap in our shape assumptions
+    // (e.g. location fields named/nested differently than we expect —
+    // see the KNOWN GAP docstring above; only the text and one captured
+    // location shape have ever been confirmed against a real payload)
+    // is diagnosable the next time it happens instead of invisible.
+    if (rawBody.event === "messages.upsert" && !rawBody.data?.key?.fromMe) {
+      logger.warn(
+        { event: rawBody.event, messageKeys: Object.keys(rawBody.data?.message ?? {}), rawBody },
+        "[Evolution] inbound message.upsert did not match any known shape — dropped",
+      );
+    }
+    return;
+  }
 
   try {
     await processInboundWhatsappMessage(normalized);
