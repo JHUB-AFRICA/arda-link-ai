@@ -484,6 +484,37 @@ describe("POST /api/whatsapp-webhook", () => {
   });
 
   it(
+    "never hedges the Malisho header when every nearby point is unsurveyed " +
+      "(regression: 2026-08-11 — the header used to say a point's condition is " +
+      '"NOT yet confirmed... we don\'t know if it\'s working" — the exact same ' +
+      "hedging the per-pin badges were fixed for, just one level up)",
+    async () => {
+      fx.waterPoints = [
+        {
+          point: { lat: 0.34, lon: 37.58 },
+          displayName: "Bula Pesa Dam",
+          status: "unknown",
+          distanceKm: 2,
+        },
+      ];
+      const res = await request(app).post("/api/whatsapp-webhook").send(
+        webhookBody({
+          type: "interactive",
+          interactive: { list_reply: { id: "malisho", title: "Malisho" } },
+        }),
+      );
+      expect(res.status).toBe(200);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(fx.sentSessionMessages).toHaveLength(1);
+      const text = fx.sentSessionMessages[0].text;
+      expect(text).not.toMatch(/haijathibitishwa|hatujui|not.{0,10}confirmed|don.t know/i);
+      expect(text).toContain("Sehemu za maji karibu nawe (1)");
+      // Pin itself also carries no hedging label — same rule, per-pin.
+      expect(fx.sentLocations[0]?.name).toBe("Bula Pesa Dam");
+    },
+  );
+
+  it(
     "recognizes MALISHO typed as plain text, same as tapping the (unrendered) list option " +
       "(regression: 2026-08-11 — Evolution's buttons/lists don't render on a real WhatsApp " +
       "client, so a herder can only ever type the menu word back)",

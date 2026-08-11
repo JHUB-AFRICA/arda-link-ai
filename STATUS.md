@@ -1528,11 +1528,20 @@ channels too.
   numbers were never the problem, just zero signal that 1.8km and
   33.9km were being recommended with identical confidence.
 
-*Next (K-series)*: WhatsApp's Malisho **header** copy (e.g. "their
-condition is NOT yet confirmed" when every nearby point is unknown)
-has the same underlying philosophy problem as the badges K4 fixed, but
-is a bigger wording change than was in scope here — flagged, not yet
-fixed. USSD's `ENABLE_INTELLIGENCE_CORE` alt path (confirmed dormant,
+- **K6 `fix(whatsapp)`**, 2026-08-11 — fixed the header-copy hedging
+  flagged in K-series' own "Next" note above (same day): the
+  unknown-only Malisho header said a point's condition is "NOT yet
+  confirmed... we don't know if it's working today" — the exact same
+  hedging K4 killed at the per-pin badge level, just one level up at
+  the header. Now: "Water points near you (N). Head to whichever is
+  closest." No mention of confirmation status, matching the per-pin
+  rule. Also updated the working-branch header ("each pin carries its
+  own status") to stop claiming something K4 made no longer true —
+  only a confirmed-broken pin carries a label now, not every pin.
+  New regression test proven against the reverted text before
+  restoring the fix (same discipline as every other fix this session).
+
+*Next (K-series)*: USSD's `ENABLE_INTELLIGENCE_CORE` alt path (confirmed dormant,
 env var unset) never got the K2 registration gate — fine while
 dormant, worth remembering if that path is ever turned on.
 

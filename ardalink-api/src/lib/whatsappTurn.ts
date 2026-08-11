@@ -282,14 +282,22 @@ async function handleMalisho(
   // is worth the walk.
   const working = points.filter((p) => p.status === "working");
   const unknown = points.filter((p) => p.status === "unknown");
+  // Fixed 2026-08-11 (deployment audit follow-up): the unknown-only
+  // branch used to say "condition NOT yet confirmed... we don't know
+  // if they're working" — the exact same hedging the per-pin "?"
+  // badges were fixed for (see K4 in STATUS.md), just one level up at
+  // the header. Real, mapped infrastructure is a plain recommendation,
+  // not a caveat; the working-branch's "each pin carries its own
+  // status" line is also updated to match K4's actual behavior (only a
+  // confirmed-broken pin gets a label now, not every pin).
   const header = working.length
     ? lang === "sw"
-      ? `Maji yaliyothibitishwa kufanya kazi (${working.length}). Hali ya kila moja imeandikwa kwenye pin. 💧`
-      : `Confirmed working water (${working.length}). Each pin carries its own status. 💧`
+      ? `Maji yaliyothibitishwa kufanya kazi (${working.length}). Nenda kwenye lililo karibu zaidi. 💧`
+      : `Confirmed working water (${working.length}). Head to whichever is closest. 💧`
     : unknown.length
       ? lang === "sw"
-        ? "Hizi ni sehemu halisi za maji karibu nawe. Hali yao HAIJATHIBITISHWA bado — zipo kwenye ramani lakini hatujui kama zinafanya kazi leo. Ukifika, niambie hali yake; itasaidia wachungaji wengine. 💧📍"
-        : "These are real water points near you. Their condition is NOT yet confirmed — they're on the map, but we don't know if they're working today. If you reach one, tell me what you found; it helps other herders. 💧📍"
+        ? `Sehemu za maji karibu nawe (${unknown.length}). Nenda kwenye lililo karibu zaidi. Ukifika, niambie ulichokiona — itasaidia wachungaji wengine. 💧📍`
+        : `Water points near you (${unknown.length}). Head to whichever is closest. If you reach one, tell me what you found — it helps other herders. 💧📍`
       : lang === "sw"
         ? "⚠️ Sehemu za maji zilizo karibu nawe zote zimerekodiwa MBOVU/KAVU. Usitembee kwenda huko bila kuthibitisha. Ukijua mahali penye maji yanayofanya kazi, niambie — itasaidia wachungaji wengine wa ward hii."
         : "⚠️ Every water point near you is recorded BROKEN/DRY. Don't make the journey without confirming first. If you know somewhere with working water, tell me — it helps other herders in this ward.";
