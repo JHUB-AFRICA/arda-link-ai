@@ -302,14 +302,31 @@ async function buildWaterPointsReply(phone: string): Promise<string> {
   if (points.length === 0) {
     return "END Malisho / Water points:\nHakuna data ya maji / no water data\n0. Rudi / Back";
   }
+  // Only a confirmed-broken point gets a warning badge — an `unknown`
+  // (unsurveyed) point is shown exactly like a working one, no "?"
+  // signal. Matches the WhatsApp free-text rule (see
+  // whatsappConversation.ts's grounding rules): unsurveyed real
+  // infrastructure is a plain, real recommendation, not something to
+  // hedge or flag as unconfirmed. Live-confirmed bug fixed alongside
+  // this: the old `` `${name} (${badge}, ${km})`.slice(0, 45) `` cut
+  // the whole assembled string, silently dropping the badge+distance
+  // entirely for longer names — now only the name is truncated, so the
+  // badge/distance suffix always survives.
+  const LINE_BUDGET = 45;
   const lines = points
     .map((p, i) => {
       const km = p.distanceKm != null ? `${p.distanceKm.toFixed(1)}km` : "?";
-      const badge = p.status === "working" ? "OK" : p.status === "broken" ? "BAD" : "?";
-      return `${i + 1}. ${p.name} (${badge}, ${km})`.slice(0, 45);
+      const suffix = p.status === "broken" ? ` (BAD, ${km})` : ` (${km})`;
+      const prefix = `${i + 1}. `;
+      const nameBudget = Math.max(0, LINE_BUDGET - prefix.length - suffix.length);
+      const name =
+        p.name.length > nameBudget
+          ? p.name.slice(0, Math.max(0, nameBudget - 1)) + "…"
+          : p.name;
+      return `${prefix}${name}${suffix}`;
     })
     .join("\n");
-  // Most of this data is unsurveyed ("?"), not broken — a herder who
+  // Most of this data is unsurveyed, not broken — a herder who
   // actually knows one of these points is the best source we have for
   // turning that into a real answer. Offer the report path as a CON
   // screen instead of ending the session on the plain list.
@@ -319,7 +336,34 @@ async function buildWaterPointsReply(phone: string): Promise<string> {
 router.post("/ussd-callback", async (req, res): Promise<void> => {
   const body = (req.body ?? {}) as UssdBody;
   const phone = pickPhone(body);
-  const rawText = typeof body.text === "string" ? body.text : "";
+  let rawText = typeof body.text === "string" ? body.text : "";
+
+  // Mandatory registration gate (2026-08-11): before this fix, every
+  // menu option (Bula Pesa brief, Malisho water points, request a call)
+  // was reachable regardless of whether this phone number was in
+  // `pastoralists` or `pastoralist_leads` — the system happily gave
+  // full advisory data to a number it had never actually identified.
+  // Reuses the existing, already-tested Jisajili (self-registration)
+  // state machine unchanged: AT's USSD session state lives entirely in
+  // the accumulated `text` string (`5*<name>*<wardDigit>*<langDigit>`,
+  // see parseLastInput below), so for an unregistered caller this
+  // simply prepends "5" as if they had dialed in and pressed 5 first —
+  // every level-1/2/3/4 branch below already keys off `top === "5"`
+  // and needs no other change. `identityForPhone` returning null means
+  // "unknown" to the system (mirrors HerderContext's tier logic); a
+  // `lead` (self-registered, not yet operator-verified) already counts
+  // as known and is never gated. Gated on `isSupabaseConfigured()` too
+  // — `identityForPhone` also returns null when Supabase is simply
+  // unreachable/unconfigured (see supabase/client.ts's sbGet), and a
+  // transient identity-lookup failure must never be read as "force
+  // every caller, including long-registered herders, back through
+  // registration"; that failure mode is far worse than the gap this
+  // gate exists to close.
+  const identity = isSupabaseConfigured() ? await identityForPhone(phone) : true;
+  if (!identity) {
+    rawText = rawText ? `5*${rawText}` : "5";
+  }
+
   const { level, last } = parseLastInput(rawText);
 
   // Use the new intelligenceCore if enabled (for unified AI across channels)

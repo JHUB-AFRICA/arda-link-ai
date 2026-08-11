@@ -13,3 +13,4 @@ export * from "./groundTruthCorrections";
 export * from "./pastoralistLocationHistory";
 export * from "./whatsappRegistrationPending";
 export * from "./waterPointFollowupPending";
+export * from "./smsRegistrationPending";

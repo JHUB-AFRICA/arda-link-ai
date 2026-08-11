@@ -6,14 +6,21 @@ import {
 } from "../lib/herderContext/index.js";
 import { centroidForTenant, formatUssdLines } from "../lib/wpdx.js";
 import { formatRealWaterLines } from "../lib/waterNodes.js";
-import { tenantForWardId } from "../lib/wardMapping.js";
+import { tenantForWardId, WARD_PICKER_LIST } from "../lib/wardMapping.js";
 import { languageForCaller } from "../lib/voiceCopy.js";
 import { initiateOutboundCall, sendSmsViaAt } from "../lib/africastalking.js";
 import {
   logLeadInteraction,
   insertGroundTruthCall,
   isSupabaseConfigured,
+  upsertPastoralistLead,
+  setCurrentLocation,
 } from "../lib/supabase/index.js";
+import {
+  markWardPromptSent,
+  isWardPromptPending,
+  clearWardPrompt,
+} from "../lib/smsRegistrationPending.js";
 
 const DEFAULT_TENANT_ID =
   process.env.DETERMINISTIC_TENANT_ID ?? "bula-pesa";
@@ -61,6 +68,15 @@ function normalise(text: string): string {
 function trimToSms(text: string): string {
   if (text.length <= MAX_REPLY_CHARS) return text;
   return text.slice(0, MAX_REPLY_CHARS - 1) + "…";
+}
+
+const OPT_OUT_KEYWORDS = new Set(["STOP", "SITAKI", "UNDO"]);
+
+function wardPickerText(lang: "sw" | "en"): string {
+  const lines = WARD_PICKER_LIST.map((w, i) => `${i + 1}. ${w.name}`).join("\n");
+  return lang === "sw"
+    ? `Karibu ArdaLink! Kwanza, uko ward gani? Jibu na namba:\n${lines}`
+    : `Welcome to ArdaLink! First, which ward are you in? Reply with a number:\n${lines}`;
 }
 
 router.post("/sms-callback", async (req, res): Promise<void> => {
@@ -129,6 +145,61 @@ router.post("/sms-callback", async (req, res): Promise<void> => {
     const lang = languageForCaller(ctx);
     capturedTier = ctx.tier;
     capturedWardId = ctx.wardId ?? null;
+
+    // Mandatory registration gate (2026-08-11): before this fix, SMS —
+    // like every other channel — gave the full advisory experience
+    // (BULA brief, MALISHO water points) to any number that texted in,
+    // whether or not the system had ever identified who it was talking
+    // to. Unlike WhatsApp/USSD's full name+ward+language flow, SMS
+    // costs money per leg for both sides, so this asks for ward only —
+    // one round-trip, via a numbered picker — before anything else.
+    // STOP/SITAKI/UNDO always escape, matching the same requirement on
+    // every other channel. Gated on isSupabaseConfigured() too — same
+    // reasoning as the USSD gate (routes/ussd.ts): ctx.tier falls back
+    // to "unknown" whenever Supabase is unreachable (resolveHerderContext's
+    // overlays just skip), and a transient outage must never be read as
+    // "force every caller, including long-registered herders, back
+    // through registration" — that failure mode is far worse than the
+    // gap this gate exists to close.
+    if (ctx.tier === "unknown" && isSupabaseConfigured() && !OPT_OUT_KEYWORDS.has(keyword)) {
+      const pending = await isWardPromptPending(from);
+      if (pending) {
+        const idx = Number(rawText.trim()) - 1;
+        const ward = WARD_PICKER_LIST[idx];
+        if (Number.isInteger(idx) && ward) {
+          await upsertPastoralistLead({
+            phone_number: from,
+            ward_id: ward.code,
+            location_text: ward.name,
+            enrollment_source: "sms_self",
+            status: "lead",
+            alerts_enabled: true,
+          });
+          const centroid = await centroidForTenant(tenantForWardId(ward.code));
+          void setCurrentLocation({
+            phoneNumber: from,
+            wardId: ward.code,
+            locationText: ward.name,
+            lat: centroid?.lat ?? null,
+            lon: centroid?.lon ?? null,
+            source: "sms_self",
+            confidence: "low",
+          });
+          void clearWardPrompt(from);
+          reply(
+            lang === "sw"
+              ? `Umesajiliwa katika ${ward.name}. Tuma BULA (habari), MALISHO (maji), ONGEA (simu).`
+              : `Registered in ${ward.name}. Text BULA (brief), MALISHO (water), ONGEA (call).`,
+          );
+          return;
+        }
+        reply(wardPickerText(lang));
+        return;
+      }
+      void markWardPromptSent(from);
+      reply(wardPickerText(lang));
+      return;
+    }
 
     switch (keyword) {
       case "BULA": {
