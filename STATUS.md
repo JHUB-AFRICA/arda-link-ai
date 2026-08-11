@@ -1,6 +1,6 @@
 # ArdaLink — System Status
 
-**Author**: Lead Software Engineer · **Last refreshed**: 2026-07-24
+**Author**: Lead Software Engineer · **Last refreshed**: 2026-08-11
 **Audience**: Engineering team + funders + partners
 **Scope**: Current production state, what's deployed and operational, what's in progress, and what remains to be built.
 
@@ -1445,6 +1445,175 @@ don't yet have the delayed-follow-up mechanism J5 built for WhatsApp
 (they still ask immediately when the herder taps/texts a specific
 point) — worth revisiting if that reads as too forward for those
 channels too.
+
+**K-series (herder-facing truthfulness audit + fixes) — 2026-08-10/11:**
+
+- **K1 `audit`**, 2026-08-10 — full herder-facing truthfulness audit
+  across WhatsApp/USSD/SMS/voice, cross-checked against live Supabase
+  and the actually-running `ardalink-api` service (not just code
+  review). Confirmed solid: J5's unknown/broken distinction, the
+  4-tier location-provenance labeling, real-water-nodes-first fallback
+  on every channel. Found several live, active problems: `ground_truth
+  _calls` writes had been silently failing on Supabase for **over a
+  month** (migration `0016` — flagged as a J5 "Next" item above —
+  still unapplied; `lead_interactions` also failing on a stale CHECK
+  constraint migration `0015` never applied either); no channel
+  actually required the system to know who it was talking to before
+  giving full advisory data (only ground-truth *writes* were gated on
+  `ctx.pastoralistId`, never the conversation); USSD/SMS showed a bare
+  "?" badge for unknown-status points, directly contradicting J5's
+  "never signal unconfirmed" rule for the identical underlying data (a
+  regression path nobody revisited when J5 shipped); satellite readings
+  up to 32 days stale were quoted with unqualified present-tense
+  confidence ("mwezi huu"/"this month"); distances up to 33.9km were
+  presented with the same tone as a 1.8km walk, no feasibility signal
+  at any magnitude; USSD's 45-char line truncation silently dropped the
+  status/distance suffix entirely on longer point names.
+
+- **K2 `feat` — mandatory registration gate, all three channels**:
+  closed the "aliens" gap K1 found. WhatsApp/USSD reuse their existing,
+  already-tested self-registration state machines unchanged, just gated
+  on `ctx.tier === "unknown"` (WhatsApp: `whatsappTurn.ts`'s dispatch;
+  USSD: `ussd.ts` prepends a synthetic "5" onto the accumulated `text`
+  so the existing Jisajili flow runs as-is). SMS had no self-
+  registration flow at all — built one from scratch, deliberately
+  minimal (ward-only, one round-trip via a numbered picker, not the
+  full name+ward+language flow) since SMS costs money per leg for both
+  sides; new `sms_registration_pending` table (migration `0018`). All
+  three gates fail OPEN when Supabase is unreachable/unconfigured
+  (`isSupabaseConfigured()` guard) — `ctx.tier` falls back to
+  "unknown" during any Supabase outage, and forcing every already-
+  registered herder back through registration during a transient
+  outage would be strictly worse than the gap being closed; caught by
+  the USSD test suite before it could ship, added the same guard to
+  SMS pre-emptively. MSAADA/HELP and STOP/SITAKI always escape the gate
+  on every channel.
+
+- **K3 `fix(ground-truth)` — the month-long Supabase write failure**:
+  both blocking migrations (`0015`, `0016`) were already written,
+  idempotent, sitting in `docs/local-dev/migrations/` — just never
+  hand-run against the live Supabase SQL editor (confirmed via direct
+  REST query: `42703 column does not exist`, and live via
+  `journalctl`: `PGRST204` on every single WhatsApp turn). Applied
+  both. Also closed the detection gap that let this sit unnoticed for
+  a month: `/api/healthz`'s heartbeat job now runs a live schema-drift
+  probe (`schemaChecks` in the pipeline payload) that would have
+  flagged this on day one instead of silently 400ing forever; the ops
+  Ground Truth Audit panel no longer reports the hardcoded, actively-
+  false `reason: "supabase_not_configured"` when Supabase is fully
+  configured and reachable but a query fails for another reason.
+
+- **K4 `fix` — cross-channel "?" badge + truncation**: dropped the "?"
+  unknown-status badge from USSD, SMS, *and* WhatsApp's own Malisho
+  button-flow pin captions (found the identical violation there while
+  fixing the other two — WhatsApp's free-text path had already been
+  fixed by J5, but the button-driven Malisho flow was a second,
+  drifted copy of the same logic nobody had touched). Only a
+  confirmed-`broken` point gets a warning label now, on every channel.
+  Fixed the truncation bug alongside it: `.slice(0, 45)` used to
+  truncate the whole assembled `"name (badge, km)"` string, silently
+  dropping the status/distance for longer names — now only the name
+  is truncated, badge/distance always survive.
+
+- **K5 `feat` — data-age + distance-feasibility disclosure**: new
+  `dataFreshness.ts` threads the satellite reading's own data-period
+  end (not "when we wrote the row") through `HerderContext` and
+  `QueryWardFacts`; when a reading is >30 days past its own period
+  (live-confirmed case was ~32 days), WhatsApp's LLM prompt is told to
+  disclose the real date rather than implying current data, and the
+  deterministic USSD/SMS/voice brief appends a compact "(as of Jul 9)"
+  parenthetical within the existing 300-char budget. Separately, any
+  water-point distance over ~15km now gets a plain feasibility note
+  ("this is a long trek, consider vehicle/tanker help") — accurate
+  numbers were never the problem, just zero signal that 1.8km and
+  33.9km were being recommended with identical confidence.
+
+*Next (K-series)*: WhatsApp's Malisho **header** copy (e.g. "their
+condition is NOT yet confirmed" when every nearby point is unknown)
+has the same underlying philosophy problem as the badges K4 fixed, but
+is a bigger wording change than was in scope here — flagged, not yet
+fixed. USSD's `ENABLE_INTELLIGENCE_CORE` alt path (confirmed dormant,
+env var unset) never got the K2 registration gate — fine while
+dormant, worth remembering if that path is ever turned on.
+
+**L-series (containers/deployment audit + image publish) — 2026-08-11:**
+
+- **L1 `audit`**, 2026-08-11 — full container + deployment-docs audit
+  ahead of a clean hand-off, cross-checked live (real builds, real
+  `docker compose up`, not just reading YAML). The most serious find:
+  `docker compose up --build` — the first command in the README quick-
+  start — was **completely broken on a fresh clone**. `compose.yml`'s
+  `context: ../api` / `../engine` / `../web` resolve relative to the
+  compose file's own directory (`ardalink-api/infra/docker/`) to
+  `ardalink-api/infra/{api,engine,web}` — none of which exist; the real
+  sibling packages are three directories up. Standalone `docker build`
+  (used for every prior manual image push) never exercised this path,
+  which is exactly why it went unnoticed. Also found: the engine
+  crashes on *every* fresh-database boot (`seed.py`'s corridor-seeding
+  code referenced `"Garba Tulla"`/`"Ngaremara"`, neither of which
+  exist in the real `WARDS` dict — `"Garbatulla"`/`"Ngare Mara"` do —
+  an unconditional `KeyError` in the FastAPI lifespan hook, zero prior
+  test coverage on that function); `infra/docker/Makefile`'s
+  `migrate-up`/`migrate-down` pointed at two hardcoded migration files
+  that don't exist anywhere in the repo (leftover from a single-
+  migration-file era) — nothing in the Docker path created schema at
+  all; the Caddyfile's TLS routing sent the operator dashboard's own
+  root path to the API instead of nginx (a bare catch-all
+  `reverse_proxy api:3000` beat the path-matched `/talk/*` rule);
+  `ardalink-marketing` had a working Dockerfile but was wired into
+  neither compose file despite the root README listing it as one of
+  the repo's independently-deployable services; `.env.example` was
+  missing 4 real, referenced variables including `ARDALINK_IMAGE_TAG`
+  itself.
+
+- **L2 `fix` — all of the above**, verified live, not just read: fixed
+  build contexts confirmed via `docker compose build` (not standalone
+  `docker build`) for all four services; `seed.py`'s two misspellings
+  fixed, new `tests/test_seed.py` (engine had 0% coverage on this
+  function before); `make migrate-up`/`migrate-up-prod` now loop
+  `docs/local-dev/migrations/*.up.sql` against the real container
+  (also creates `gis_engine` schema explicitly first — it turns out
+  the engine creates that itself at boot, invisible in
+  `start-local.sh`'s world where the engine has usually already run
+  once, not safe to assume in a fresh Docker bring-up); Caddyfile now
+  routes `/api/*` explicitly and everything else to `web`, confirmed
+  live with real echo-server containers on the actual Caddy image;
+  `ardalink-marketing` wired into `compose.yml` (opt-in profile) and
+  `compose.prod.yml` (core, matching Evolution's precedent there);
+  `.env.example` gaps closed. RUNBOOK.md and README.md now document
+  the Supabase-only migrations (`0010`/`0013`/`0015`/`0016`) as a
+  required, separate hand-run step for any fresh Supabase project —
+  previously undocumented anywhere, which is exactly how K3's month-
+  long gap happened in the first place. The three systemd units
+  actually serving production WhatsApp traffic (api/engine/tunnel)
+  existed only as hand-edited files on one machine — templated and
+  checked into `infra/systemd/` with a README.
+
+  **Caught mid-fix**: a `git checkout` meant to revert a temporary
+  local port remap wiped the real `compose.yml` fixes alongside it —
+  caught immediately via a grep check on the build contexts and redone
+  before it could ship.
+
+- **L3 `chore(deploy)` — full-stack verification + image publish**,
+  2026-08-11 — brought up the *entire* `compose.prod.yml` stack (all 8
+  services, including Evolution) end-to-end with the exact freshly-
+  built images, from a genuinely empty Postgres: migrations applied,
+  every health endpoint green
+  (`api`/`engine`/`web`/`marketing`/Evolution manager). Built and
+  pushed `munene1212/ardalink-{api,engine,web,marketing}`, tagged both
+  `2026-08-11` and `latest` (marketing had a stale manual image from
+  2026-08-04 with no CI; the other three refresh same-day builds).
+
+*Next (L-series)*: `ardalink-web`/`ardalink-marketing` still have no
+automated release workflow (unlike `ardalink-api`/`ardalink-engine`'s
+tag-triggered `release.yml`) — both are being published by hand; worth
+a CI follow-up if manual publishing becomes a bottleneck. `local dev`
+and Docker are now two independently-correct but separately-maintained
+paths to the same schema (`docs/local-dev/scripts/start-local.sh` vs.
+`make migrate-up`) — fine today since both read the same
+`docs/local-dev/migrations/*.up.sql` files, but worth watching for
+drift if a future migration needs Docker-specific handling the local
+path doesn't.
 
 *Prior cycle (2026-07-07 baseline)*:
 * Satellite API routes + scheduler.
