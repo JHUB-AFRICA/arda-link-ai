@@ -98,12 +98,18 @@ through a translator. Kiswahili content is written in the register
 Isiolo herders actually use. The system picks language per caller
 from their subscription preference.
 
-### It has a two-way loop
+### It has a two-way loop that trains models nobody else can build
 
 Most drought early-warning systems push. ArdaLink pushes AND
 listens. The herder's report ("water is working now") updates the
 data other herders receive tomorrow. The system gets smarter with
 every call.
+
+More importantly: every herder call adds a labelled data point that
+satellite alone cannot infer. Combined with the 2.36 M-row cell-level
+NDVI history, this pairs the two rarest ingredients in ASAL data
+science — high-resolution earth observation AND community-verified
+ground truth. **The data becomes the moat.**
 
 ### It uses infrastructure that already exists
 
@@ -136,22 +142,26 @@ partners; over-claiming is fatal to trust.
 
 ## What's built today (evidence-backed)
 
-- **265 automated tests, all passing** — every AT surface, every
+- **271 automated tests, all passing** — every AT surface, every
   data helper, every language-aware brief template, cell-index
-  aggregates
+  aggregates, RPC wrappers, forecast dedup
 - **1 093 rows of Sentinel-2 ward-monthly satellite history** —
   11 years, 5 wards. **Plus 2.36 million per-cell NDVI rows** across
   the 5-ward ~1 km grid (26 975 cells), wired into the herder brief
-- **1 190 rows of 14-day rainfall forecast** — refreshed every 6 h
+  AND rendered as a live heatmap on the dashboard
+- **3 080 rows of 14-day rainfall forecast** — refreshed every 6 h;
+  daily observations also flowing since 2026-07-15 via
+  `upsert_weather_data` RPC
 - **All 5 Africa's Talking SMS callback types wired** — incoming,
   delivery reports, opt-out, subscription notifications
 - **USSD self-enrollment flow live** — 4-screen Jisajili
 - **Voice pipeline code-complete and verified via local/tunnel
   loopback** — waiting on AT Voice product activation to run the
   end-to-end call on a real handset
-- **Ops dashboard** — real-time interaction log, lead management,
-  ward NDVI trends, 14-day rainfall forecast, PostGIS choropleth,
-  per-cell drought heatmap
+- **Ops dashboard with two heatmap surfaces** — real-time interaction
+  log, lead management, ward NDVI trends, 14-day rainfall forecast,
+  PostGIS choropleth, per-cell drought heatmap on **both** the SVG
+  Ground Truth view and the Leaflet Map tab
 
 Every claim above is independently verifiable in
 `../progress-2026-07-13-technical.md` (with exact file paths and
@@ -162,12 +172,13 @@ counts) and `../system-diagrams.md` (with UML).
 - **Voice unblock** — Africa's Talking Test Number provisioning
 - **Named tunnel** — replace ephemeral demo hosting with a stable
   URL so callback config stops rotating
-- **First real pilot cohort** — 10–50 pastoralists onboarded via
-  field agents; ops-verified, feeding the ground-truth loop with
-  real signal
-- **ML forecasting** — 14-day NDVI forecast per ward via a
-  gradient-boosted model in a Colab notebook, artifact loaded by
-  the engine
+- **First real pilot cohort** — 10, scaling to 50 pastoralists
+  onboarded via field agents; ops-verified, feeding the ground-truth
+  loop with real signal
+- **ML models running against the 2.36 M cell grid** — cell-level
+  VCI backfill, NDVI forecasting, drought-hotspot anomaly detection,
+  prosopis-spread tracking. Full three-tier ML roadmap in
+  `../progress-2026-07-13-technical.md` §5.
 
 ## How to reach us
 

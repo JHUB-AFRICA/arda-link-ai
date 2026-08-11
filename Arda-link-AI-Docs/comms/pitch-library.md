@@ -7,7 +7,7 @@ always beats a memorised script.
 
 ---
 
-## 30-second pitch (elevator / cold intro)
+## Short pitch (cold intro)
 
 > ArdaLink is a drought-intelligence system for Isiolo pastoralists.
 > Every day it pulls satellite data, weather forecasts, and
@@ -19,11 +19,10 @@ always beats a memorised script.
 > pastoralist enrollment starts once Africa's Talking activates our
 > voice channel.
 
-*(≈ 76 words, ~30 seconds spoken at conversational pace.)*
 
 ---
 
-## 2-minute pitch (partnership meeting, huddle, board slot)
+## Standard pitch (partnership meeting, huddle, board slot)
 
 > ArdaLink is a satellite-plus-AI-plus-SMS system that puts drought
 > intelligence into the hands of the pastoralist who's actually
@@ -48,10 +47,14 @@ always beats a memorised script.
 > via a 4-screen USSD flow; they can opt out with a single `STOP`
 > text and we honour it across every channel.
 >
-> Status: pre-launch. All 259 automated tests pass. The pipeline is
-> live against synthetic test personas end-to-end. Real cohort
-> onboarding starts once Africa's Talking activates our voice Test
-> Number and our field-agent SOP is signed off with the county.
+> Status: pre-launch. **271 automated tests pass** (plus 29 dashboard
+> tests). The pipeline is live against synthetic test personas
+> end-to-end. Real cohort onboarding starts once Africa's Talking
+> activates our voice Test Number and our field-agent SOP is signed
+> off with the county. On the ML side, we already sit on **2.36 million
+> per-cell NDVI observations spanning 11 years** — once the pilot
+> starts flowing ground-truth calls, we can train drought and
+> water-point-status models nobody else can build.
 >
 > The ask depends on who you are — if you're at a county drought
 > desk, we'd love to talk about integrating our ground-truth feed
@@ -62,11 +65,10 @@ always beats a memorised script.
 > a single county subscription in the $250 – 400/month range covers
 > full opex before any other revenue.
 
-*(≈ 279 words, ~2:00 spoken at moderate pace.)*
 
 ---
 
-## 5-minute pitch (investor / partner deep-dive)
+## Deep-dive pitch (investor / partner)
 
 > Let me start with a number: **10**. That's how many water points
 > exist in the WPDx open-data snapshot for Isiolo County. All 10
@@ -136,9 +138,24 @@ always beats a memorised script.
 > confirmed is in the queue.
 >
 > **What's next.** Three things in the next 30 days: get the voice
-> channel live, onboard the first 10–50 real Isiolo pastoralists
-> via field-agent introductions, and open the ground-truth data
-> feed under MOU to a couple of ecosystem partners.
+> channel live, onboard the first 10 real Isiolo pastoralists (scaling
+> to 50 before public launch) via field-agent introductions, and open
+> the ground-truth data feed under MOU to a couple of ecosystem
+> partners.
+>
+> **And why we care about that pilot number.** Every real herder
+> report is a labelled data point that satellite alone cannot infer.
+> Paired with 2.36 million per-cell NDVI observations already sitting
+> in our database, that's the two rarest ingredients in ASAL data
+> science — high-resolution earth observation AND community-verified
+> ground truth. Once the pilot ingests, we can train models nobody
+> else can build: water-point functional-status forecasting that
+> beats the 14-year-stale open dataset by orders of magnitude,
+> herder-response propensity for smart channel routing, and a
+> deterministic migration-corridor optimiser over the 3 274-cell
+> Isiolo grid. Model quality compounds with cohort size — the pilot
+> isn't testing a product, it's minting the training set that makes
+> ArdaLink unreproducible.
 >
 > **What it costs.** At the pilot's target scale — 1 500
 > pastoralists across the 5 canonical wards — we're looking at
@@ -162,7 +179,6 @@ always beats a memorised script.
 > collaboration on the Kiswahili content library and the
 > ground-truth flywheel.
 
-*(≈ 664 words, ~4:30 spoken at deliberate pace — pad with a personal anecdote to reach the 5-min slot if needed.)*
 
 ---
 
@@ -239,6 +255,34 @@ county-by-county cohort expansion. The sustainable business model
 designed to keep the system running for the pastoralist regardless
 of grant-funding cycles.
 
+### "You say ML — what will you actually train, and when?"
+
+Three tiers, ordered by how much herder data each needs.
+
+**Trainable today (satellite-only, no pilot data needed):** cell-level
+VCI backfill across the 2.36 M-row grid (turns raw NDVI into per-cell
+drought severity); ward-monthly NDVI forecasting one-to-three months
+out (LightGBM/CatBoost on 11 years of history); nightly cell-level
+anomaly detection surfacing hotspots on the dashboard; prosopis
+invasive-spread tracking using the `prosopis_share` column that
+already exists.
+
+**Waits for pilot ground-truth volume:** water-point functional-status
+forecasting (the flagship — beats WPDx's 14-year-stale dataset by
+orders of magnitude), herder response propensity for smart channel
+routing (SMS vs voice vs skip), and a reinforcement-learning loop
+where Kiswahili brief templates improve week-over-week based on which
+ones get replies vs opt-outs.
+
+**Novel with the cell grid (Phase B):** deterministic migration-
+corridor optimiser using Dijkstra over the 3 274-cell adjacency graph
+with edge weights from NDVI-forecast-deficit + water availability;
+herd-carrying-capacity model that translates per-cell forage into
+suggested stocking rates.
+
+We ship Tier 1 in the next four weeks and Tier 2 within four weeks of
+the pilot's first 20 verified herders.
+
 ### "What's the hardest technical thing you've solved?"
 
 Making a Kiswahili severity phrase feel natural — "malisho ni ya
@@ -259,12 +303,11 @@ weather until the community layer thickens.
 
 ---
 
-## Pitch-selection cheat sheet
+## Which pitch when
 
-- **30 sec** → cold intro at events, LinkedIn DM, WhatsApp intro
-- **2 min** → partnership meeting opener, huddle slot, board
-  update, university guest talk
-- **5 min** → investor first-meeting, funder Q&A opener,
-  conference lightning talk
-- **FAQ** → keep open during any of the above; use as ready-made
-  responses when the room asks
+| Room | Use |
+|---|---|
+| Event booth · LinkedIn DM · WhatsApp intro | **Short** |
+| Partnership meeting · board update · guest talk | **Standard** |
+| Investor first meeting · funder Q&A · conference lightning talk | **Deep-dive** |
+| Any of the above, when the room asks questions | **FAQ** |
