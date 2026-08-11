@@ -65,6 +65,7 @@ export {
   type SbGroundTruthCallInsert,
   insertGroundTruthCall,
   recentGroundTruthCalls,
+  probeGroundTruthCallsFailureReason,
   type SbGroundTruthCorrection,
   type SbGroundTruthCorrectionInsert,
   type CorrectableGroundTruthField,

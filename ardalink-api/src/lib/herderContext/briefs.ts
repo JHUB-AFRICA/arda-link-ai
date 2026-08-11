@@ -4,6 +4,7 @@
  */
 
 import type { HerderContext } from "./types.js";
+import { isSatelliteReadingStale, satelliteAsOfPhrase } from "../dataFreshness.js";
 
 /**
  * Build a short bilingual (Swahili/English) herder-specific brief string,
@@ -21,6 +22,19 @@ export function buildLocalizedBrief(ctx: HerderContext, lang: "sw" | "en"): stri
   // derived from vciDerived when we have a proper baseline, else
   // from wardStressedPct as a fallback.
   const severity = severityFromCtx(ctx);
+  // Data-age disclosure (2026-08-10 audit finding): a satellite reading
+  // over a month past its own data period was being stated with the
+  // same unqualified present tense as a fresh one ("mabaya sana mwezi
+  // huu" / "very poor this month"). Kept as a compact trailing
+  // parenthetical rather than rewriting the severity map's wording —
+  // this brief is hard-capped at 300 chars (USSD/SMS/voice-safe).
+  const staleSuffix =
+    isSatelliteReadingStale(ctx.wardNdviAsOf) && severity
+      ? (() => {
+          const asOf = satelliteAsOfPhrase(ctx.wardNdviAsOf, lang);
+          return asOf ? ` (${asOf})` : "";
+        })()
+      : "";
 
   // Rainfall — herders think in "no rain lately" not "3mm/30d".
   const rainLine =
@@ -78,7 +92,7 @@ export function buildLocalizedBrief(ctx: HerderContext, lang: "sw" | "en"): stri
         (ctx.wardName ? ` (${ctx.wardName})` : "") +
         ".",
     );
-    if (severity) parts.push(swSeverityLine(severity, rainLine?.sw ?? null));
+    if (severity) parts.push(swSeverityLine(severity, rainLine?.sw ?? null) + staleSuffix);
     else if (rainLine) parts.push(rainLine.sw + ".");
     if (neighborLine) parts.push(neighborLine.sw + ".");
     if (waterLine) parts.push(waterLine + ".");
@@ -93,7 +107,7 @@ export function buildLocalizedBrief(ctx: HerderContext, lang: "sw" | "en"): stri
       (ctx.wardName ? ` (${ctx.wardName})` : "") +
       ".",
   );
-  if (severity) parts.push(enSeverityLine(severity, rainLine?.en ?? null));
+  if (severity) parts.push(enSeverityLine(severity, rainLine?.en ?? null) + staleSuffix);
   else if (rainLine) parts.push(rainLine.en + ".");
   if (neighborLine) parts.push(neighborLine.en + ".");
   if (waterLine) parts.push(waterLine + ".");

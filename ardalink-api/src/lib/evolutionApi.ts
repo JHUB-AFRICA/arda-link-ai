@@ -17,7 +17,10 @@
  *   sendWhatsappTemplate(phone, name, lang, components)  → POST /message/sendTemplate/:instance
  *                                                          (Cloud-API-backed instances only)
  *   sendWhatsappInteractiveList(phone, ...)              → POST /message/sendList/:instance
- *   sendWhatsappInteractiveButtons(phone, ...)            → POST /message/sendButtons/:instance
+ *   sendWhatsappInteractiveButtons(phone, ...)            → POST /message/sendText/:instance
+ *                                                          (NOT sendButtons — see that function's
+ *                                                          own docstring: Baileys buttonsMessage
+ *                                                          doesn't render on real WhatsApp clients)
  *   sendWhatsappLocation(phone, lat, lon, ...)            → POST /message/sendLocation/:instance
  *
  * Design rules baked in (mirrors src/lib/threeSixtyDialog.ts /
@@ -152,15 +155,6 @@ function toEvoSections(sections: WaListSection[]) {
       description: r.description,
       rowId: r.id,
     })),
-  }));
-}
-
-/** {id, title} -> Evolution's {type:"reply", displayText, id}. */
-function toEvoButtons(buttons: Array<{ id: string; title: string }>) {
-  return buttons.slice(0, 3).map((b) => ({
-    type: "reply" as const,
-    displayText: b.title,
-    id: b.id,
   }));
 }
 
@@ -354,29 +348,35 @@ export async function sendWhatsappInteractiveList(
   );
 }
 
-/** Interactive reply buttons — up to 3, same limit as 360dialog's client. */
+/**
+ * "Interactive reply buttons" — except Evolution's `sendButtons`
+ * endpoint emits Baileys' legacy `buttonsMessage` type, which modern
+ * WhatsApp clients simply do not render on personal (non-Business-API)
+ * numbers — a real, confirmed WhatsApp/Baileys limitation, not a bug in
+ * this send call. Evolution's REST call still returns 2xx and reports
+ * the message "dispatched" (postToGateway logs it as sent, same as any
+ * other successful send) — there is no client-side rendering
+ * acknowledgment in this protocol, so nothing here can detect the
+ * failure after the fact. From a herder's side this read as the bot
+ * going completely silent right after they shared their location
+ * (2026-08-11, confirmed live, twice, with two different herders).
+ *
+ * Fix: send a plain, numbered text message instead. This is a lossless
+ * substitute for every current call site (welcome menu, grazing
+ * species prompt) — whatsappTurn.ts's free-text handling already
+ * recognizes a typed species name or a bare "1"/"2"/"3" the same way
+ * it would a button tap (see detectSpeciesGroup/WELCOME_MENU_KEYWORDS),
+ * and SMS has used the exact same numbered/keyword-reply pattern
+ * successfully all along — this brings WhatsApp on Evolution to parity
+ * with it instead of relying on a message type WhatsApp won't display.
+ */
 export async function sendWhatsappInteractiveButtons(
   phone: string,
   body: string,
   buttons: Array<{ id: string; title: string }>,
 ): Promise<WaSendResult> {
-  if (!isEvolutionApiConfigured()) {
-    return { ok: false, skipped: true, reason: "not_configured" };
-  }
-  if (!outboundEnabled()) {
-    return { ok: false, skipped: true, reason: "disabled" };
-  }
-  return postToGateway(
-    "sendButtons",
-    {
-      number: toEvoNumber(phone),
-      title: "",
-      description: body,
-      footer: "",
-      buttons: toEvoButtons(buttons),
-    },
-    { phone, kind: "interactive_buttons" },
-  );
+  const lines = buttons.slice(0, 3).map((b, i) => `${i + 1}. ${b.title}`).join("\n");
+  return sendWhatsappSessionMessage(phone, `${body}\n${lines}`);
 }
 
 /** Location pin — used for water points, same caveats as threeSixtyDialog.ts's version. */

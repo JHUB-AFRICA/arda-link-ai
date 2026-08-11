@@ -47,6 +47,7 @@ export function baseContext(rawPhone: string, tenantId: string): HerderContext {
     wardStressedPct: ward?.live?.anomaly?.wardStressedPixelPct ?? null,
     wardNdviPct: ward?.delta?.NDVI?.delta_pct ?? null,
     wardNdviMean: null,
+    wardNdviAsOf: null,
     wardVci: null,
     wardRainfall30dMm: ward?.climate?.rolling30Day?.totalPrecipMm ?? null,
     wardTemperatureC: null,

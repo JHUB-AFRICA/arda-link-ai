@@ -54,6 +54,9 @@ interface Fx {
   lastCompleteMessages: Array<{ role: string; content: string }>;
   pendingLocation: { lat: number; lon: number } | null;
   pendingFollowup: { waterPointName: string } | null;
+  followupUpserts: Array<{ phone: string; waterPointName: string }>;
+  followupClears: string[];
+  sendShouldThrow: boolean;
   grazingAdvisory: Record<string, unknown> | null;
   centroidForTenantCalls: string[];
   registrationState: Record<string, unknown> | null;
@@ -99,6 +102,9 @@ const fx: Fx = {
   lastCompleteMessages: [],
   pendingLocation: null,
   pendingFollowup: null,
+  followupUpserts: [],
+  followupClears: [],
+  sendShouldThrow: false,
   grazingAdvisory: null,
   centroidForTenantCalls: [],
   registrationState: null,
@@ -133,6 +139,7 @@ vi.mock("../src/lib/wpdx.js", () => ({
 
 vi.mock("../src/lib/whatsappProviderRegistry.js", () => ({
   sendWhatsappSessionMessage: async (phone: string, text: string) => {
+    if (fx.sendShouldThrow) throw new Error("simulated send failure");
     fx.sentSessionMessages.push({ phone, text });
     return { ok: true, messageId: "wamid.test" };
   },
@@ -201,9 +208,13 @@ vi.mock("../src/lib/grazingRingPending.js", () => ({
 }));
 
 vi.mock("../src/lib/waterPointFollowupPending.js", () => ({
-  upsertWaterPointFollowup: async () => {},
+  upsertWaterPointFollowup: async (phone: string, waterPointName: string) => {
+    fx.followupUpserts.push({ phone, waterPointName });
+  },
   getWaterPointFollowup: async () => fx.pendingFollowup ?? null,
-  clearWaterPointFollowup: async () => {},
+  clearWaterPointFollowup: async (phone: string) => {
+    fx.followupClears.push(phone);
+  },
 }));
 
 vi.mock("../src/lib/whatsappRegistrationPending.js", () => ({
@@ -380,6 +391,9 @@ beforeEach(async () => {
   fx.lastCompleteMessages = [];
   fx.pendingLocation = null;
   fx.pendingFollowup = null;
+  fx.followupUpserts = [];
+  fx.followupClears = [];
+  fx.sendShouldThrow = false;
   fx.grazingAdvisory = null;
   fx.centroidForTenantCalls = [];
   fx.registrationState = null;
@@ -453,18 +467,36 @@ describe("POST /api/whatsapp-webhook", () => {
       lat: 0.34,
       lon: 37.58,
     });
-    // Every pin carries its own status label — a pin is a strong "go
-    // here" signal and can be forwarded/re-read detached from any
-    // surrounding text, so the status must ride on the pin itself
-    // (2026-08-09 incident: three unlabelled pins to dead boreholes).
-    // Fixture language is Swahili by default.
-    expect(fx.sentLocations[0].name).toBe("Bula Pesa Dam — INAFANYA KAZI");
+    // A confirmed-broken pin carries a warning label (a pin is a strong
+    // "go here" signal and can be forwarded/re-read detached from any
+    // surrounding text — 2026-08-09 incident: three unlabelled pins to
+    // dead boreholes). A working (or unknown/unsurveyed) pin carries no
+    // label at all — both are real, plain recommendations, and labeling
+    // "unknown" as unconfirmed on the pin itself would repeat the exact
+    // hedging the free-text grounding rules were rewritten to stop
+    // doing (see whatsappConversation.ts).
+    expect(fx.sentLocations[0].name).toBe("Bula Pesa Dam");
     // An honest header always precedes the pins.
     expect(fx.sentSessionMessages).toHaveLength(1);
     expect(fx.sentSessionMessages[0].text).toContain(
       "Maji yaliyothibitishwa kufanya kazi (1)",
     );
   });
+
+  it(
+    "recognizes MALISHO typed as plain text, same as tapping the (unrendered) list option " +
+      "(regression: 2026-08-11 — Evolution's buttons/lists don't render on a real WhatsApp " +
+      "client, so a herder can only ever type the menu word back)",
+    async () => {
+      const res = await request(app)
+        .post("/api/whatsapp-webhook")
+        .send(webhookBody({ type: "text", text: { body: "MALISHO" } }));
+      expect(res.status).toBe(200);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(fx.sentLocations).toHaveLength(1);
+      expect(fx.sentLocations[0].name).toBe("Bula Pesa Dam");
+    },
+  );
 
   it(
     "warns instead of routing when NO pin is confirmed working " +
@@ -525,6 +557,66 @@ describe("POST /api/whatsapp-webhook", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(fx.sentSessionMessages).toHaveLength(1);
     expect(fx.sentSessionMessages[0].text).toBe(fx.llmContent);
+  });
+
+  describe("water-point follow-up loop — deferred clear (regression, 2026-08-11)", () => {
+    it("clears a surfaced follow-up only after the reply actually sends", async () => {
+      fx.pendingFollowup = { waterPointName: "Kilimani St. Paul Nursery School borehole" };
+      const res = await request(app)
+        .post("/api/whatsapp-webhook")
+        .send(webhookBody({ type: "text", text: { body: "Uko on?" } }));
+      expect(res.status).toBe(200);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(fx.sentSessionMessages).toHaveLength(1);
+      expect(fx.followupClears).toEqual(["+254712345678"]);
+    });
+
+    it(
+      "does NOT clear a pending follow-up when the send fails — the old " +
+        "immediate-clear-on-read behavior silently and permanently lost the " +
+        "one ground-truth check-in on any mid-turn failure (LLM error, send " +
+        "error) with no retry, since the webhook ACKs 200 and processes " +
+        "fire-and-forget",
+      async () => {
+        fx.pendingFollowup = { waterPointName: "Kilimani St. Paul Nursery School borehole" };
+        fx.sendShouldThrow = true;
+        const res = await request(app)
+          .post("/api/whatsapp-webhook")
+          .send(webhookBody({ type: "text", text: { body: "Uko on?" } }));
+        expect(res.status).toBe(200);
+        await new Promise((r) => setTimeout(r, 0));
+        expect(fx.sentSessionMessages).toHaveLength(0);
+        expect(fx.followupClears).toEqual([]);
+      },
+    );
+
+    it(
+      "never clobbers a fresh follow-up this same turn just wrote for a new " +
+        "unknown-status recommendation",
+      async () => {
+        fx.pendingFollowup = { waterPointName: "Old Stale Point" };
+        fx.waterPoints = [
+          {
+            point: { lat: 0.34, lon: 37.58 },
+            displayName: "New Unknown Point",
+            status: "unknown",
+            distanceKm: 3,
+          },
+        ];
+        fx.pendingLocation = { lat: 0.34, lon: 37.58 };
+        const res = await request(app)
+          .post("/api/whatsapp-webhook")
+          .send(webhookBody({ type: "text", text: { body: "Naomba maji" } }));
+        expect(res.status).toBe(200);
+        await new Promise((r) => setTimeout(r, 0));
+        expect(fx.followupUpserts).toEqual([
+          { phone: "+254712345678", waterPointName: "New Unknown Point" },
+        ]);
+        // The old followup was superseded by the upsert (same one-row-
+        // per-phone target), never separately cleared out from under it.
+        expect(fx.followupClears).toEqual([]);
+      },
+    );
   });
 
   it("never sends raw MockClient content to a live conversation", async () => {
@@ -605,6 +697,37 @@ describe("POST /api/whatsapp-webhook", () => {
     expect(fx.sentButtons).toHaveLength(1);
     expect(fx.sentSessionMessages).toHaveLength(0);
   });
+
+  it(
+    "recognizes a bare digit reply to the species prompt " +
+      "(regression: 2026-08-11 — Evolution's buttons don't render on a real WhatsApp " +
+      "client, so a herder replying to the plain numbered species list can only ever " +
+      "type the number or the name; '2' must resolve the same way 'goats' would)",
+    async () => {
+      fx.pendingLocation = { lat: 0.34, lon: 37.58 };
+      fx.grazingAdvisory = {
+        nearestWaterNode: {
+          name: "Ngare Mara piped water GW2",
+          distanceKm: 4.2,
+          direction: "NE",
+          functionalStatus: "working",
+        },
+        speciesGroup: "shoat",
+        radiusKm: 5,
+        inRing: true,
+        vci: 55,
+        ndviNow: 0.3,
+        dataSources: { water: "wpdx", vegetation: "sentinel-2" },
+      };
+      const res = await request(app)
+        .post("/api/whatsapp-webhook")
+        .send(webhookBody({ type: "text", text: { body: "2" } }));
+      expect(res.status).toBe(200);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(fx.sentSessionMessages).toHaveLength(1);
+      expect(fx.sentSessionMessages[0].text).toContain("Ngare Mara piped water GW2");
+    },
+  );
 
   it("avails the real nearest water point to the LLM whenever a location is pending, not just for keyword-matched phrasings", async () => {
     // The general fix behind the two tests above: rather than relying on
@@ -870,6 +993,83 @@ describe("POST /api/whatsapp-webhook", () => {
     });
   });
 
+  describe("mandatory registration gate (2026-08-11) — no advisory reply to an unknown number", () => {
+    it("routes an unregistered number's ordinary free text into registration instead of the LLM", async () => {
+      fx.ctx.tier = "unknown";
+      const res = await request(app)
+        .post("/api/whatsapp-webhook")
+        .send(webhookBody({ type: "text", text: { body: "Naomba maji, hakuna hapa" } }));
+      expect(res.status).toBe(200);
+      await new Promise((r) => setTimeout(r, 0));
+      // startRegistration path: registrationState gets set, no LLM reply,
+      // no water-point/advisory content sent.
+      expect(fx.registrationState).toMatchObject({ step: "ask_name" });
+      expect(fx.lastCompleteMessages).toEqual([]);
+    });
+
+    it("routes an unregistered number's button tap into registration, not the button's own handler", async () => {
+      fx.ctx.tier = "unknown";
+      const res = await request(app).post("/api/whatsapp-webhook").send(
+        webhookBody({
+          type: "interactive",
+          interactive: { list_reply: { id: "malisho", title: "Malisho" } },
+        }),
+      );
+      expect(res.status).toBe(200);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(fx.registrationState).toMatchObject({ step: "ask_name" });
+      expect(fx.sentLocations).toHaveLength(0);
+    });
+
+    it("routes an unregistered number's location share into registration, not the grazing advisory", async () => {
+      fx.ctx.tier = "unknown";
+      const res = await request(app).post("/api/whatsapp-webhook").send(
+        webhookBody({
+          type: "location",
+          location: { latitude: 0.34, longitude: 37.58 },
+        }),
+      );
+      expect(res.status).toBe(200);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(fx.registrationState).toMatchObject({ step: "ask_name" });
+      expect(fx.sentButtons).toHaveLength(0); // no species-selection buttons
+    });
+
+    it("still lets MSAADA/HELP escape the gate for an unregistered number", async () => {
+      fx.ctx.tier = "unknown";
+      const res = await request(app)
+        .post("/api/whatsapp-webhook")
+        .send(webhookBody({ type: "text", text: { body: "MSAADA" } }));
+      expect(res.status).toBe(200);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(fx.sentButtons).toHaveLength(1);
+      expect(fx.registrationState).toBeNull();
+    });
+
+    it("still lets STOP/SITAKI escape the gate for an unregistered number", async () => {
+      fx.ctx.tier = "unknown";
+      const res = await request(app)
+        .post("/api/whatsapp-webhook")
+        .send(webhookBody({ type: "text", text: { body: "STOP" } }));
+      expect(res.status).toBe(200);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(fx.optedOutPhones).toEqual(["+254712345678"]);
+      expect(fx.registrationState).toBeNull();
+    });
+
+    it("does not gate a already-known (lead/verified) number — normal advisory flow proceeds", async () => {
+      fx.ctx.tier = "lead";
+      const res = await request(app)
+        .post("/api/whatsapp-webhook")
+        .send(webhookBody({ type: "text", text: { body: "Ng'ombe wangu ni wagonjwa" } }));
+      expect(res.status).toBe(200);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(fx.registrationState).toBeNull();
+      expect(fx.sentSessionMessages).toHaveLength(1);
+      expect(fx.sentSessionMessages[0].text).toBe(fx.llmContent);
+    });
+  });
+
   describe("directions from anywhere (Phase 3)", () => {
     it("resolves a different named ward's real facts when the herder asks about it, not their own", async () => {
       // fx.ctx.wardId defaults to "242" (Bulla Pesa) — herder asks about
@@ -898,5 +1098,43 @@ describe("POST /api/whatsapp-webhook", () => {
       const systemMessage = fx.lastCompleteMessages.find((m) => m.role === "system");
       expect(systemMessage?.content).not.toContain("queryWard=");
     });
+
+    it(
+      "queues the ground-truth follow-up for the QUERY WARD's own point, not the " +
+        "herder's home-ward one — regression test for a real, documented live incident " +
+        "(STATUS.md, 2026-08-09): a herder in Burat asking about Burat got told about " +
+        "Mlango2 Borehole (Burat), but the pending follow-up was tracking the herder's " +
+        "Oldonyiro home-ward point instead, so a later check-in would have asked about " +
+        "the wrong place entirely",
+      async () => {
+        fx.wards = [
+          { ward_id: "242", name: "Bulla Pesa" },
+          { ward_id: "245", name: "Ngare Mara" },
+        ];
+        fx.satelliteByWard = { "245": { ndvi_mean: 0.31, vci_value: 42 } };
+        fx.centroidByWard = { "245": { lat: 0.6614, lon: 37.904 } };
+        // fx.ctx (mocked resolveHerderContext) carries no water-point
+        // fields at all in this suite's fixture — the OLD, buggy
+        // behavior (resolving the presentation off `ctx` unconditionally
+        // instead of preferring queryWard.waterPoint) would therefore
+        // resolve to mode "none" here and never call the upsert at all,
+        // which is exactly what this test would catch a regression to.
+        fx.waterPoints = [
+          {
+            point: { lat: 0.66, lon: 37.9 },
+            displayName: "Mlango2 Borehole",
+            status: "unknown",
+            distanceKm: 4.6,
+          },
+        ];
+        const res = await request(app)
+          .post("/api/whatsapp-webhook")
+          .send(webhookBody({ type: "text", text: { body: "Kuna maji Ngare Mara?" } }));
+        expect(res.status).toBe(200);
+        await new Promise((r) => setTimeout(r, 0));
+        expect(fx.followupUpserts).toHaveLength(1);
+        expect(fx.followupUpserts[0]?.waterPointName).toBe("Mlango2 Borehole");
+      },
+    );
   });
 });

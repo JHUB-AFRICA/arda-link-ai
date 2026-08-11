@@ -4,7 +4,7 @@
  * WhatsApp channel shipped, by WhatsApp free-text turns too).
  */
 
-import { sbInsert, sbGet, type SupabaseMode } from "./client.js";
+import { sbInsert, sbGet, sbFetch, isSupabaseConfigured, type SupabaseMode } from "./client.js";
 
 /**
  * Read shape of Supabase `ground_truth_calls`. Nullable everywhere except
@@ -100,6 +100,39 @@ export const recentGroundTruthCalls = (
     { mode },
   );
 };
+
+/**
+ * Diagnostic-only probe for the ops dashboard's Ground Truth Audit
+ * panel, called only when `recentGroundTruthCalls()` has already
+ * returned `null`. `sbGet` swallows the real failure reason (by
+ * design — every other caller just wants "did I get data or not"),
+ * which meant this panel reported a hardcoded, frequently-false
+ * `reason: "supabase_not_configured"` even when Supabase was fully
+ * configured and reachable but a query failed for another reason —
+ * exactly what happened for a month when `ground_truth_calls
+ * .water_point_name` went missing live (migration 0016 unapplied) and
+ * every read 400'd with PGRST204. Never used on a herder-facing path;
+ * this is strictly for giving an operator a truthful "why" here.
+ */
+export async function probeGroundTruthCallsFailureReason(): Promise<string> {
+  if (!isSupabaseConfigured()) return "supabase_not_configured";
+  try {
+    const res = await sbFetch("ground_truth_calls?select=call_id&limit=1", {
+      sbMode: "batch",
+    });
+    if (res.ok) return "unknown_transient_error";
+    const body = await res.text().catch(() => "");
+    let code: string | null = null;
+    try {
+      code = (JSON.parse(body) as { code?: string; message?: string }).code ?? null;
+    } catch {
+      // Non-JSON error body — fall through to the raw status.
+    }
+    return code ? `supabase_error_${code}` : `supabase_http_${res.status}`;
+  } catch (err) {
+    return `probe_failed: ${String(err).slice(0, 200)}`;
+  }
+}
 
 // ── Ground-truth corrections (operator review layer) ───────────────────
 // See migration 0009's header: ground_truth_calls stays append-only.

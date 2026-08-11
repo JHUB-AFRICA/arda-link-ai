@@ -75,6 +75,24 @@ const OPT_OUT_KEYWORDS = new Set(["STOP", "SITAKI"]);
 // left for a later decision once this proves out).
 const REGISTRATION_KEYWORDS = new Set(["JISAJILI", "SAJILI", "REGISTER", "ANDIKISHA"]);
 
+// Plain-text equivalents of the welcome menu's three button taps —
+// needed because Evolution's buttons never actually render on a real
+// WhatsApp client (2026-08-11, confirmed live with two herders: the
+// send call succeeds, Evolution reports it dispatched, nothing ever
+// appears on screen — a real Baileys/WhatsApp limitation, not a bug in
+// the send call itself). Mirrors SMS's own BULA/MALISHO/ONGEA keyword
+// design (routes/sms.ts) exactly, so the same words work the same way
+// on both channels. Deliberately words only, no bare "1"/"2"/"3" —
+// unlike the species prompt (only ever shown while a location is
+// pending, a narrow context), a bare digit here would be genuinely
+// ambiguous against an ordinary free-text reply mid-conversation (e.g.
+// answering a BCS score or a herd count with a plain number).
+const WELCOME_MENU_KEYWORDS: Record<string, "bula_pesa" | "malisho" | "ongea_na_ai"> = {
+  BULA: "bula_pesa",
+  MALISHO: "malisho",
+  ONGEA: "ongea_na_ai",
+};
+
 const DEFAULT_TENANT_ID = process.env.DETERMINISTIC_TENANT_ID ?? "bula-pesa";
 
 /**
@@ -278,27 +296,25 @@ async function handleMalisho(
   await sendWhatsappSessionMessage(from, header);
   logOutbound(from, ctx, "text", header);
 
-  const statusLabel = (s: string): string =>
-    lang === "sw"
-      ? s === "working"
-        ? "INAFANYA KAZI"
-        : s === "broken"
-          ? "MBOVU"
-          : "HAIJULIKANI"
-      : s === "working"
-        ? "WORKING"
-        : s === "broken"
-          ? "BROKEN"
-          : "UNKNOWN";
+  // Only a confirmed-broken point gets a warning label on its pin — an
+  // `unknown` (unsurveyed) point used to be captioned "HAIJULIKANI"/
+  // "UNKNOWN", the exact same "tell the herder it's unconfirmed"
+  // pattern the free-text grounding rules (whatsappConversation.ts)
+  // were rewritten to stop doing on 2026-08-09. A working point also
+  // gets no label now — both are real, plain recommendations; only
+  // broken carries a warning.
+  const statusLabel = (s: string): string | null =>
+    s === "broken" ? (lang === "sw" ? "MBOVU" : "BROKEN") : null;
 
   for (const p of points) {
     // Status rides on the pin's own label — a pin can get forwarded or
     // re-read on its own, detached from any surrounding text.
+    const label = statusLabel(p.status);
     await sendWhatsappLocation(
       from,
       p.point.lat,
       p.point.lon,
-      `${p.displayName} — ${statusLabel(p.status)}`,
+      label ? `${p.displayName} — ${label}` : p.displayName,
       `${p.distanceKm.toFixed(1)}km`,
     );
     logOutbound(from, ctx, "location", `${p.displayName} (${p.status})`);
@@ -461,7 +477,26 @@ const SPECIES_KEYWORDS: Array<[RegExp, "cattle" | "shoat" | "camel"]> = [
   [/\b(ngamia|camel|camels)\b/i, "camel"],
 ];
 
+// Bare "1"/"2"/"3" replies to the species prompt — safe ONLY as an
+// exact, whole-message match (never a substring test like the keyword
+// regexes above), since this function is called generically and a
+// stray digit elsewhere in a longer message must not misfire. Order
+// matches the numbered list sendWhatsappInteractiveButtons renders
+// (Ng'ombe/Mbuzi-Kondoo/Ngamia) — see handleLocationShare and the
+// DISTANCE_QUESTION_RE branch below, both build the same 3-item list.
+// Needed because Evolution's buttons never actually render on a real
+// WhatsApp client (2026-08-11) — herders reply to the plain numbered
+// text with either the animal's name (already handled below) or its
+// number, same as they already do on SMS/USSD.
+const SPECIES_DIGIT_MAP: Record<string, "cattle" | "shoat" | "camel"> = {
+  "1": "cattle",
+  "2": "shoat",
+  "3": "camel",
+};
+
 function detectSpeciesGroup(text: string): "cattle" | "shoat" | "camel" | null {
+  const trimmed = text.trim();
+  if (trimmed in SPECIES_DIGIT_MAP) return SPECIES_DIGIT_MAP[trimmed]!;
   for (const [re, group] of SPECIES_KEYWORDS) {
     if (re.test(text)) return group;
   }
@@ -598,6 +633,10 @@ export interface QueryWardFacts {
   wardId: string;
   wardName: string;
   ndviMean: number | null;
+  /** Satellite reading's own data-period end (ISO date) — see
+   * HerderContext.wardNdviAsOf's docstring for why this is threaded
+   * through separately from "when we wrote the row". */
+  ndviAsOf: string | null;
   vci: number | null;
   waterPoint: { name: string; distanceKm: number; status: string } | null;
   landmarksBlock: string | null;
@@ -649,6 +688,7 @@ async function resolveQueryWard(
     wardId,
     wardName,
     ndviMean: sat?.ndvi_mean ?? null,
+    ndviAsOf: sat?.period_end ?? null,
     vci: sat?.vci_value ?? null,
     waterPoint: nearest
       ? { name: nearest.displayName, distanceKm: nearest.distanceKm, status: nearest.status }
@@ -726,12 +766,21 @@ async function handleFreeText(
   // don't tell a herder a point's status is "unconfirmed" and ask them
   // to verify it in the same breath; guide them there like a real
   // recommendation, then check in on a LATER turn whether it panned
-  // out. Read+clear before this turn's own recommendation is computed
-  // below, so a stale check-in never gets re-asked and a fresh one
-  // (written further down, if this turn recommends another unknown
-  // point) can't be clobbered by this read.
+  // out.
+  //
+  // Read here, but do NOT clear yet (fixed 2026-08-11 — real bug found
+  // during a truthfulness audit): the row used to be cleared
+  // immediately on read, before the LLM completion call and the actual
+  // WhatsApp send below, both of which can fail (LLM timeout/provider
+  // error, isMock fallback, send failure). The webhook route ACKs 200
+  // and processes fire-and-forget (routes/whatsapp.ts), so a failure in
+  // between meant the herder never saw that turn's reply — including
+  // the check-in — and the row was already gone, silently and
+  // permanently losing that one ground-truth opportunity with no retry.
+  // The clear now happens once the reply has actually been sent (see
+  // below), gated so it never fights with a fresh write THIS turn makes
+  // for a new "unknown" recommendation (see wroteFreshFollowup).
   const pendingFollowup = await getWaterPointFollowup(from);
-  if (pendingFollowup) void clearWaterPointFollowup(from);
 
   // Fell through the fast-paths above (no species/distance keyword
   // matched) but a location is still pending — availing the real nearest
@@ -838,8 +887,16 @@ async function handleFreeText(
           status: queryWard.waterPoint.status,
         }
       : resolveWaterPointPresentation(ctx, freshWaterPoint, landmarkWaterPoint);
+  // Tracked so the deferred clear below never deletes a followup this
+  // SAME turn just wrote — upsertWaterPointFollowup is one row per
+  // phone (an upsert, not additive), so if both fire, the write already
+  // fully accounts for whatever was there; a clear immediately after
+  // would delete the fresh row it just created rather than the stale
+  // one it was meant to retire.
+  let wroteFreshFollowup = false;
   if (presentation.mode === "unknown" && presentation.name) {
     void upsertWaterPointFollowup(from, presentation.name);
+    wroteFreshFollowup = true;
   }
 
   const systemPrompt = buildWhatsappSystemPrompt(
@@ -928,6 +985,14 @@ async function handleFreeText(
     ? safeDefault
     : llmResponse.content || safeDefault;
   await sendWhatsappSessionMessage(from, reply);
+  // Only clear now, after the reply that (per buildWhatsappSystemPrompt's
+  // followupLine) actually carried the check-in has genuinely gone out —
+  // see this function's top for why. Skipped when this same turn wrote a
+  // fresh followup of its own (wroteFreshFollowup) so that write is
+  // never immediately clobbered.
+  if (pendingFollowup && !wroteFreshFollowup) {
+    void clearWaterPointFollowup(from);
+  }
   logOutbound(from, ctx, "text", reply);
   logInteraction(from, ctx, "free_text", rawText, reply);
 
@@ -1020,6 +1085,15 @@ export async function processInboundWhatsappMessage(
 
   if (msg.type === "location" && msg.location) {
     logInbound(msg.from, ctx, "location", null, msg.raw);
+    // Mandatory registration gate (2026-08-11): a location share drives
+    // real grazing-ring advisory data (see handleGrazingSpeciesReply) —
+    // exactly the kind of substantive reply that must not go to a
+    // number the system doesn't actually know yet. See the text-branch
+    // gate below for the full rationale.
+    if (ctx.tier === "unknown") {
+      await handleRegistrationTurn(msg.from, ctx, lang, "", tenantId);
+      return;
+    }
     await handleLocationShare(
       msg.from,
       ctx,
@@ -1039,6 +1113,16 @@ export async function processInboundWhatsappMessage(
 
   if (msg.type === "list_reply" || msg.type === "button_reply") {
     logInbound(msg.from, ctx, msg.type, msg.replyId ?? null, msg.raw);
+    // Mandatory registration gate (2026-08-11) — see the text-branch
+    // gate below for the full rationale. A button tap (Bula Pesa /
+    // Malisho / Ongea / species selection) is only reachable after the
+    // welcome menu, which MSAADA/HELP/MENU/START can still surface to
+    // an unregistered number (that keyword itself must always escape
+    // the gate) — so this catches the next step in that path.
+    if (ctx.tier === "unknown") {
+      await handleRegistrationTurn(msg.from, ctx, lang, msg.replyId ?? "", tenantId);
+      return;
+    }
     if (msg.replyId === "bula_pesa") {
       await handleBulaPesa(msg.from, ctx, lang);
     } else if (msg.replyId === "malisho") {
@@ -1095,9 +1179,47 @@ export async function processInboundWhatsappMessage(
     // AFTER menu/opt-out so MSAADA/STOP always escape mid-flow, but
     // BEFORE the first-contact welcome check below so a mid-flow answer
     // is never mistaken for a brand-new conversation.
+    //
+    // Mandatory registration gate (2026-08-11): `ctx.tier === "unknown"`
+    // means this phone number is in neither `pastoralists` nor
+    // `pastoralist_leads` — the system has never actually identified who
+    // it's talking to. Before this fix, an unregistered number got the
+    // full advisory experience (ward data, real water points, LLM
+    // replies) indefinitely; the only thing gated on identity was
+    // ground-truth writes (`ctx.pastoralistId` further down), never the
+    // conversation itself — herders the system doesn't know were being
+    // fully served like herders it does. Folding `ctx.tier === "unknown"`
+    // into this same condition means ANY message from an unregistered
+    // number — not just an explicit JISAJILI keyword — starts or
+    // continues registration, using the exact same, already-tested state
+    // machine. Deliberately NOT softened for urgent-sounding first
+    // messages ("no water, help") per an explicit product decision to
+    // require identity before any advisory reply, even though this sits
+    // in real tension with this file's own "urgent need overrides
+    // everything" indicator-collection principle — mitigated by keeping
+    // the registration flow itself short, not by weakening this gate.
     const pendingRegistration = await getRegistrationState(msg.from);
-    if (pendingRegistration || REGISTRATION_KEYWORDS.has(normalized)) {
+    if (pendingRegistration || REGISTRATION_KEYWORDS.has(normalized) || ctx.tier === "unknown") {
       await handleRegistrationTurn(msg.from, ctx, lang, msg.text, tenantId);
+      return;
+    }
+
+    // Plain-text equivalents of the welcome menu's button taps (see
+    // WELCOME_MENU_KEYWORDS's own docstring — Evolution's buttons don't
+    // render, so a herder can only ever respond by typing). Checked
+    // after the registration gate (so a mid-registration answer is
+    // never misrouted here) and before the free-text fallback.
+    const menuReplyId = WELCOME_MENU_KEYWORDS[normalized];
+    if (menuReplyId === "bula_pesa") {
+      await handleBulaPesa(msg.from, ctx, lang);
+      return;
+    }
+    if (menuReplyId === "malisho") {
+      await handleMalisho(msg.from, ctx, lang);
+      return;
+    }
+    if (menuReplyId === "ongea_na_ai") {
+      await handleOngeaAck(msg.from, ctx, lang);
       return;
     }
 

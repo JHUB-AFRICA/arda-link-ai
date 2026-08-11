@@ -41,6 +41,7 @@ export function mergeSupabaseCallContext(
     wardId: ctx.ward_id ?? base.wardId,
     wardName: ctx.ward_name,
     wardNdviMean: ctx.ndvi_mean,
+    wardNdviAsOf: ctx.satellite_period_end,
     wardVci: ctx.vci_value,
     wardRainfall30dMm: ctx.rainfall_mm_30d ?? base.wardRainfall30dMm,
     wardTemperatureC: ctx.temperature_c,
@@ -151,6 +152,7 @@ export async function overlayWardReference(
   return {
     ...ctx,
     wardNdviMean: sat?.ndvi_mean ?? ctx.wardNdviMean,
+    wardNdviAsOf: sat?.period_end ?? ctx.wardNdviAsOf,
     wardVci: sat?.vci_value ?? ctx.wardVci,
     wardRainfall30dMm: wx?.rainfall_mm_30d ?? ctx.wardRainfall30dMm,
     wardTemperatureC: wx?.temperature_c ?? ctx.wardTemperatureC,

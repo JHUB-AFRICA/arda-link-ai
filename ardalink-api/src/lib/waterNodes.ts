@@ -136,10 +136,22 @@ export async function formatRealWaterLines(
 ): Promise<string[] | null> {
   const rows = await nearestRealWaterPoints(origin, n, tenantId);
   if (rows === null) return null;
+  // Only a confirmed-broken point gets a warning badge — an `unknown`
+  // (unsurveyed) point is shown exactly like a working one, no "?"
+  // signal, matching the WhatsApp free-text grounding rule (never tell
+  // a herder a real point's status is "unconfirmed"). Truncate only
+  // the name, never the whole assembled string, so the badge/distance
+  // suffix always survives on longer point names.
+  const LINE_BUDGET = 45;
   return rows.map((r) => {
     const km = r.distanceKm >= 10 ? r.distanceKm.toFixed(0) : r.distanceKm.toFixed(1);
-    const badge = r.status === "working" ? "OK" : r.status === "broken" ? "BAD" : "?";
-    return `${r.name} (${badge}, ${km}km)`.slice(0, 45);
+    const suffix = r.status === "broken" ? ` (BAD, ${km}km)` : ` (${km}km)`;
+    const nameBudget = Math.max(0, LINE_BUDGET - suffix.length);
+    const name =
+      r.name.length > nameBudget
+        ? r.name.slice(0, Math.max(0, nameBudget - 1)) + "…"
+        : r.name;
+    return `${name}${suffix}`;
   });
 }
 

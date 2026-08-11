@@ -259,6 +259,7 @@ describe("buildWhatsappSystemPrompt — Phase 3: landmarks + query-ward", () => 
       wardId: "245",
       wardName: "Ngare Mara",
       ndviMean: 0.31,
+      ndviAsOf: null,
       vci: 42,
       waterPoint: { name: "Ngare Mara piped water GW2", distanceKm: 5.4, status: "working" },
       landmarksBlock: null,
@@ -346,5 +347,79 @@ describe("buildWhatsappSystemPrompt — landmark mention as a location estimate"
     const ctx = baseContext("+254799954672", "bula-pesa");
     const prompt = buildWhatsappSystemPrompt(ctx, "en", true, null, null, null, null);
     expect(prompt).not.toContain("Location estimate for THIS turn");
+  });
+});
+
+describe("buildWhatsappSystemPrompt — data-age disclosure (2026-08-10 audit finding)", () => {
+  const daysAgo = (n: number) => new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString();
+
+  it("tells the model to disclose the real date when the NDVI reading is over a month old", () => {
+    const ctx: ReturnType<typeof baseContext> = {
+      ...baseContext("+254799954672", "bula-pesa"),
+      wardNdviPct: -38,
+      wardDroughtSeverity: "severe",
+      wardNdviAsOf: daysAgo(32),
+    };
+    const prompt = buildWhatsappSystemPrompt(ctx, "en", true, null, null, null, null);
+    expect(prompt).toMatch(/over a month old/);
+    expect(prompt).toContain("as of");
+  });
+
+  it("says nothing about staleness for a fresh reading", () => {
+    const ctx: ReturnType<typeof baseContext> = {
+      ...baseContext("+254799954672", "bula-pesa"),
+      wardNdviPct: -38,
+      wardDroughtSeverity: "severe",
+      wardNdviAsOf: daysAgo(5),
+    };
+    const prompt = buildWhatsappSystemPrompt(ctx, "en", true, null, null, null, null);
+    expect(prompt).not.toMatch(/over a month old/);
+  });
+
+  it("carries the same disclosure through the query-ward (different-ward) line", () => {
+    const ctx = baseContext("+254799954672", "bula-pesa");
+    const prompt = buildWhatsappSystemPrompt(ctx, "en", true, null, null, {
+      wardId: "245",
+      wardName: "Ngare Mara",
+      ndviMean: 0.31,
+      ndviAsOf: daysAgo(45),
+      vci: 42,
+      waterPoint: null,
+      landmarksBlock: null,
+    });
+    expect(prompt).toMatch(/This reading is over a month old/);
+  });
+});
+
+describe("buildWhatsappSystemPrompt — distance-feasibility signal (2026-08-10 audit finding)", () => {
+  it("flags a genuinely long trek to an unknown-status point, without withholding the recommendation", () => {
+    const ctx = baseContext("+254799954672", "bula-pesa");
+    const prompt = buildWhatsappSystemPrompt(ctx, "en", true, {
+      name: "Far Borehole",
+      distanceKm: 33.9,
+      status: "unknown",
+    });
+    expect(prompt).toMatch(/genuinely long way \(33\.9km\)/);
+    expect(prompt).toContain("Recommend it plainly and normally");
+  });
+
+  it("flags a genuinely long trek to a confirmed-working point too", () => {
+    const ctx = baseContext("+254799954672", "bula-pesa");
+    const prompt = buildWhatsappSystemPrompt(ctx, "en", true, {
+      name: "Far Working Point",
+      distanceKm: 22,
+      status: "working",
+    });
+    expect(prompt).toMatch(/genuinely long way \(22\.0km\)/);
+  });
+
+  it("says nothing about distance feasibility for a short, ordinary trek", () => {
+    const ctx = baseContext("+254799954672", "bula-pesa");
+    const prompt = buildWhatsappSystemPrompt(ctx, "en", true, {
+      name: "Near Point",
+      distanceKm: 2.4,
+      status: "unknown",
+    });
+    expect(prompt).not.toMatch(/genuinely long way/);
   });
 });

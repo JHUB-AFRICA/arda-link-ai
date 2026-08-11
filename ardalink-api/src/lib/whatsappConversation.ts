@@ -27,6 +27,7 @@
 import type { HerderContext } from "./herderContext/index.js";
 import type { QueryWardFacts } from "./whatsappTurn.js";
 import { landmarksBlockForWard } from "./data/landmarks/index.js";
+import { isSatelliteReadingStale, satelliteAsOfPhrase } from "./dataFreshness.js";
 
 /**
  * Same indicator taxonomy as openai/voicePrompt.ts's indicatorCollectionBlock(),
@@ -254,13 +255,24 @@ export function buildWhatsappSystemPrompt(
   // ward than their own (wardIdFromLocationText matched something in
   // their text). State plainly which ward's data this is so the model
   // never conflates it with the herder's own registered ward.
+  const queryWardStale = queryWard ? isSatelliteReadingStale(queryWard.ndviAsOf) : false;
+  const queryWardAsOf = queryWard ? satelliteAsOfPhrase(queryWard.ndviAsOf, lang) : null;
   const queryWardLine = queryWard
-    ? `The herder's message names a DIFFERENT ward than their own registered one: *${queryWard.wardName}* (their own ward is ${ctx.wardName ?? "unknown"} — do not mix the two up or imply these facts are about their home ward). For ${queryWard.wardName}: NDVI ${queryWard.ndviMean != null ? queryWard.ndviMean.toFixed(2) : "unknown"}, VCI ${queryWard.vci ?? "unknown"}.${queryWard.waterPoint ? ` Nearest known water point there: ${queryWard.waterPoint.name}, ~${queryWard.waterPoint.distanceKm.toFixed(1)}km from that ward's centre, status ${queryWard.waterPoint.status} — a ward-level estimate, not tied to any specific spot within it.` : " No known water point data for that ward."}${queryWard.landmarksBlock ? `\nKnown named places in ${queryWard.wardName}:\n${queryWard.landmarksBlock}` : ""}`
+    ? `The herder's message names a DIFFERENT ward than their own registered one: *${queryWard.wardName}* (their own ward is ${ctx.wardName ?? "unknown"} — do not mix the two up or imply these facts are about their home ward). For ${queryWard.wardName}: NDVI ${queryWard.ndviMean != null ? queryWard.ndviMean.toFixed(2) : "unknown"}, VCI ${queryWard.vci ?? "unknown"}.${queryWardStale && queryWardAsOf ? ` This reading is over a month old (${queryWardAsOf}) — say so honestly rather than implying it's current.` : ""}${queryWard.waterPoint ? ` Nearest known water point there: ${queryWard.waterPoint.name}, ~${queryWard.waterPoint.distanceKm.toFixed(1)}km from that ward's centre, status ${queryWard.waterPoint.status} — a ward-level estimate, not tied to any specific spot within it.` : " No known water point data for that ward."}${queryWard.landmarksBlock ? `\nKnown named places in ${queryWard.wardName}:\n${queryWard.landmarksBlock}` : ""}`
     : "";
 
+  // Data-age disclosure (2026-08-10 audit finding): a satellite reading
+  // over a month past its own data period was being stated with the
+  // same unqualified present-tense confidence as a fresh one. Rather
+  // than hardcoding "as of" wording here (this line feeds the LLM, not
+  // the herder directly), tell the model the reading is old and give
+  // it the real date — the model already handles every other honesty
+  // caveat in this prompt as an instruction, not a canned string.
+  const ndviStale = isSatelliteReadingStale(ctx.wardNdviAsOf);
+  const ndviAsOf = satelliteAsOfPhrase(ctx.wardNdviAsOf, lang);
   const droughtLine =
     ctx.wardNdviPct != null || ctx.wardDroughtSeverity
-      ? `Drought signal: NDVI ${ctx.wardNdviPct != null ? `${ctx.wardNdviPct.toFixed(0)}% vs normal` : "unknown"}, severity ${ctx.wardDroughtSeverity ?? "unknown"}, VCI ${ctx.wardVci ?? "unknown"}.`
+      ? `Drought signal: NDVI ${ctx.wardNdviPct != null ? `${ctx.wardNdviPct.toFixed(0)}% vs normal` : "unknown"}, severity ${ctx.wardDroughtSeverity ?? "unknown"}, VCI ${ctx.wardVci ?? "unknown"}.${ndviStale && ndviAsOf ? ` This reading is over a month old (${ndviAsOf}) — say so honestly (e.g. "${ndviAsOf}") rather than implying it's this month's condition.` : ""}`
       : "";
 
   // Four distinct tiers, most-precise first, each with its own honest
@@ -328,10 +340,23 @@ export function buildWhatsappSystemPrompt(
   // collected here now — not a same-turn survey question.
   const distanceNote =
     knownKm != null ? `, ~${knownKm.toFixed(1)}km away — ALWAYS state this distance figure` : "";
+  // Distance-feasibility signal (2026-08-10 audit finding): every
+  // distance used to be stated with identical, unqualified confidence
+  // regardless of magnitude — live-confirmed recommending a 33.9km
+  // point the same way as a 1.8km one. This is honesty about data
+  // already in hand (no new number, no invented feasibility claim),
+  // scoped to only the two branches that actually present a point as a
+  // destination (working / unknown) — the broken branch below already
+  // tells the model not to send them there at all.
+  const FAR_KM = 15;
+  const farNote = (km: number | null): string =>
+    km != null && km > FAR_KM
+      ? ` This is a genuinely long way (${km.toFixed(1)}km) for a herd on foot — say so plainly alongside the recommendation (e.g. "that's a long trek") and mention that vehicle/tanker help or checking with neighbors first may be worth considering, without refusing to name the point as their real option.`
+      : "";
   const waterLine = workingName
-    ? `CONFIRMED WORKING water point — this is the only one you may suggest they travel to: ${workingName}${workingKm != null ? `, ~${workingKm.toFixed(1)}km away` : ""}. Distance ${provenance}.`
+    ? `CONFIRMED WORKING water point — this is the only one you may suggest they travel to: ${workingName}${workingKm != null ? `, ~${workingKm.toFixed(1)}km away` : ""}. Distance ${provenance}.${farNote(workingKm)}`
     : presentation.mode === "unknown"
-      ? `Their closest known water point is ${knownName}${distanceNote} (distance ${provenance}). Recommend it plainly and normally, as their real nearest option — the same way you'd recommend anything else you know. Do NOT tell them its status is "unknown"/"unconfirmed", do NOT hedge it with data-quality caveats, and do NOT ask them right now whether it's working — none of that in this turn. Just guide them there like a knowledgeable local would.`
+      ? `Their closest known water point is ${knownName}${distanceNote} (distance ${provenance}). Recommend it plainly and normally, as their real nearest option — the same way you'd recommend anything else you know. Do NOT tell them its status is "unknown"/"unconfirmed", do NOT hedge it with data-quality caveats, and do NOT ask them right now whether it's working — none of that in this turn. Just guide them there like a knowledgeable local would.${farNote(knownKm)}`
       : knownName
         ? `The nearest water point on record is ${knownName}${distanceNote}, and its recorded status is *${knownStatus}* (distance ${provenance}) — CONFIRMED broken/dry, not just unsurveyed. There is NO confirmed-working water point known near this herder right now. Do NOT tell them to go there, do NOT present it as an option, and do NOT imply a journey to it is worth making — a herder without water walking 15+ km to a dead borehole is the exact harm to avoid. You may mention it only to say it is recorded ${knownStatus} so they don't waste the trip.${brokenGroundTruthAsk} ${worthAskingAbout ? "Beyond that one question, tell" : "Ask if anyone nearby has working water, tell"} them their report of what's actually working helps other herders in the ward, and offer a live location share so the system can look for something closer.`
         : "No water point data is available for this herder's area at all. Say so plainly — do not name or invent one. Offer a live location share so the system can look, and ask what they can see around them.";

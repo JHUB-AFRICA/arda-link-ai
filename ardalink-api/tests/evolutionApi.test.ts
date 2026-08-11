@@ -232,28 +232,33 @@ describe("sendWhatsappInteractiveList", () => {
 });
 
 describe("sendWhatsappInteractiveButtons", () => {
-  it("remaps {id,title} to Evolution's {type:reply, displayText, id}, capped at 3", async () => {
-    let capturedBody: {
-      buttons?: Array<{ type?: string; displayText?: string; id?: string }>;
-    } = {};
-    mockFetch(async (_req, init) => {
-      capturedBody = JSON.parse(String(init?.body ?? "{}"));
-      return jsonResponse({ key: { id: "wamid.btn1" } });
-    });
-    const result = await sendWhatsappInteractiveButtons("+254712345678", "Pick one", [
-      { id: "a", title: "A" },
-      { id: "b", title: "B" },
-      { id: "c", title: "C" },
-      { id: "d", title: "D" },
-    ]);
-    expect(result.ok).toBe(true);
-    expect(capturedBody.buttons?.length).toBe(3);
-    expect(capturedBody.buttons?.[0]).toMatchObject({
-      type: "reply",
-      displayText: "A",
-      id: "a",
-    });
-  });
+  it(
+    "sends a plain numbered text message instead of Evolution's sendButtons " +
+      "(2026-08-11: Baileys' legacy buttonsMessage doesn't render on real WhatsApp " +
+      "clients — confirmed live, twice, with two different herders — the button send " +
+      "call itself still reports success, so nothing about it can be detected after " +
+      "the fact; a plain numbered list is a lossless substitute since whatsappTurn.ts's " +
+      "free-text handling already recognizes a typed name or number)",
+    async () => {
+      let capturedPath = "";
+      let capturedBody: { text?: string } = {};
+      mockFetch(async (req, init) => {
+        capturedPath = typeof req === "string" ? req : req.toString();
+        capturedBody = JSON.parse(String(init?.body ?? "{}"));
+        return jsonResponse({ key: { id: "wamid.btn1" } });
+      });
+      const result = await sendWhatsappInteractiveButtons("+254712345678", "Pick one", [
+        { id: "a", title: "A" },
+        { id: "b", title: "B" },
+        { id: "c", title: "C" },
+        { id: "d", title: "D" },
+      ]);
+      expect(result.ok).toBe(true);
+      expect(capturedPath).toContain("/message/sendText/");
+      expect(capturedPath).not.toContain("/message/sendButtons/");
+      expect(capturedBody.text).toBe("Pick one\n1. A\n2. B\n3. C");
+    },
+  );
 });
 
 describe("sendWhatsappLocation", () => {

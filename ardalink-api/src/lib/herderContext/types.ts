@@ -46,6 +46,13 @@ export interface HerderContext {
   wardStressedPct: number | null;
   wardNdviPct: number | null;
   wardNdviMean: number | null;
+  /** The satellite reading's own data period end (ISO date), NOT when
+   * we learned about it — lets herder-facing copy honestly disclose
+   * "as of [date]" instead of implying a stale reading is current (see
+   * whatsappConversation.ts's droughtLine / briefs.ts's severity
+   * lines). Confirmed live incident: satellite_indices sat ~32 days
+   * stale while ward copy still said "this month". */
+  wardNdviAsOf: string | null;
   wardVci: number | null;
   wardRainfall30dMm: number | null;
   wardTemperatureC: number | null;
