@@ -125,7 +125,10 @@ Postgres) — Evolution itself now runs on the VPS, not locally, so its
 bring-up is `/opt/baitech-infra/ardalink-evolution/` on the VPS side
 (see Scenario 2). The tunnel/systemd layer on the laptop (not covered in
 that runbook, since it's laptop-specific, not part of the containerized
-stack) is two systemd user units:
+stack) is two systemd user units, templated and checked into
+`ardalink-api/infra/systemd/` (added 2026-08-11 — previously these
+existed only as hand-edited files on the one machine actually running
+them, with nothing tracked to copy for a handover):
 - `~/.config/systemd/user/ardalink-api.service` — runs `dist/index.mjs`,
   restarts on crash.
 - `~/.config/systemd/user/ardalink-tunnel.service` — `autossh` reverse
@@ -280,6 +283,21 @@ AZURE_OPENAI_DEPLOYMENT=gpt-4o-realtime-preview
 GOOGLE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}   # full JSON blob, see security.md's systemd caveat
 GEE_PROJECT=<gcp-project-id>
 ```
+
+**If deploying via systemd's `EnvironmentFile=` instead of Docker**
+(the laptop/VPS path in Scenarios 1-2 above, not the containerized
+stack): that parser mangles the escaped `\n` sequences inside
+`GOOGLE_SERVICE_ACCOUNT_JSON`'s multi-line PEM `private_key`, silently
+corrupting it — Earth Engine auth then fails with an opaque OpenSSL
+`DECODER routines::unsupported` error, easy to mistake for a bad
+credential rather than a mangled one. Fixed by excluding this one var
+from the generated `EnvironmentFile=` and letting the app's own dotenv
+load pick it up instead (see `ardalink-api.service`'s `ExecStartPre=`
+and `src/index.ts`'s env-loading comment) — every other secret still
+goes through `EnvironmentFile=` normally. Docker Compose's
+`environment:` block does not have this problem; this only matters if
+you're deploying outside Docker. Full detail in `security.md`'s
+Secrets Management section.
 
 ### Legacy / Migration
 

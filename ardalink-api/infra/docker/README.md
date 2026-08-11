@@ -9,9 +9,16 @@
 cd ardalink/infra/docker
 cp .env.example .env       # fill in the secrets
 make up                    # or: docker compose up --build
+make migrate-up            # postgres starts empty — this creates the schema
 ```
 
-After `make up`:
+`make migrate-up` is safe to re-run (idempotent). If you're also using
+a real Supabase project (not just the local Postgres mirror), see
+RUNBOOK.md's ["Bringing up the core
+stack"](./RUNBOOK.md#3-bringing-up-the-core-stack) section for the
+separate, hand-run Supabase-only migrations that step doesn't cover.
+
+After `make up` + `make migrate-up`:
 
 | Service | URL |
 |---|---|
@@ -44,7 +51,16 @@ cd ardalink/infra/docker
 cp .env.example .env                          # fill in real secrets
 docker compose -f compose.prod.yml pull
 docker compose -f compose.prod.yml up -d       # brings up Evolution too, no extra flag
+make migrate-up-prod                           # postgres starts empty — this creates the schema
 ```
+
+`make migrate-up-prod` is the same migration set as `make migrate-up`
+(see the local-dev quick-start above), just targeted at this stack's
+own `postgres` container — idempotent, safe to re-run. If this
+deployment also points at a real Supabase project, see RUNBOOK.md's
+["Bringing up the core
+stack"](./RUNBOOK.md#3-bringing-up-the-core-stack) section for the
+separate, hand-run Supabase-only migrations required there.
 
 Pin `ARDALINK_IMAGE_TAG` in `.env` to a dated release tag (e.g.
 `2026-08-10`) rather than relying on the default `latest` — `latest`

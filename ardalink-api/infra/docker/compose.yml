@@ -59,7 +59,19 @@ services:
   engine:
     <<: [*default-restart, *default-logging]
     build:
-      context: ../engine
+      # Fixed 2026-08-11 (deployment audit): was `../engine`, which
+      # resolves relative to THIS file's own directory
+      # (ardalink-api/infra/docker/) to ardalink-api/infra/engine — a
+      # path that doesn't exist. ardalink-engine is a SIBLING of
+      # ardalink-api, three levels up from here, not one. Confirmed via
+      # `docker compose config engine` before this fix: it silently
+      # resolved to the wrong absolute path, and `docker compose up
+      # --build` (this repo's own documented first command) failed
+      # outright on a fresh clone. Verified live after the fix: the
+      # full stack (postgres/redis/engine/api) now builds and boots
+      # cleanly via `docker compose up --build` + `make migrate-up`
+      # from a genuinely empty state.
+      context: ../../../ardalink-engine
       dockerfile: Dockerfile
     environment:
       DATABASE_URL: postgresql://ardalink:${POSTGRES_PASSWORD:-ardalink_dev_only}@postgres:5432/ardalink
@@ -84,7 +96,11 @@ services:
   api:
     <<: [*default-restart, *default-logging]
     build:
-      context: ../api
+      # Fixed 2026-08-11 (deployment audit) — see engine's identical
+      # note above. `../api` resolved to ardalink-api/infra/api
+      # (doesn't exist); the real ardalink-api root is two levels up
+      # from this file, not one.
+      context: ../..
       dockerfile: Dockerfile
     environment:
       NODE_ENV: production
@@ -147,7 +163,9 @@ services:
   web:
     <<: [*default-restart, *default-logging]
     build:
-      context: ../web
+      # Fixed 2026-08-11 (deployment audit) — see engine's identical
+      # note above.
+      context: ../../../ardalink-web
       dockerfile: Dockerfile
     environment:
       API_BASE_URL: http://api:3000
@@ -155,6 +173,26 @@ services:
       - api
     ports:
       - "127.0.0.1:8080:80"
+
+  # Optional: the public marketing/conference-poster site (static,
+  # no app dependencies — see ardalink-marketing/README.md). Has its
+  # own Dockerfile (same nginx conventions as `web`) but was never
+  # wired into either compose file before (deployment audit,
+  # 2026-08-11) despite the root README listing it alongside
+  # api/engine/web as one of the repo's independently-deployable
+  # services. Opt-in here (unlike compose.prod.yml, where it's core —
+  # that file's whole point is "the whole system in one command"): a
+  # marketing site rebuilding on every local dev `make up` is more
+  # often noise than useful. Bring up with:
+  #   docker compose --profile marketing up
+  marketing:
+    <<: [*default-restart, *default-logging]
+    profiles: ["marketing"]
+    build:
+      context: ../../../ardalink-marketing
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:8082:80"
 
   # Optional: self-hosted WhatsApp gateway (WA_PROVIDER=evolution).
   # Bring up with: docker compose --profile evolution up

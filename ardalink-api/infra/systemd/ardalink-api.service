@@ -1,0 +1,40 @@
+[Unit]
+Description=ArdaLink API (non-Docker deploy — see infra/systemd/README.md)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+WorkingDirectory=<ABS_PATH_TO_REPO>/ardalink-api
+# Point at whichever Node 22+ binary this host actually has — nvm,
+# system node, etc. `node -v` inside WorkingDirectory should print 22+.
+Environment=PATH=<ABS_PATH_TO_NODE_BIN_DIR>:/usr/bin:/bin
+
+# Secrets handling: GOOGLE_SERVICE_ACCOUNT_JSON must NOT go through
+# EnvironmentFile= below — systemd's env-file parser mangles the
+# escaped "\n" sequences inside its multi-line PEM private_key,
+# corrupting it (Earth Engine auth then fails with an opaque OpenSSL
+# "DECODER routines::unsupported" error). It's excluded from the
+# generated file here and picked up instead by the app's own dotenv
+# load (see ardalink-api/src/index.ts's env-loading comment, which
+# reads .env.local directly). Every other secret still goes through
+# EnvironmentFile= normally. See ../../Arda-link-AI-Docs/security.md's
+# Secrets Management section and deployment.md's Environment Variables
+# section for the full writeup.
+#
+# This ExecStartPre regenerates a filtered copy of the real
+# .env.local on every start (never a stale hand-edited copy) so
+# .env.local stays the single source of truth. Put the real
+# .env.local wherever this host's secrets-at-rest policy requires —
+# NOT necessarily inside the repo checkout itself (e.g. if the repo
+# lives on a filesystem/mount where file permissions aren't
+# meaningfully enforced — see security.md's NTFS-mount note for why
+# this mattered on the original dev machine).
+ExecStartPre=/bin/sh -c 'grep -v "^GOOGLE_SERVICE_ACCOUNT_JSON=" <ABS_PATH_TO_ENV_LOCAL> > <ABS_PATH_TO_GENERATED_ENV_FILE> && chmod 600 <ABS_PATH_TO_GENERATED_ENV_FILE>'
+EnvironmentFile=<ABS_PATH_TO_GENERATED_ENV_FILE>
+ExecStart=<ABS_PATH_TO_NODE_BIN_DIR>/node dist/index.mjs
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

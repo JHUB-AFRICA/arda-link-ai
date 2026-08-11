@@ -94,6 +94,41 @@ curl -s http://localhost:3000/api/healthz | jq .
 curl -s http://localhost:5001/health
 ```
 
+**`postgres` starts completely empty — create the schema before going
+further:**
+
+```bash
+make migrate-up
+```
+
+Applies every `*.up.sql` in `../../docs/local-dev/migrations/` (18+
+files as of this writing) against the `postgres` container, in order —
+idempotent, safe to re-run. Without this step the app is up but every
+table is missing; `api`/`engine` will error or silently no-op on
+anything that touches the database. (Added 2026-08-11 — this target
+used to point at two hardcoded migration files that no longer exist
+anywhere in the repo, a leftover from before the migration set moved
+here and grew past 0001; nothing else in this runbook or the Makefile
+created schema at all.)
+
+**Supabase-only migrations — separate step, separate database, easy to
+miss:** if `SUPABASE_URL`/`SUPABASE_SECRET_KEY` are set (the real
+production data store — wards, pastoralists, ground truth, WhatsApp
+messages; see `../../../Arda-link-AI-Docs/deployment.md`), that
+Supabase project needs its own schema too, and `make migrate-up` above
+does **not** touch it (Supabase's schema is managed independently of
+this repo's local-mirror migration chain — there's no direct Postgres
+connection string or management API token available to automate this).
+Hand-run every `docs/local-dev/migrations/*.supabase-only.sql` file
+(currently 0010, 0013, 0015, 0016) against that Supabase project's SQL
+editor, in numeric order — each file's own header explains exactly what
+it fixes and is idempotent. **Confirmed real, not hypothetical**: as of
+this writing, 0015 and 0016 are still unapplied against the live
+project, and 0016's absence alone caused a month of silently-dropped
+ground-truth writes across every channel (WhatsApp/USSD/SMS/voice) — a
+fresh Supabase project walks into the exact same gap unless these are
+run.
+
 At this point `WA_PROVIDER` (whatever `.env` set it to) is already
 live in the `api` container — the two sections below just cover
 getting a *real* WhatsApp account talking to it.

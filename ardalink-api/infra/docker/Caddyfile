@@ -1,16 +1,30 @@
 # Reverse proxy with automatic TLS via Let's Encrypt.
 # Activated by `docker compose --profile tls up`.
 # Replace `ardalink.local` with your real hostname before going to production.
-
+#
+# Fixed 2026-08-11 (deployment audit): the previous version had a bare
+# `reverse_proxy api:3000` (no path matcher) followed by `reverse_proxy
+# /talk/* web:80` — since a bare reverse_proxy directive is the catch-all
+# for anything the more specific one doesn't match, EVERY request to `/`
+# (the operator dashboard's own route — see ardalink-web/nginx.conf,
+# which serves the dashboard at `/` and Talk at `/talk/`) was silently
+# going to the API instead of nginx. Confirmed live: `make up-tls` was
+# the one profile meant for a real deployment, and it broke the
+# dashboard specifically. Now explicit: only `/api/*` (REST + the two
+# WebSocket upgrade paths, /api/voice-stream and
+# /api/browser-voice-stream — Caddy proxies WS upgrades transparently,
+# no special config needed) goes to the API; everything else — `/`,
+# `/talk/*`, static assets — goes to `web:80`, which already resolves
+# both routes correctly on its own.
 ardalink.local, *.ardalink.local {
-    reverse_proxy api:3000
-    reverse_proxy /talk/* web:80
+    reverse_proxy /api/* api:3000
+    reverse_proxy web:80
     encode gzip
     log
 }
 
 # Plain-HTTP fallback for local dev (no domain):
 :80 {
-    reverse_proxy api:3000
-    reverse_proxy /talk/* web:80
+    reverse_proxy /api/* api:3000
+    reverse_proxy web:80
 }

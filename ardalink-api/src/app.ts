@@ -45,6 +45,7 @@ app.get("/api/healthz", (_req, res) => {
     status: "unknown" as const,
     checkedAt: null,
     tables: [],
+    schemaChecks: [],
   };
   res.json({
     status: "ok",

@@ -1,0 +1,28 @@
+[Unit]
+Description=ArdaLink reverse SSH tunnel to a public VPS (permanent webhook callback for a non-Docker/laptop-hosted api)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Environment=AUTOSSH_GATETIME=0
+Environment=AUTOSSH_PORT=0
+# -R <VPS_LOCAL_PORT>:127.0.0.1:<ARDALINK_API_PORT> — the VPS-side
+# port (<VPS_LOCAL_PORT>, bound to the VPS's own 127.0.0.1 only) that
+# its own nginx/reverse-proxy config should point a public hostname
+# at. <ARDALINK_API_PORT> is whatever PORT ardalink-api.service is
+# actually listening on locally (see that unit / .env.local's PORT).
+ExecStart=/usr/bin/autossh -M 0 -N \
+    -o "ServerAliveInterval 30" \
+    -o "ServerAliveCountMax 3" \
+    -o "ExitOnForwardFailure yes" \
+    -o "IdentitiesOnly yes" \
+    -o "StrictHostKeyChecking accept-new" \
+    -i <ABS_PATH_TO_SSH_KEY> \
+    -R 127.0.0.1:<VPS_LOCAL_PORT>:127.0.0.1:<ARDALINK_API_PORT> \
+    <TUNNEL_SSH_USER>@<VPS_HOST>
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

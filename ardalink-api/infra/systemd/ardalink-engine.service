@@ -1,0 +1,21 @@
+[Unit]
+Description=ArdaLink Engine (FastAPI/GEE biophysical data engine — non-Docker deploy)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+# No EnvironmentFile= here: ardalink_engine/main.py loads .env.local
+# itself via python-dotenv (relative to WorkingDirectory below) —
+# unlike ardalink-api's Node/systemd setup, python-dotenv doesn't
+# mangle escaped "\n" in multi-line PEM values, so there's no need to
+# route secrets through systemd's EnvironmentFile= parser here at all.
+WorkingDirectory=<ABS_PATH_TO_REPO>/ardalink-engine
+# Whichever Python 3.12+ / uv environment this host uses.
+Environment=PATH=<ABS_PATH_TO_PYTHON_ENV_BIN_DIR>:/usr/bin:/bin
+ExecStart=<ABS_PATH_TO_UV_BIN>/uv run uvicorn ardalink_engine.main:app --host 0.0.0.0 --port 5001
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
