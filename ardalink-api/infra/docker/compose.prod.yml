@@ -5,16 +5,20 @@ name: ardalink
 # this when the person bringing the stack up doesn't have (or shouldn't
 # need) the source tree — just this file, .env, and `docker compose pull`.
 #
-# Images: munene1212/ardalink-api, munene1212/ardalink-engine,
-# munene1212/ardalink-web, munene1212/ardalink-marketing — public
-# repos, tagged both `latest` and a dated release (see
-# ARDALINK_IMAGE_TAG below). Prefer pinning to the dated tag in any
-# real deployment — `latest` moves.
+# Core images: munene1212/ardalink-api, munene1212/ardalink-engine,
+# munene1212/ardalink-web — public repos, tagged both `latest` and a
+# dated release (see ARDALINK_IMAGE_TAG below). Prefer pinning to the
+# dated tag in any real deployment — `latest` moves.
 #
-# Services (identical to compose.yml except Evolution and marketing —
-# see below — are a core part of THIS stack, not opt-in profiles):
-#   postgres, redis, engine, api, web, marketing, evolution-postgres,
+# Services (identical to compose.yml except Evolution — see below — is
+# a core part of THIS stack, not an opt-in profile):
+#   postgres, redis, engine, api, web, evolution-postgres,
 #   evolution-api, caddy (profile "tls")
+#
+# The public marketing/conference-poster site (munene1212/ardalink-
+# marketing) is NOT part of the core operational system — bring it up
+# separately if/when needed: `docker compose -f compose.prod.yml
+# --profile marketing up -d marketing`.
 #
 # Bring-up (Evolution comes up automatically, no extra flag needed):
 #   cp .env.example .env   # fill in real secrets — see that file's comments
@@ -165,13 +169,14 @@ services:
     ports:
       - "127.0.0.1:8080:80"
 
-  # Public marketing/conference-poster site — core here (unlike
-  # compose.yml's local-dev version, where it's an opt-in profile: a
-  # marketing site rebuilding on every local `make up` is more often
-  # noise than useful). This stack's whole point is "the whole system
-  # in one command" for a hand-off deployer, so it belongs by default.
+  # Public marketing/conference-poster site — not part of the core
+  # operational system (2026-08-11: made opt-in per explicit direction
+  # — the priority is getting the actual pastoralist-facing system
+  # running, not the marketing site). Bring up with:
+  #   docker compose -f compose.prod.yml --profile marketing up -d marketing
   marketing:
     <<: [*default-restart, *default-logging]
+    profiles: ["marketing"]
     image: munene1212/ardalink-marketing:${ARDALINK_IMAGE_TAG:-latest}
     ports:
       - "127.0.0.1:8082:80"

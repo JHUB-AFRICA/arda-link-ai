@@ -1605,13 +1605,29 @@ dormant, worth remembering if that path is ever turned on.
 
 - **L3 `chore(deploy)` — full-stack verification + image publish**,
   2026-08-11 — brought up the *entire* `compose.prod.yml` stack (all 8
-  services, including Evolution) end-to-end with the exact freshly-
-  built images, from a genuinely empty Postgres: migrations applied,
-  every health endpoint green
-  (`api`/`engine`/`web`/`marketing`/Evolution manager). Built and
-  pushed `munene1212/ardalink-{api,engine,web,marketing}`, tagged both
-  `2026-08-11` and `latest` (marketing had a stale manual image from
-  2026-08-04 with no CI; the other three refresh same-day builds).
+  services, including Evolution and marketing) end-to-end with the
+  exact freshly-built images, from a genuinely empty Postgres:
+  migrations applied, every health endpoint green
+  (`api`/`engine`/`web`/`marketing`/Evolution manager). Pushed to
+  Docker Hub (`munene1212`), then **verified the actual publish**, not
+  just the build: deleted every image locally, ran the same `docker
+  compose -f compose.prod.yml pull` a real deployer would, and brought
+  the whole stack up again from the genuinely-pulled images — same
+  result, everything green.
+
+- **L4 `fix(deploy)`**, 2026-08-11, same day — direction from the team:
+  the marketing site isn't part of what needs to be operational right
+  now. Moved `marketing` back out of `compose.prod.yml`'s core service
+  list into an opt-in profile (`--profile marketing`), matching how
+  `compose.yml` already treated it — L2's fix was correct to wire it
+  in *somewhere* (it had a working Dockerfile nobody had connected to
+  either compose file), just wrong to make it load-bearing by default
+  in the hand-off stack. The image stays published on Docker Hub
+  (`munene1212/ardalink-marketing`) for whenever it's actually wanted;
+  the default `docker compose -f compose.prod.yml up -d` no longer
+  pulls or starts it. Verified: `docker compose -f compose.prod.yml
+  config --services` lists 7 services by default (no marketing); adding
+  `--profile marketing` brings it to 8.
 
 *Next (L-series)*: `ardalink-web`/`ardalink-marketing` still have no
 automated release workflow (unlike `ardalink-api`/`ardalink-engine`'s

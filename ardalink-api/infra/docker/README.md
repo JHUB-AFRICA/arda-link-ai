@@ -41,14 +41,15 @@ After `make up` + `make migrate-up`:
 If someone else is standing up the stack and shouldn't need the source
 tree, use `compose.prod.yml` instead of `compose.yml` — pulls pre-built
 images from Docker Hub (`munene1212/ardalink-api`,
-`munene1212/ardalink-engine`, `munene1212/ardalink-web`,
-`munene1212/ardalink-marketing` — public repos) instead of building
-locally, and — unlike `compose.yml`'s local-dev version — bundles both
-the marketing site and the self-hosted WhatsApp bridge
-(`evolution-postgres` + `evolution-api`) as core parts of the stack,
-not opt-in profiles. Same dashboard/Talk URLs as the local-dev table
-above (`:8080`, `:8080/talk`); the marketing site is additionally at
-`:8082`, Evolution's manager UI at `:8081/manager`:
+`munene1212/ardalink-engine`, `munene1212/ardalink-web` — public
+repos) instead of building locally, and — unlike `compose.yml`'s
+local-dev version — bundles the self-hosted WhatsApp bridge
+(`evolution-postgres` + `evolution-api`) as a core part of the stack,
+not an opt-in profile. Same dashboard/Talk URLs as the local-dev table
+above (`:8080`, `:8080/talk`); Evolution's manager UI is at
+`:8081/manager`. The marketing site (`munene1212/ardalink-marketing`)
+is available but **not** part of the core system — add
+`--profile marketing` to any command below if you actually want it:
 
 ```bash
 cd ardalink/infra/docker
