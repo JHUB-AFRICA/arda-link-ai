@@ -9,7 +9,7 @@ license = { text = "MIT" }
 
 dependencies = [
     "fastapi>=0.140.13",
-    "uvicorn[standard]>=0.51.0",
+    "uvicorn[standard]>=0.52.3",
     "earthengine-api>=1.7.37",
     # Force httplib2 >= 0.32.0 — 0.31.2 (transitive via google-auth-httplib2)
     # is flagged PYSEC-2026-3444 by pip-audit; explicit pin unblocks master CI.
