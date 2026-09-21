@@ -3,7 +3,7 @@ import {
   isSupabaseConfigured,
   recentGroundTruthCalls,
   type SbGroundTruthCallRead,
-} from "../lib/supabase.js";
+} from "../lib/supabase/index.js";
 
 function requireTenant(req: Request): string {
   const tenantId = req.tenant?.tenant_id;

@@ -40,7 +40,7 @@ import {
   type InsertWeatherData,
 } from "@workspace/db";
 import { logger } from "../lib/logger.js";
-import { sbQuery, isSupabaseConfigured } from "../lib/supabase.js";
+import { sbQuery, isSupabaseConfigured } from "../lib/supabase/index.js";
 
 // ── Config ─────────────────────────────────────────────────────────────────
 

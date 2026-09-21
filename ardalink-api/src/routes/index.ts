@@ -25,6 +25,9 @@ import opsVciBackfillRouter from "./ops/vciBackfill.js";
 import smsDeliveryRouter from "./smsDelivery.js";
 import smsOptOutRouter from "./smsOptOut.js";
 import smsSubscriptionRouter from "./smsSubscription.js";
+import whatsappRouter from "./whatsapp.js";
+import evolutionWhatsappRouter from "./evolutionWhatsapp.js";
+import opsWhatsappAlertsRouter from "./ops/whatsappAlerts.js";
 import demoRouter from "./demo/index.js";
 
 const router: IRouter = Router();
@@ -56,6 +59,9 @@ router.use(opsVciBackfillRouter);
 router.use(smsDeliveryRouter);
 router.use(smsOptOutRouter);
 router.use(smsSubscriptionRouter);
+router.use(whatsappRouter);
+router.use(evolutionWhatsappRouter);
+router.use(opsWhatsappAlertsRouter);
 
 // Demo routes (for local testing without Africa's Talking)
 router.use("/demo", demoRouter);

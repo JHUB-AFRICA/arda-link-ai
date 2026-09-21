@@ -109,6 +109,8 @@ export function tenantMiddleware(
  *   /api/voice-events                       — AT call lifecycle events; can't sign JWTs
  *   /api/ussd-callback                      — AT USSD gateway; can't sign JWTs
  *   /api/sms-callback                       — AT inbound SMS; can't sign JWTs
+ *   /api/whatsapp-webhook                   — 360dialog/Meta WhatsApp webhook; can't sign JWTs
+ *   /api/evolution-whatsapp-webhook         — Evolution API WhatsApp webhook; can't sign JWTs
  *   /api/demo/*                             — demo simulators (USSD, SMS, Voice) for local
  *                                              testing without Africa's Talking dependency
  *   /api/call-tokens/:token                 — recipient-page status check; harmless lookup
@@ -130,6 +132,8 @@ const PUBLIC_PATHS = new Set<string>([
   "/api/sms-delivery-callback",
   "/api/sms-optout-callback",
   "/api/sms-subscription-callback",
+  "/api/whatsapp-webhook",
+  "/api/evolution-whatsapp-webhook",
   "/api/open-data/geo/kenya-counties",
   "/api/open-data/geo/county-presets",
   "/api/open-data/geo/isiolo-wards",

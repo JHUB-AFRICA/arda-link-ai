@@ -22,10 +22,10 @@ import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger.js";
 import {
   identityForPhone,
-  isSupabaseConfigured,
   logLeadInteraction,
+  markPastoralistOptedOut,
   setLeadStatus,
-} from "../lib/supabase.js";
+} from "../lib/supabase/index.js";
 
 interface OptOutBody {
   senderId?: string;
@@ -33,31 +33,6 @@ interface OptOutBody {
 }
 
 const router: IRouter = Router();
-
-async function markPastoralistOptedOut(phone: string): Promise<boolean> {
-  if (!isSupabaseConfigured()) return false;
-  const url = `${(process.env.SUPABASE_URL ?? "").replace(/\/$/, "")}/rest/v1/pastoralists?phone_number=eq.${encodeURIComponent(phone)}`;
-  const key = (process.env.SUPABASE_SECRET_KEY ?? "").trim();
-  try {
-    const res = await fetch(url, {
-      method: "PATCH",
-      headers: {
-        apikey: key,
-        Authorization: `Bearer ${key}`,
-        "Content-Type": "application/json",
-        Prefer: "return=minimal",
-      },
-      // Assuming an alerts_enabled column exists. If not, this PATCH
-      // is a no-op that returns 200; harmless.
-      body: JSON.stringify({ alerts_enabled: false }),
-      signal: AbortSignal.timeout(5_000),
-    });
-    return res.ok;
-  } catch (err) {
-    logger.warn({ err: String(err), phone }, "[SMS-OptOut] pastoralists PATCH failed");
-    return false;
-  }
-}
 
 router.post("/sms-optout-callback", async (req, res): Promise<void> => {
   const body = (req.body ?? {}) as OptOutBody;

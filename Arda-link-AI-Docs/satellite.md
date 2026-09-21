@@ -157,7 +157,12 @@ A ratio > 2.5 for a given pixel suggests Prosopis presence. These pixels are dow
 
 ## Ward Boundary Integration
 
-ArdaLink processes all 10 Isiolo County wards:
+Isiolo County has 10 wards total; ArdaLink's ward-boundary reference
+data covers all of them, but only **5 are active tenants** as of
+2026-07 (Wabera, Bulla Pesa, Ngare Mara, Burat, Oldonyiro — see
+Supabase `active_wards`). Garbatulla, Merti, Kinna, Olare, and Chari
+were retired from the active pilot for data-quality reasons; their
+geometry stays in the table below for reference.
 
 | Ward | Sub-County | Approximate Area |
 |------|-----------|-----------------|

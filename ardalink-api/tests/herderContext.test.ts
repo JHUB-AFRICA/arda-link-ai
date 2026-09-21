@@ -38,7 +38,7 @@ const fx: Fixture = {
   intelligenceLast: null,
 };
 
-vi.mock("../src/lib/supabase.js", () => ({
+vi.mock("../src/lib/supabase/index.js", () => ({
   isSupabaseConfigured: () => fx.supabase.configured,
   callContextByPhone: async () => fx.supabase.callContext,
   pastoralistByPhone: async () => fx.supabase.pastoralist,
@@ -144,7 +144,7 @@ afterEach(() => vi.clearAllMocks());
 describe("resolveHerderContext", () => {
   it("returns source='none' base context when phone is unknown to both sides", async () => {
     const { resolveHerderContext } = await import(
-      "../src/lib/herderContext.js"
+      "../src/lib/herderContext/index.js"
     );
     const ctx = await resolveHerderContext("+254700000000", "bula-pesa");
     expect(ctx.known).toBe(false);
@@ -174,7 +174,7 @@ describe("resolveHerderContext", () => {
     };
 
     const { resolveHerderContext } = await import(
-      "../src/lib/herderContext.js"
+      "../src/lib/herderContext/index.js"
     );
     const ctx = await resolveHerderContext("+254712000004", "bula-pesa");
 
@@ -231,7 +231,7 @@ describe("resolveHerderContext", () => {
     ];
 
     const { resolveHerderContext } = await import(
-      "../src/lib/herderContext.js"
+      "../src/lib/herderContext/index.js"
     );
     const ctx = await resolveHerderContext("+254712000004", "bula-pesa");
 
@@ -261,7 +261,7 @@ describe("resolveHerderContext", () => {
     };
 
     const { resolveHerderContext } = await import(
-      "../src/lib/herderContext.js"
+      "../src/lib/herderContext/index.js"
     );
     const ctx = await resolveHerderContext("+254722000001", "ngare-mara");
 
@@ -288,7 +288,7 @@ describe("resolveHerderContext", () => {
     };
 
     const { resolveHerderContext } = await import(
-      "../src/lib/herderContext.js"
+      "../src/lib/herderContext/index.js"
     );
     const ctx = await resolveHerderContext("+254700000001", "ngare-mara");
 
@@ -323,7 +323,7 @@ describe("resolveHerderContext", () => {
     };
 
     const { resolveHerderContext } = await import(
-      "../src/lib/herderContext.js"
+      "../src/lib/herderContext/index.js"
     );
     const ctx = await resolveHerderContext("+254712000003", "bula-pesa");
 
@@ -336,7 +336,7 @@ describe("resolveHerderContext", () => {
 
   it("handles empty phone gracefully (returns base context)", async () => {
     const { resolveHerderContext } = await import(
-      "../src/lib/herderContext.js"
+      "../src/lib/herderContext/index.js"
     );
     const ctx = await resolveHerderContext("", "bula-pesa");
     expect(ctx.known).toBe(false);
@@ -366,7 +366,7 @@ describe("resolveHerderContext", () => {
     };
 
     const { resolveHerderContext, buildLocalizedVoiceOpener } = await import(
-      "../src/lib/herderContext.js"
+      "../src/lib/herderContext/index.js"
     );
     const ctx = await resolveHerderContext("+254712000001", "bula-pesa");
 

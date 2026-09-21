@@ -3,7 +3,7 @@ import {
   generateScript,
   generateActionTag,
   extractIndicators,
-} from "../src/lib/openai.js";
+} from "../src/lib/openai/index.js";
 import type { VegetationDelta } from "../src/lib/baseline.js";
 
 /**
@@ -129,7 +129,7 @@ describe("generateScript — refactored to use the registry", () => {
       // so the new env takes effect. Vitest caches modules by URL, so
       // we use a cache-busting query param via the specifier path.
       const mod = await import(
-        /* @vite-ignore */ "../src/lib/openai.js?bust=" + Date.now()
+        /* @vite-ignore */ "../src/lib/openai/index.js?bust=" + Date.now()
       );
       const out = await mod.generateScript(sampleDelta, "JUNE", samplePx);
       expect(out).toHaveProperty("script");

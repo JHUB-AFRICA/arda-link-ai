@@ -90,6 +90,41 @@ describe("Mirror table schemas — drizzle exports", () => {
       expect(cols).toContain(col);
     }
   });
+  it("whatsappMessagesTable exposes every thread-log column", async () => {
+    const mod = await import("@workspace/db");
+    expect(mod.whatsappMessagesTable).toBeDefined();
+    const cols = Object.keys(
+      mod.whatsappMessagesTable as unknown as Record<string, unknown>,
+    );
+    for (const col of [
+      "messageId",
+      "phoneNumber",
+      "waId",
+      "tier",
+      "direction",
+      "messageType",
+      "templateName",
+      "bodyText",
+      "sessionExpiresAt",
+      "wardId",
+      "occurredAt",
+      "rawPayload",
+      "tenantId",
+    ]) {
+      expect(cols).toContain(col);
+    }
+  });
+
+  it("pastoralistsTable exposes the WhatsApp channel-tier columns", async () => {
+    const mod = await import("@workspace/db");
+    expect(mod.pastoralistsTable).toBeDefined();
+    const cols = Object.keys(
+      mod.pastoralistsTable as unknown as Record<string, unknown>,
+    );
+    for (const col of ["waId", "channelTier", "lastTierCheckAt"]) {
+      expect(cols).toContain(col);
+    }
+  });
 });
 
 describe("Mirror table insert schemas — zod validation", () => {
@@ -146,5 +181,21 @@ describe("Mirror table insert schemas — zod validation", () => {
     });
     expect(parsed.wardId).toBe("242");
     expect(parsed.horizonDays).toBe(10);
+  });
+
+  it("insertWhatsappMessageSchema requires phoneNumber + direction + messageType", async () => {
+    const mod = await import("@workspace/db");
+    const ok = mod.insertWhatsappMessageSchema.parse({
+      phoneNumber: "+254712000004",
+      direction: "in",
+      messageType: "text",
+      bodyText: "hi",
+    });
+    expect(ok.direction).toBe("in");
+    expect(() =>
+      mod.insertWhatsappMessageSchema.parse({
+        phoneNumber: "+254712000004",
+      }),
+    ).toThrow();
   });
 });

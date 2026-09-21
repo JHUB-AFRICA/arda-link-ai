@@ -19,7 +19,7 @@
 
 import { Router, type IRouter } from "express";
 import { logger } from "../lib/logger.js";
-import { logLeadInteraction, identityForPhone } from "../lib/supabase.js";
+import { logLeadInteraction, identityForPhone } from "../lib/supabase/index.js";
 
 interface DeliveryBody {
   id?: string;

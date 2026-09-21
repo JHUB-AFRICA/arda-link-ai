@@ -61,7 +61,7 @@ vi.mock("../src/lib/speech.js", () => ({
     fx.transcript == null ? null : { transcript: fx.transcript, locale: fx.locale },
 }));
 
-vi.mock("../src/lib/openai.js", () => ({
+vi.mock("../src/lib/openai/index.js", () => ({
   extractIndicators: async () => fx.indicators,
   generateActionTag: async () => fx.actionTag,
 }));
@@ -79,7 +79,7 @@ vi.mock("../src/lib/pastoralistContact.js", () => ({
   touchPastoralistLastContact: vi.fn(async () => undefined),
 }));
 
-vi.mock("../src/lib/supabase.js", () => ({
+vi.mock("../src/lib/supabase/index.js", () => ({
   isSupabaseConfigured: () => fx.supabase.configured,
   pastoralistByPhone: async () => fx.supabase.pastoralist,
   // upsertPastoralist deliberately not exported — the pipeline should

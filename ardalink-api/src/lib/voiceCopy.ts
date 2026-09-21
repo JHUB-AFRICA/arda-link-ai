@@ -26,7 +26,7 @@
  */
 
 import { createHash } from "node:crypto";
-import type { HerderContext } from "./herderContext.js";
+import type { HerderContext } from "./herderContext/index.js";
 
 export type VoiceLang = "sw" | "en";
 

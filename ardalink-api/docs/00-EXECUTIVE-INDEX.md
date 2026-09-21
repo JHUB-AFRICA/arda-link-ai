@@ -15,12 +15,15 @@ The ArdaLink platform has been **structurally reorganized** into three independe
 | Operator + Talk apps | `MUNENE1212/ardalink-web` | ✅ Operational | 4/4 tests · dashboard + talk · nginx static image |
 | Multi-tenant schema | All three repos | ✅ Schema shipped | RLS policies, tenant registry, HMAC attestation, JWT middleware |
 | Local stack | `ardalink-api/infra/docker` | ✅ One-command boot | postgres, redis, engine, api, web, caddy — `make up` |
+| WhatsApp channel | `ardalink-api` (in-process, no new repo) | ✅ Shipped, live-tested via Evolution API — ⚠️ 360dialog/Meta path blocked on Meta Business verification | Dual-provider (`WhatsappProvider` interface), conversation memory, herder-led prompt, opt-out — see `whatsapp-first-architecture.md` |
 | Legacy repos | `MUNENE1212/ardalink-ai`, `MUNENE1212/biophysical-engine` | ⏳ Pending freeze-tag | After team approval of migration PRs |
 
 ## 2 · What we ship (one diagram)
 
 ```
 herder phone ──► Africa's Talking ──► ardalink-api (Express 5 + JWT + WS bridge)
+herder WhatsApp ──► 360dialog / Evolution API ──┘  (⚠️ 360dialog pending Meta verification;
+                                                      Evolution is the live-tested path today)
                                                 │
                                                 ├──► ardalink-engine (FastAPI + GEE + grid + journey)
                                                 │         │
@@ -30,7 +33,7 @@ herder phone ──► Africa's Talking ──► ardalink-api (Express 5 + JWT 
                                                 ├──► Azure Speech (STT/TTS, sw-KE + en-KE, southafricanorth)
                                                 ├──► z.ai / MiniMax (LLM fallback providers)
                                                 ├──► Supabase (reference data primary — wards, satellite_indices, weather_data, ground_truth_calls; PostGIS)
-                                                ├──► Cosmos DB (baselines)
+                                                ├──► Local Postgres :15432 (read-fallback mirror; synced every 5 min by syncJob)
                                                 └──► browser ──► ardalink-web (dashboard + talk + /api/demo/voice/{deterministic,simulator})
 ```
 
@@ -49,6 +52,7 @@ Tenant scoping is enforced at three layers:
 | 3 | Test coverage thin on migrated code | Med | High | Eng Lead | Phase 6 backlog — unit + integration test addition per route |
 | 4 | Realtime API cost spike | Med | Med | CTO | Per-tenant token bucket; per-ward feature flags; budget rail |
 | 5 | Single cloud dependency | Med | Low | CTO | Cloud-agnostic Compose; IaC deferred until pilot validates |
+| 6 | Meta Business API verification pending (blocks 360dialog going live) | High | Certain (already blocked) | CTO / Ops | Evolution API (self-hosted) keeps the full WhatsApp pipeline live-tested and unblocked in the meantime; `WA_PROVIDER` flip to 360dialog is a config change once Meta approves — no code change needed |
 
 ## 4 · Top 5 decisions needed
 
@@ -56,7 +60,7 @@ Tenant scoping is enforced at three layers:
 |---|---|---|---|
 | 1 | Cloud target for first production deploy | GCP (native GEE, Cloud Run for containers) | Q3 2026 |
 | 2 | IdP strategy for tenant JWTs | HS256 with shared secret for pilot; OIDC (Auth0/Clerk/WorkOS) at scale | Pilot kickoff |
-| 3 | Pilot tenants (multi-ward per plan) | Bula Pesa, Garbatulla, Merti Sub-County operator — already seeded. Satellite VCI demo runs against Bula Pesa, Garbatulla, Kinna wards | Pilot kickoff |
+| 3 | Pilot tenants (multi-ward per plan) | The 5 active Isiolo wards — Wabera, Bulla Pesa, Ngare Mara, Burat, Oldonyiro — already seeded in Supabase `active_wards`. Garbatulla and Merti were retired 2026-07 (data quality); satellite VCI demo now runs against the 5 active wards | Pilot kickoff |
 | 4 | Migration PR approval | Approve and merge 3 PRs (#7 engine, #7 web, #8 api) | This week |
 | 5 | Legacy repo disposition | Tag as `legacy-2026Q2` with redirect READMEs; do not delete | Cutover |
 
@@ -68,7 +72,7 @@ Tenant scoping is enforced at three layers:
 | Week 2 | Phase 6 test expansion (per-route unit tests) | Coverage ≥ 60% on each repo |
 | Week 3 | Compose-based staging on a single VM | 7-day soak, zero manual restarts |
 | Week 4 | Pilot kickoff (Bula Pesa) | 50 herders onboarded, call success ≥ 85% |
-| Week 6 | Garbatulla + Merti Sub-County rollout | 500 households live across 3 tenants |
+| Week 6 | Remaining active-ward rollout (Wabera, Ngare Mara, Burat, Oldonyiro) | 500 households live across the 5 active wards |
 | Week 8 | Phase 4: flip CI to gating (remove `\|\| true`) | Zero `\|\| true` in any workflow |
 | Week 10 | IaC module (Terraform, cloud-agnostic) | `make infra-plan` works against staging |
 | Week 12 | Q3 review | Pilot metrics vs. targets; Series A prep |

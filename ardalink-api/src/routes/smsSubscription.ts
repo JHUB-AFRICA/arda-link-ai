@@ -12,7 +12,7 @@
  */
 
 import { Router, type IRouter } from "express";
-import { logLeadInteraction } from "../lib/supabase.js";
+import { logLeadInteraction } from "../lib/supabase/index.js";
 
 const router: IRouter = Router();
 

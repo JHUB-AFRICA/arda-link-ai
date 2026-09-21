@@ -9,7 +9,7 @@
 | Azure OpenAI Realtime | per-minute audio | Largest single line item                |
 | Azure OpenAI GPT-4o   | per-token        | Script composition + transcript tagging |
 | Africa's Talking      | per-minute voice | Outbound + recording                    |
-| Cosmos DB             | RU/s + storage   | Baselines + pixel grids                 |
+| Supabase              | free tier → pro  | Baselines + ward data + call records    |
 | Compute (Express)     | per-pod-hour     | Trivial at pilot scale                  |
 
 Detailed cost model migrates from legacy `biophysical-engine/docs/COSTS.md` in Phase 7.

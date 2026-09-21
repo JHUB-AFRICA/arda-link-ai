@@ -27,7 +27,7 @@ import {
   wardCellStressSummary,
   computeVci,
   countWorseThanYears,
-} from "../lib/supabase.js";
+} from "../lib/supabase/index.js";
 
 interface WardMapWard {
   ward_id: string;

@@ -9,6 +9,8 @@ import {
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
+export type PastoralistChannelTier = "whatsapp" | "voice" | "ussd" | "sms";
+
 export const pastoralistsTable = pgTable("pastoralists", {
   id: serial("id").primaryKey(),
   createdAt: timestamp("created_at", { withTimezone: true })
@@ -25,6 +27,9 @@ export const pastoralistsTable = pgTable("pastoralists", {
   alertsEnabled: boolean("alerts_enabled").notNull().default(true),
   alertsSent: integer("alerts_sent").notNull().default(0),
   lastContactAt: timestamp("last_contact_at", { withTimezone: true }),
+  waId: text("wa_id"),
+  channelTier: text("channel_tier").notNull().default("sms"),
+  lastTierCheckAt: timestamp("last_tier_check_at", { withTimezone: true }),
 });
 
 export const insertPastoralistSchema = createInsertSchema(

@@ -17,7 +17,7 @@ import {
   recentGroundTruthCalls,
   isSupabaseConfigured,
   type SbGroundTruthCallRead,
-} from "./supabase.js";
+} from "./supabase/index.js";
 import { logger } from "./logger.js";
 
 const HERDER_LOOKBACK = 2; // last N calls for the same phone

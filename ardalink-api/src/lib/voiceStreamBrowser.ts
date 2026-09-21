@@ -16,7 +16,7 @@ import {
   generateActionTag,
   extractIndicators,
   indicatorCollectionBlock,
-} from "./openai.js";
+} from "./openai/index.js";
 import { droughtLabel, maiLabel } from "./climate.js";
 import {
   registerPublicSessionOpen,

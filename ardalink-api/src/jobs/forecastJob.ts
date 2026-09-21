@@ -30,7 +30,7 @@ import {
   listActiveWards,
   refreshSatelliteIndicesLatest,
   upsertWeatherData,
-} from "../lib/supabase.js";
+} from "../lib/supabase/index.js";
 import { mirrorWeatherForecastBatch } from "../lib/localMirror.js";
 import type { InsertWeatherForecast } from "@workspace/db";
 
@@ -46,12 +46,15 @@ const WARD_CENTROIDS_BY_ID: Record<string, { lat: number; lon: number }> = {
 };
 
 const FORECAST_HORIZON_DAYS = 14;
-// The `ensemble-api.open-meteo.com` host was intermittently unreachable
-// from our environment (verified 2026-07-12 by successful curl but
-// failed node fetch). Fall back to the standard forecast endpoint,
-// which returns deterministic daily values; we synthesise p5/p95
-// bands using horizon-scaled uncertainty (GFS skill drops ~15% per
-// forecast day beyond day 3). Same host that openData.ts uses.
+// Real ensemble endpoint — 39-member DWD ICON global ensemble, free,
+// no key. `ensemble-api.open-meteo.com` was verified unreachable from
+// Node (but not curl) on 2026-07-12; re-verified reachable from both
+// curl and Node on 2026-07-30, so it's primary again. Falls back to
+// the deterministic endpoint + synthesised bounds below if it's ever
+// unreachable again — see fetchWardEnsemble().
+const ENSEMBLE_URL = "https://ensemble-api.open-meteo.com/v1/ensemble";
+const ENSEMBLE_MODEL = "icon_seamless";
+// Deterministic fallback + same host openData.ts uses.
 const OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast";
 
 let forecastTimer: NodeJS.Timeout | null = null;
@@ -114,7 +117,120 @@ function synthesiseBounds(
   };
 }
 
-async function fetchWardEnsemble(
+/**
+ * Real ensemble forecast — 39-member ICON global ensemble. p5/p50/p95
+ * are the actual percentiles across members (via the existing
+ * `percentile()` helper), not a synthesised spread, and
+ * `precipitation_probability` is the fraction of members with >0.1mm
+ * rain that day — a proper ensemble probability-of-rain, not a
+ * deterministic-model derived stat. Returns `null` on any failure so
+ * the caller falls back to `fetchWardDeterministicFallback`.
+ */
+function collectMemberValues(
+  daily: Record<string, unknown>,
+  baseKey: string,
+  dayIdx: number,
+): number[] {
+  const prefix = `${baseKey}_member`;
+  const values: number[] = [];
+  for (const key of Object.keys(daily)) {
+    if (!key.startsWith(prefix)) continue;
+    const arr = daily[key];
+    if (!Array.isArray(arr)) continue;
+    const v = Number(arr[dayIdx]);
+    if (Number.isFinite(v)) values.push(v);
+  }
+  return values;
+}
+
+function meanOf(values: number[]): number | null {
+  return values.length
+    ? values.reduce((a, b) => a + b, 0) / values.length
+    : null;
+}
+
+async function fetchWardEnsembleReal(
+  wardId: string,
+  centroid: { lat: number; lon: number },
+): Promise<ForecastRow[] | null> {
+  const params = new URLSearchParams({
+    latitude: String(centroid.lat),
+    longitude: String(centroid.lon),
+    models: ENSEMBLE_MODEL,
+    daily:
+      "precipitation_sum,temperature_2m_mean,temperature_2m_max,et0_fao_evapotranspiration",
+    forecast_days: String(FORECAST_HORIZON_DAYS),
+    timezone: "auto",
+  });
+
+  const url = `${ENSEMBLE_URL}?${params.toString()}`;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      logger.warn(
+        { wardId, status: res.status, body: body.slice(0, 200) },
+        "[ForecastJob] Ensemble API non-2xx — falling back to deterministic",
+      );
+      return null;
+    }
+    const data = (await res.json()) as OpenMeteoEnsembleResponse;
+    if (!data.daily?.time?.length) return null;
+
+    const daily = data.daily as unknown as Record<string, unknown>;
+    const days = data.daily.time;
+    const now = new Date().toISOString();
+    const rows: ForecastRow[] = [];
+
+    for (let dayIdx = 0; dayIdx < days.length; dayIdx++) {
+      const targetDate = days[dayIdx];
+      if (!targetDate) continue;
+
+      const precipMembers = collectMemberValues(daily, "precipitation_sum", dayIdx);
+      if (precipMembers.length === 0) continue;
+      const sortedPrecip = precipMembers.slice().sort((a, b) => a - b);
+      const p5 = Math.max(0, percentile(sortedPrecip, 0.05));
+      const p50 = Math.max(0, percentile(sortedPrecip, 0.5));
+      const p95 = Math.max(0, percentile(sortedPrecip, 0.95));
+      const wetMembers = precipMembers.filter((v) => v > 0.1).length;
+      const precipProb = wetMembers / precipMembers.length;
+
+      const tempMean = meanOf(collectMemberValues(daily, "temperature_2m_mean", dayIdx));
+      const tempMax = meanOf(collectMemberValues(daily, "temperature_2m_max", dayIdx));
+      const et0 = meanOf(collectMemberValues(daily, "et0_fao_evapotranspiration", dayIdx));
+
+      rows.push({
+        ward_id: wardId,
+        generated_at: now,
+        target_date: targetDate,
+        horizon_days: dayIdx + 1,
+        rainfall_mm_p5: round2(p5),
+        rainfall_mm_p50: round2(p50),
+        rainfall_mm_p95: round2(p95),
+        precipitation_probability: round2(precipProb),
+        temperature_c_mean: tempMean != null ? round2(tempMean) : null,
+        temperature_c_max: tempMax != null ? round2(tempMax) : null,
+        et0_mm: et0 != null ? round2(et0) : null,
+        source: "open-meteo-ensemble",
+        raw_response: null,
+      });
+    }
+    return rows.length > 0 ? rows : null;
+  } catch (err) {
+    logger.warn(
+      { err: String(err), wardId },
+      "[ForecastJob] Ensemble fetch failed — falling back to deterministic",
+    );
+    return null;
+  }
+}
+
+/**
+ * Deterministic Open-Meteo forecast + synthesised p5/p95 bounds
+ * (GFS skill drops ~15% per forecast day beyond day 3). Used only
+ * when the real ensemble endpoint above is unreachable.
+ */
+async function fetchWardDeterministicFallback(
   wardId: string,
   centroid: { lat: number; lon: number },
 ): Promise<ForecastRow[] | null> {
@@ -189,6 +305,21 @@ async function fetchWardEnsemble(
     logger.warn({ err: String(err), wardId }, "[ForecastJob] fetch failed");
     return null;
   }
+}
+
+/**
+ * Try the real ensemble endpoint first; fall back to the deterministic
+ * endpoint + synthesised bounds on any failure. Same fail-soft shape
+ * as the rest of this codebase — the primary/fallback roles just
+ * flipped back to what the file header always said they should be.
+ */
+async function fetchWardEnsemble(
+  wardId: string,
+  centroid: { lat: number; lon: number },
+): Promise<ForecastRow[] | null> {
+  const real = await fetchWardEnsembleReal(wardId, centroid);
+  if (real) return real;
+  return fetchWardDeterministicFallback(wardId, centroid);
 }
 
 function numberAt(

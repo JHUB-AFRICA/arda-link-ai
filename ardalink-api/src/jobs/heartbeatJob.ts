@@ -20,7 +20,7 @@
  */
 
 import { logger } from "../lib/logger.js";
-import { isSupabaseConfigured } from "../lib/supabase.js";
+import { isSupabaseConfigured } from "../lib/supabase/index.js";
 
 const FIFTEEN_MIN_MS = 15 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;

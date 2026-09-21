@@ -13,7 +13,7 @@ import {
   generateActionTag,
   extractIndicators,
   indicatorCollectionBlock,
-} from "./openai.js";
+} from "./openai/index.js";
 import { computeTrustScore, logTrustScore } from "./trustScore.js";
 import { logger } from "./logger.js";
 import type { VegetationDelta } from "./baseline.js";

@@ -23,7 +23,7 @@ import {
   computeVci,
   fetchWardMonthlyBaseline,
   isSupabaseConfigured,
-} from "../lib/supabase.js";
+} from "../lib/supabase/index.js";
 import { knownWardIds } from "../lib/wardMapping.js";
 
 interface BackfillRow {

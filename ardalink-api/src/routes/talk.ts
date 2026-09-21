@@ -26,9 +26,9 @@ import {
   buildLocalizedBrief,
   buildLocalizedVoiceOpener,
   resolveHerderContext,
-} from "../lib/herderContext.js";
+} from "../lib/herderContext/index.js";
 import { fastTranscribe, isSpeechConfigured } from "../lib/speech.js";
-import { extractIndicators, generateActionTag } from "../lib/openai.js";
+import { extractIndicators, generateActionTag } from "../lib/openai/index.js";
 import { getLastResult } from "../lib/intelligence.js";
 import { computeTrustScore, logTrustScore } from "../lib/trustScore.js";
 import { touchPastoralistLastContact } from "../lib/pastoralistContact.js";
@@ -36,7 +36,7 @@ import {
   insertGroundTruthCall,
   isSupabaseConfigured,
   pastoralistByPhone,
-} from "../lib/supabase.js";
+} from "../lib/supabase/index.js";
 
 const router: IRouter = Router();
 
