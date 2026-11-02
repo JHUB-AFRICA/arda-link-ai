@@ -10,7 +10,7 @@ importers:
     dependencies:
       '@google/earthengine':
         specifier: ^1.7.28
-        version: 1.7.31
+        version: 1.7.31(supports-color@7.2.0)
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:lib/api-zod
@@ -28,7 +28,7 @@ importers:
         version: 0.45.2(@types/pg@8.20.0)(pg@8.22.0)
       express:
         specifier: ^5.0.0
-        version: 5.2.1
+        version: 5.2.1(supports-color@7.2.0)
       pg:
         specifier: ^8.20.0
         version: 8.22.0
@@ -50,7 +50,7 @@ importers:
     devDependencies:
       '@testcontainers/postgresql':
         specifier: ^10.13.0
-        version: 10.28.0
+        version: 10.28.0(supports-color@7.2.0)
       '@types/cors':
         specifier: ^2.8.17
         version: 2.8.19
@@ -71,7 +71,7 @@ importers:
         version: 8.18.1
       '@vitest/coverage-v8':
         specifier: ^2.1.0
-        version: 2.1.9(vitest@2.1.9(@types/node@22.20.0))
+        version: 2.1.9(supports-color@7.2.0)(vitest@2.1.9(@types/node@22.20.0)(supports-color@7.2.0))
       drizzle-kit:
         specifier: ^0.31.9
         version: 0.31.10
@@ -80,13 +80,13 @@ importers:
         version: 0.27.7
       eslint:
         specifier: ^9.18.0
-        version: 9.39.4(jiti@2.7.0)
+        version: 9.39.4(jiti@2.7.0)(supports-color@7.2.0)
       prettier:
         specifier: ^3.8.0
         version: 3.8.4
       supertest:
         specifier: ^7.0.0
-        version: 7.2.2
+        version: 7.2.2(supports-color@7.2.0)
       tsx:
         specifier: ^4.21.0
         version: 4.22.4
@@ -95,13 +95,13 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^2.1.0
-        version: 2.1.9(@types/node@22.20.0)
+        version: 2.1.9(@types/node@22.20.0)(supports-color@7.2.0)
 
   lib/api-spec:
     devDependencies:
       orval:
         specifier: ^8.5.2
-        version: 8.18.0(prettier@3.8.4)(typescript@5.9.3)
+        version: 8.18.0(prettier@3.8.4)(supports-color@7.2.0)(typescript@5.9.3)
 
   lib/api-zod:
     dependencies:
@@ -1435,11 +1435,6 @@ packages:
 
   ajv-formats@3.0.1:
     resolution: {integrity: sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ==}
-    peerDependencies:
-      ajv: ^8.0.0
-    peerDependenciesMeta:
-      ajv:
-        optional: true
 
   ajv@6.15.0:
     resolution: {integrity: sha512-fgFx7Hfoq60ytK2c7DhnF8jIvzYgOMxfugjLOSMHjLIPgenqa7S7oaagATUq99mV6IYvN2tRmC0wnTYX6iPbMw==}
@@ -1984,6 +1979,7 @@ packages:
   eslint@9.39.4:
     resolution: {integrity: sha512-XoMjdBOwe/esVgEvLmNsD3IRHkm7fbKIUGvrleloJXUZgDHig2IPWNniv+GwjyJXzuNqVjlr5+4yVUZjycJwfQ==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+    deprecated: This version is no longer supported. Please see https://eslint.org/version-support for other options.
     hasBin: true
     peerDependencies:
       jiti: '*'
@@ -2065,8 +2061,8 @@ packages:
   fast-text-encoding@1.0.6:
     resolution: {integrity: sha512-VhXlQgj9ioXCqGstD37E/HBeqEGV/qOD/kmbVG8h5xKBYvM1L3lR1Zn4555cQ8GkYbJa8aJSipLPndE1k6zK2w==}
 
-  fast-uri@3.1.2:
-    resolution: {integrity: sha512-rVjf7ArG3LTk+FS6Yw81V1DLuZl1bRbNrev6Tmd/9RaroeeRRJhAt7jg/6YFxbvAQXUCavSoZhPPj6oOx+5KjQ==}
+  fast-uri@3.1.9:
+    resolution: {integrity: sha512-hS/0Wt3Ya043oKXs0sIxrMpKQITXhMLIrVAKKXi4gozGC9v7YRWVnXIZzjNPTO02M9BdxLCWqK1yRXgNziVyJQ==}
 
   fdir@6.5.0:
     resolution: {integrity: sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==}
@@ -3694,17 +3690,17 @@ snapshots:
   '@esbuild/win32-x64@0.28.1':
     optional: true
 
-  '@eslint-community/eslint-utils@4.9.1(eslint@9.39.4(jiti@2.7.0))':
+  '@eslint-community/eslint-utils@4.9.1(eslint@9.39.4(jiti@2.7.0)(supports-color@7.2.0))':
     dependencies:
-      eslint: 9.39.4(jiti@2.7.0)
+      eslint: 9.39.4(jiti@2.7.0)(supports-color@7.2.0)
       eslint-visitor-keys: 3.4.3
 
   '@eslint-community/regexpp@4.12.2': {}
 
-  '@eslint/config-array@0.21.2':
+  '@eslint/config-array@0.21.2(supports-color@7.2.0)':
     dependencies:
       '@eslint/object-schema': 2.1.7
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@7.2.0)
       minimatch: 3.1.5
     transitivePeerDependencies:
       - supports-color
@@ -3717,10 +3713,10 @@ snapshots:
     dependencies:
       '@types/json-schema': 7.0.15
 
-  '@eslint/eslintrc@3.3.5':
+  '@eslint/eslintrc@3.3.5(supports-color@7.2.0)':
     dependencies:
       ajv: 6.15.0
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@7.2.0)
       espree: 10.4.0
       globals: 14.0.0
       ignore: 5.3.2
@@ -3750,9 +3746,9 @@ snapshots:
       '@shikijs/types': 3.23.0
       '@shikijs/vscode-textmate': 10.0.2
 
-  '@google/earthengine@1.7.31':
+  '@google/earthengine@1.7.31(supports-color@7.2.0)':
     dependencies:
-      googleapis: 92.0.0
+      googleapis: 92.0.0(supports-color@7.2.0)
       xmlhttprequest: 1.8.0
     transitivePeerDependencies:
       - encoding
@@ -3822,28 +3818,28 @@ snapshots:
 
   '@noble/hashes@1.8.0': {}
 
-  '@orval/angular@8.18.0(typescript@5.9.3)':
+  '@orval/angular@8.18.0(supports-color@7.2.0)(typescript@5.9.3)':
     dependencies:
-      '@orval/core': 8.18.0(typescript@5.9.3)
+      '@orval/core': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
     transitivePeerDependencies:
       - '@faker-js/faker'
       - supports-color
       - typescript
 
-  '@orval/axios@8.18.0(typescript@5.9.3)':
+  '@orval/axios@8.18.0(supports-color@7.2.0)(typescript@5.9.3)':
     dependencies:
-      '@orval/core': 8.18.0(typescript@5.9.3)
+      '@orval/core': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
     transitivePeerDependencies:
       - '@faker-js/faker'
       - supports-color
       - typescript
 
-  '@orval/core@8.18.0(typescript@5.9.3)':
+  '@orval/core@8.18.0(supports-color@7.2.0)(typescript@5.9.3)':
     dependencies:
       '@scalar/openapi-types': 0.8.0
       acorn: 8.17.0
       compare-versions: 6.1.1
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@7.2.0)
       esbuild: 0.28.1
       esutils: 2.0.3
       fs-extra: 11.3.5
@@ -3855,28 +3851,28 @@ snapshots:
       - supports-color
       - typescript
 
-  '@orval/effect@8.18.0(typescript@5.9.3)':
+  '@orval/effect@8.18.0(supports-color@7.2.0)(typescript@5.9.3)':
     dependencies:
-      '@orval/core': 8.18.0(typescript@5.9.3)
+      '@orval/core': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
       remeda: 2.39.0
     transitivePeerDependencies:
       - '@faker-js/faker'
       - supports-color
       - typescript
 
-  '@orval/fetch@8.18.0(typescript@5.9.3)':
+  '@orval/fetch@8.18.0(supports-color@7.2.0)(typescript@5.9.3)':
     dependencies:
-      '@orval/core': 8.18.0(typescript@5.9.3)
+      '@orval/core': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
       '@scalar/openapi-types': 0.8.0
     transitivePeerDependencies:
       - '@faker-js/faker'
       - supports-color
       - typescript
 
-  '@orval/hono@8.18.0(typescript@5.9.3)':
+  '@orval/hono@8.18.0(supports-color@7.2.0)(typescript@5.9.3)':
     dependencies:
-      '@orval/core': 8.18.0(typescript@5.9.3)
-      '@orval/zod': 8.18.0(typescript@5.9.3)
+      '@orval/core': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
+      '@orval/zod': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
       fs-extra: 11.3.5
       remeda: 2.39.0
     optionalDependencies:
@@ -3885,56 +3881,56 @@ snapshots:
       - '@faker-js/faker'
       - supports-color
 
-  '@orval/mcp@8.18.0(typescript@5.9.3)':
+  '@orval/mcp@8.18.0(supports-color@7.2.0)(typescript@5.9.3)':
     dependencies:
-      '@orval/core': 8.18.0(typescript@5.9.3)
-      '@orval/fetch': 8.18.0(typescript@5.9.3)
-      '@orval/zod': 8.18.0(typescript@5.9.3)
+      '@orval/core': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
+      '@orval/fetch': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
+      '@orval/zod': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
     transitivePeerDependencies:
       - '@faker-js/faker'
       - supports-color
       - typescript
 
-  '@orval/mock@8.18.0(typescript@5.9.3)':
+  '@orval/mock@8.18.0(supports-color@7.2.0)(typescript@5.9.3)':
     dependencies:
-      '@orval/core': 8.18.0(typescript@5.9.3)
+      '@orval/core': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
       remeda: 2.39.0
     transitivePeerDependencies:
       - '@faker-js/faker'
       - supports-color
       - typescript
 
-  '@orval/query@8.18.0(typescript@5.9.3)':
+  '@orval/query@8.18.0(supports-color@7.2.0)(typescript@5.9.3)':
     dependencies:
-      '@orval/core': 8.18.0(typescript@5.9.3)
-      '@orval/fetch': 8.18.0(typescript@5.9.3)
+      '@orval/core': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
+      '@orval/fetch': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
       remeda: 2.39.0
     transitivePeerDependencies:
       - '@faker-js/faker'
       - supports-color
       - typescript
 
-  '@orval/solid-start@8.18.0(typescript@5.9.3)':
+  '@orval/solid-start@8.18.0(supports-color@7.2.0)(typescript@5.9.3)':
     dependencies:
-      '@orval/core': 8.18.0(typescript@5.9.3)
+      '@orval/core': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
       '@scalar/openapi-types': 0.8.0
     transitivePeerDependencies:
       - '@faker-js/faker'
       - supports-color
       - typescript
 
-  '@orval/swr@8.18.0(typescript@5.9.3)':
+  '@orval/swr@8.18.0(supports-color@7.2.0)(typescript@5.9.3)':
     dependencies:
-      '@orval/core': 8.18.0(typescript@5.9.3)
-      '@orval/fetch': 8.18.0(typescript@5.9.3)
+      '@orval/core': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
+      '@orval/fetch': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
     transitivePeerDependencies:
       - '@faker-js/faker'
       - supports-color
       - typescript
 
-  '@orval/zod@8.18.0(typescript@5.9.3)':
+  '@orval/zod@8.18.0(supports-color@7.2.0)(typescript@5.9.3)':
     dependencies:
-      '@orval/core': 8.18.0(typescript@5.9.3)
+      '@orval/core': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
       remeda: 2.39.0
     transitivePeerDependencies:
       - '@faker-js/faker'
@@ -4061,7 +4057,7 @@ snapshots:
       '@scalar/openapi-upgrader': 0.2.9
       ajv: 8.20.0
       ajv-draft-04: 1.0.0(ajv@8.20.0)
-      ajv-formats: 3.0.1(ajv@8.20.0)
+      ajv-formats: 3.0.1
       jsonpointer: 5.0.1
       leven: 4.1.0
       yaml: 2.9.0
@@ -4098,9 +4094,9 @@ snapshots:
 
   '@sindresorhus/merge-streams@4.0.0': {}
 
-  '@testcontainers/postgresql@10.28.0':
+  '@testcontainers/postgresql@10.28.0(supports-color@7.2.0)':
     dependencies:
-      testcontainers: 10.28.0
+      testcontainers: 10.28.0(supports-color@7.2.0)
     transitivePeerDependencies:
       - bare-abort-controller
       - bare-buffer
@@ -4216,21 +4212,21 @@ snapshots:
     dependencies:
       '@types/node': 22.20.0
 
-  '@vitest/coverage-v8@2.1.9(vitest@2.1.9(@types/node@22.20.0))':
+  '@vitest/coverage-v8@2.1.9(supports-color@7.2.0)(vitest@2.1.9(@types/node@22.20.0)(supports-color@7.2.0))':
     dependencies:
       '@ampproject/remapping': 2.3.0
       '@bcoe/v8-coverage': 0.2.3
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@7.2.0)
       istanbul-lib-coverage: 3.2.2
       istanbul-lib-report: 3.0.1
-      istanbul-lib-source-maps: 5.0.6
+      istanbul-lib-source-maps: 5.0.6(supports-color@7.2.0)
       istanbul-reports: 3.2.0
       magic-string: 0.30.21
       magicast: 0.3.5
       std-env: 3.10.0
       test-exclude: 7.0.2
       tinyrainbow: 1.2.0
-      vitest: 2.1.9(@types/node@22.20.0)
+      vitest: 2.1.9(@types/node@22.20.0)(supports-color@7.2.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -4289,9 +4285,9 @@ snapshots:
 
   acorn@8.17.0: {}
 
-  agent-base@6.0.2:
+  agent-base@6.0.2(supports-color@7.2.0):
     dependencies:
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@7.2.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -4299,8 +4295,8 @@ snapshots:
     optionalDependencies:
       ajv: 8.20.0
 
-  ajv-formats@3.0.1(ajv@8.20.0):
-    optionalDependencies:
+  ajv-formats@3.0.1:
+    dependencies:
       ajv: 8.20.0
 
   ajv@6.15.0:
@@ -4313,7 +4309,7 @@ snapshots:
   ajv@8.20.0:
     dependencies:
       fast-deep-equal: 3.1.3
-      fast-uri: 3.1.2
+      fast-uri: 3.1.9
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
@@ -4426,11 +4422,11 @@ snapshots:
       inherits: 2.0.4
       readable-stream: 3.6.2
 
-  body-parser@2.3.0:
+  body-parser@2.3.0(supports-color@7.2.0):
     dependencies:
       bytes: 3.1.2
       content-type: 2.0.0
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@7.2.0)
       http-errors: 2.0.1
       iconv-lite: 0.7.2
       on-finished: 2.4.1
@@ -4585,9 +4581,11 @@ snapshots:
 
   dateformat@4.6.3: {}
 
-  debug@4.4.3:
+  debug@4.4.3(supports-color@7.2.0):
     dependencies:
       ms: 2.1.3
+    optionalDependencies:
+      supports-color: 7.2.0
 
   deep-eql@5.0.2: {}
 
@@ -4606,21 +4604,21 @@ snapshots:
     dependencies:
       yaml: 2.9.0
 
-  docker-modem@5.0.7:
+  docker-modem@5.0.7(supports-color@7.2.0):
     dependencies:
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@7.2.0)
       readable-stream: 3.6.2
       split-ca: 1.0.1
       ssh2: 1.17.0
     transitivePeerDependencies:
       - supports-color
 
-  dockerode@4.0.12:
+  dockerode@4.0.12(supports-color@7.2.0):
     dependencies:
       '@balena/dockerignore': 1.0.2
       '@grpc/grpc-js': 1.14.4
       '@grpc/proto-loader': 0.7.15
-      docker-modem: 5.0.7
+      docker-modem: 5.0.7(supports-color@7.2.0)
       protobufjs: 7.6.4
       tar-fs: 2.1.4
       uuid: 10.0.0
@@ -4847,14 +4845,14 @@ snapshots:
 
   eslint-visitor-keys@4.2.1: {}
 
-  eslint@9.39.4(jiti@2.7.0):
+  eslint@9.39.4(jiti@2.7.0)(supports-color@7.2.0):
     dependencies:
-      '@eslint-community/eslint-utils': 4.9.1(eslint@9.39.4(jiti@2.7.0))
+      '@eslint-community/eslint-utils': 4.9.1(eslint@9.39.4(jiti@2.7.0)(supports-color@7.2.0))
       '@eslint-community/regexpp': 4.12.2
-      '@eslint/config-array': 0.21.2
+      '@eslint/config-array': 0.21.2(supports-color@7.2.0)
       '@eslint/config-helpers': 0.4.2
       '@eslint/core': 0.17.0
-      '@eslint/eslintrc': 3.3.5
+      '@eslint/eslintrc': 3.3.5(supports-color@7.2.0)
       '@eslint/js': 9.39.4
       '@eslint/plugin-kit': 0.4.1
       '@humanfs/node': 0.16.8
@@ -4864,7 +4862,7 @@ snapshots:
       ajv: 6.15.0
       chalk: 4.1.2
       cross-spawn: 7.0.6
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@7.2.0)
       escape-string-regexp: 4.0.0
       eslint-scope: 8.4.0
       eslint-visitor-keys: 4.2.1
@@ -4939,20 +4937,20 @@ snapshots:
 
   expect-type@1.3.0: {}
 
-  express@5.2.1:
+  express@5.2.1(supports-color@7.2.0):
     dependencies:
       accepts: 2.0.0
-      body-parser: 2.3.0
+      body-parser: 2.3.0(supports-color@7.2.0)
       content-disposition: 1.1.0
       content-type: 1.0.5
       cookie: 0.7.2
       cookie-signature: 1.2.2
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@7.2.0)
       depd: 2.0.0
       encodeurl: 2.0.0
       escape-html: 1.0.3
       etag: 1.8.1
-      finalhandler: 2.1.1
+      finalhandler: 2.1.1(supports-color@7.2.0)
       fresh: 2.0.0
       http-errors: 2.0.1
       merge-descriptors: 2.0.0
@@ -4963,9 +4961,9 @@ snapshots:
       proxy-addr: 2.0.7
       qs: 6.15.2
       range-parser: 1.2.1
-      router: 2.2.0
-      send: 1.2.1
-      serve-static: 2.2.1
+      router: 2.2.0(supports-color@7.2.0)
+      send: 1.2.1(supports-color@7.2.0)
+      serve-static: 2.2.1(supports-color@7.2.0)
       statuses: 2.0.2
       type-is: 2.1.0
       vary: 1.1.2
@@ -4988,7 +4986,7 @@ snapshots:
 
   fast-text-encoding@1.0.6: {}
 
-  fast-uri@3.1.2: {}
+  fast-uri@3.1.9: {}
 
   fdir@6.5.0(picomatch@4.0.4):
     optionalDependencies:
@@ -5002,9 +5000,9 @@ snapshots:
     dependencies:
       flat-cache: 4.0.1
 
-  finalhandler@2.1.1:
+  finalhandler@2.1.1(supports-color@7.2.0):
     dependencies:
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@7.2.0)
       encodeurl: 2.0.0
       escape-html: 1.0.3
       on-finished: 2.4.1
@@ -5066,20 +5064,20 @@ snapshots:
 
   function-bind@1.1.2: {}
 
-  gaxios@4.3.3:
+  gaxios@4.3.3(supports-color@7.2.0):
     dependencies:
       abort-controller: 3.0.0
       extend: 3.0.2
-      https-proxy-agent: 5.0.1
+      https-proxy-agent: 5.0.1(supports-color@7.2.0)
       is-stream: 2.0.1
       node-fetch: 2.7.0
     transitivePeerDependencies:
       - encoding
       - supports-color
 
-  gcp-metadata@4.3.1:
+  gcp-metadata@4.3.1(supports-color@7.2.0):
     dependencies:
-      gaxios: 4.3.3
+      gaxios: 4.3.3(supports-color@7.2.0)
       json-bigint: 1.0.0
     transitivePeerDependencies:
       - encoding
@@ -5131,15 +5129,15 @@ snapshots:
 
   globals@14.0.0: {}
 
-  google-auth-library@7.14.1:
+  google-auth-library@7.14.1(supports-color@7.2.0):
     dependencies:
       arrify: 2.0.1
       base64-js: 1.5.1
       ecdsa-sig-formatter: 1.0.11
       fast-text-encoding: 1.0.6
-      gaxios: 4.3.3
-      gcp-metadata: 4.3.1
-      gtoken: 5.3.2
+      gaxios: 4.3.3(supports-color@7.2.0)
+      gcp-metadata: 4.3.1(supports-color@7.2.0)
+      gtoken: 5.3.2(supports-color@7.2.0)
       jws: 4.0.1
       lru-cache: 6.0.0
     transitivePeerDependencies:
@@ -5150,11 +5148,11 @@ snapshots:
     dependencies:
       node-forge: 1.4.0
 
-  googleapis-common@5.1.0:
+  googleapis-common@5.1.0(supports-color@7.2.0):
     dependencies:
       extend: 3.0.2
-      gaxios: 4.3.3
-      google-auth-library: 7.14.1
+      gaxios: 4.3.3(supports-color@7.2.0)
+      google-auth-library: 7.14.1(supports-color@7.2.0)
       qs: 6.15.2
       url-template: 2.0.8
       uuid: 8.3.2
@@ -5162,10 +5160,10 @@ snapshots:
       - encoding
       - supports-color
 
-  googleapis@92.0.0:
+  googleapis@92.0.0(supports-color@7.2.0):
     dependencies:
-      google-auth-library: 7.14.1
-      googleapis-common: 5.1.0
+      google-auth-library: 7.14.1(supports-color@7.2.0)
+      googleapis-common: 5.1.0(supports-color@7.2.0)
     transitivePeerDependencies:
       - encoding
       - supports-color
@@ -5174,9 +5172,9 @@ snapshots:
 
   graceful-fs@4.2.11: {}
 
-  gtoken@5.3.2:
+  gtoken@5.3.2(supports-color@7.2.0):
     dependencies:
-      gaxios: 4.3.3
+      gaxios: 4.3.3(supports-color@7.2.0)
       google-p12-pem: 3.1.4
       jws: 4.0.1
     transitivePeerDependencies:
@@ -5207,10 +5205,10 @@ snapshots:
       statuses: 2.0.2
       toidentifier: 1.0.1
 
-  https-proxy-agent@5.0.1:
+  https-proxy-agent@5.0.1(supports-color@7.2.0):
     dependencies:
-      agent-base: 6.0.2
-      debug: 4.4.3
+      agent-base: 6.0.2(supports-color@7.2.0)
+      debug: 4.4.3(supports-color@7.2.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -5265,10 +5263,10 @@ snapshots:
       make-dir: 4.0.0
       supports-color: 7.2.0
 
-  istanbul-lib-source-maps@5.0.6:
+  istanbul-lib-source-maps@5.0.6(supports-color@7.2.0):
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@7.2.0)
       istanbul-lib-coverage: 3.2.2
     transitivePeerDependencies:
       - supports-color
@@ -5486,21 +5484,21 @@ snapshots:
       type-check: 0.4.0
       word-wrap: 1.2.5
 
-  orval@8.18.0(prettier@3.8.4)(typescript@5.9.3):
+  orval@8.18.0(prettier@3.8.4)(supports-color@7.2.0)(typescript@5.9.3):
     dependencies:
       '@commander-js/extra-typings': 15.0.0(commander@15.0.0)
-      '@orval/angular': 8.18.0(typescript@5.9.3)
-      '@orval/axios': 8.18.0(typescript@5.9.3)
-      '@orval/core': 8.18.0(typescript@5.9.3)
-      '@orval/effect': 8.18.0(typescript@5.9.3)
-      '@orval/fetch': 8.18.0(typescript@5.9.3)
-      '@orval/hono': 8.18.0(typescript@5.9.3)
-      '@orval/mcp': 8.18.0(typescript@5.9.3)
-      '@orval/mock': 8.18.0(typescript@5.9.3)
-      '@orval/query': 8.18.0(typescript@5.9.3)
-      '@orval/solid-start': 8.18.0(typescript@5.9.3)
-      '@orval/swr': 8.18.0(typescript@5.9.3)
-      '@orval/zod': 8.18.0(typescript@5.9.3)
+      '@orval/angular': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
+      '@orval/axios': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
+      '@orval/core': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
+      '@orval/effect': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
+      '@orval/fetch': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
+      '@orval/hono': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
+      '@orval/mcp': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
+      '@orval/mock': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
+      '@orval/query': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
+      '@orval/solid-start': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
+      '@orval/swr': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
+      '@orval/zod': 8.18.0(supports-color@7.2.0)(typescript@5.9.3)
       '@scalar/json-magic': 0.12.16
       '@scalar/openapi-parser': 0.28.7
       '@scalar/openapi-types': 0.8.0
@@ -5811,9 +5809,9 @@ snapshots:
       '@rollup/rollup-win32-x64-msvc': 4.62.2
       fsevents: 2.3.3
 
-  router@2.2.0:
+  router@2.2.0(supports-color@7.2.0):
     dependencies:
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@7.2.0)
       depd: 2.0.0
       is-promise: 4.0.0
       parseurl: 1.3.3
@@ -5833,9 +5831,9 @@ snapshots:
 
   semver@7.8.5: {}
 
-  send@1.2.1:
+  send@1.2.1(supports-color@7.2.0):
     dependencies:
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@7.2.0)
       encodeurl: 2.0.0
       escape-html: 1.0.3
       etag: 1.8.1
@@ -5849,12 +5847,12 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  serve-static@2.2.1:
+  serve-static@2.2.1(supports-color@7.2.0):
     dependencies:
       encodeurl: 2.0.0
       escape-html: 1.0.3
       parseurl: 1.3.3
-      send: 1.2.1
+      send: 1.2.1(supports-color@7.2.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -5979,11 +5977,11 @@ snapshots:
 
   strip-json-comments@3.1.1: {}
 
-  superagent@10.3.0:
+  superagent@10.3.0(supports-color@7.2.0):
     dependencies:
       component-emitter: 1.3.1
       cookiejar: 2.1.4
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@7.2.0)
       fast-safe-stringify: 2.1.1
       form-data: 4.0.6
       formidable: 3.5.4
@@ -5993,11 +5991,11 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  supertest@7.2.2:
+  supertest@7.2.2(supports-color@7.2.0):
     dependencies:
       cookie-signature: 1.2.2
       methods: 1.1.2
-      superagent: 10.3.0
+      superagent: 10.3.0(supports-color@7.2.0)
     transitivePeerDependencies:
       - supports-color
 
@@ -6056,16 +6054,16 @@ snapshots:
       glob: 10.5.0
       minimatch: 10.2.5
 
-  testcontainers@10.28.0:
+  testcontainers@10.28.0(supports-color@7.2.0):
     dependencies:
       '@balena/dockerignore': 1.0.2
       '@types/dockerode': 3.3.47
       archiver: 7.0.1
       async-lock: 1.4.1
       byline: 5.0.0
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@7.2.0)
       docker-compose: 0.24.8
-      dockerode: 4.0.12
+      dockerode: 4.0.12(supports-color@7.2.0)
       get-port: 7.2.0
       proper-lockfile: 4.1.2
       properties-reader: 2.3.0
@@ -6177,10 +6175,10 @@ snapshots:
 
   vary@1.1.2: {}
 
-  vite-node@2.1.9(@types/node@22.20.0):
+  vite-node@2.1.9(@types/node@22.20.0)(supports-color@7.2.0):
     dependencies:
       cac: 6.7.14
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@7.2.0)
       es-module-lexer: 1.7.0
       pathe: 1.1.2
       vite: 5.4.21(@types/node@22.20.0)
@@ -6204,7 +6202,7 @@ snapshots:
       '@types/node': 22.20.0
       fsevents: 2.3.3
 
-  vitest@2.1.9(@types/node@22.20.0):
+  vitest@2.1.9(@types/node@22.20.0)(supports-color@7.2.0):
     dependencies:
       '@vitest/expect': 2.1.9
       '@vitest/mocker': 2.1.9(vite@5.4.21(@types/node@22.20.0))
@@ -6214,7 +6212,7 @@ snapshots:
       '@vitest/spy': 2.1.9
       '@vitest/utils': 2.1.9
       chai: 5.3.3
-      debug: 4.4.3
+      debug: 4.4.3(supports-color@7.2.0)
       expect-type: 1.3.0
       magic-string: 0.30.21
       pathe: 1.1.2
@@ -6224,7 +6222,7 @@ snapshots:
       tinypool: 1.1.1
       tinyrainbow: 1.2.0
       vite: 5.4.21(@types/node@22.20.0)
-      vite-node: 2.1.9(@types/node@22.20.0)
+      vite-node: 2.1.9(@types/node@22.20.0)(supports-color@7.2.0)
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 22.20.0
