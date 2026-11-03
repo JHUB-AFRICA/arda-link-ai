@@ -55,7 +55,7 @@ catalog:
   '@testing-library/react': ^16.1.0
   jsdom: ^25.0.0
   wouter: ^3.3.5
-  zod: ^3.25.0
+  zod: ^4.6.6
 
 autoInstallPeers: false
 
